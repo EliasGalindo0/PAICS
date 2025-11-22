@@ -12,13 +12,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuração da IA ---
-# A chave pode ser definida no arquivo .env ou como variável de ambiente do sistema
+# A chave pode ser definida no arquivo .env ou como variável de
+# ambiente do sistema
 API_KEY = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
 genai.configure(api_key=API_KEY)
 
-# Configuração do Modelo (ajuste para 'gemini-2.5-pro' se disponível, usando 1.5 Pro como base atual)
+# Configuração do Modelo (ajuste para 'gemini-2.5-pro' se disponível,
+# usando 1.5 Pro como base atual)
 # Pode ser configurado via variável de ambiente GEMINI_MODEL_NAME
-MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
+MODEL_NAME = os.getenv(
+    "GEMINI_MODEL_NAME", "gemini-2.5-pro"
+)
 
 # Configuração do diretório de saída (padrão: laudos_com_ia)
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "laudos_com_ia")
@@ -44,29 +48,40 @@ class VetAIAnalyzer:
         """
         # Prompt de Engenharia (System Prompt)
         prompt = """
-        Você é um Radiologista Veterinário Sênior experiente e preciso.
-        Analise as imagens de raio-x/ultrassom anexadas.
-        
-        Gere um laudo técnico formal em Português (Brasil) seguindo esta estrutura estrita:
-        
-        1. **Técnica/Qualidade:** Comente brevemente sobre o posicionamento e qualidade da imagem.
-        2. **Descrição dos Achados:** Descreva detalhadamente o que é visível (tecidos moles, estruturas ósseas, órgãos). Use terminologia técnica (ex: radiopacidade, ecogenicidade, contornos).
-        3. **Impressão Diagnóstica:** Conclusão baseada nos achados. Se houver dúvida, sugira diagnósticos diferenciais.
-        
-        IMPORTANTE:
-        - Seja objetivo e profissional.
-        - Se a imagem não estiver clara, mencione isso.
-        - NÃO invente achados se a imagem não permitir visualização.
+        You are a senior veterinary radiologist.
+        Analyze the images of the radiography/ultrasound attached.
+
+        Generate a technical report in Portuguese (Brazil) following this strict structure:
+        1. **Technical Report:**
+            1. **Description of the Findings:** Describe the findings in detail.
+            2. **Impression:** Generate an impression based on the findings in Portuguese (Brazil).
+            3. **Conclusion:** Generate a conclusion based on the findings in Portuguese (Brazil).
+            4. **Recommendations:** Generate recommendations based on the findings in Portuguese (Brazil).
+            5. **References:** Generate references based on the findings in Portuguese (Brazil).
+
+        IMPORTANT:
+        - Be objective and professional.
+        - If the image is not clear, mention it.
+        - DO NOT INVENT FINDINGS IF THE IMAGE DOES NOT ALLOW VISUALIZATION.
+        - The report must be in Portuguese (Brazil).
         """
 
-        print("🤖 Enviando imagens para análise da IA (isso pode levar alguns segundos)...")
+        print(
+            "🤖 Enviando imagens para análise da IA "
+            "(isso pode levar alguns segundos)..."
+        )
         try:
-            # O Gemini aceita uma lista mista de texto (prompt) e imagens (PIL Images)
+            # O Gemini aceita uma lista mista de texto (prompt) e imagens
+            # (PIL Images)
             content = [prompt] + images
             response = self.model.generate_content(content)
             return response.text
         except Exception as e:
-            return f"[ERRO NA IA: Não foi possível gerar o laudo automático. Detalhe: {str(e)}]"
+            error_msg = (
+                "[ERRO NA IA: Não foi possível gerar o laudo automático. "
+                f"Detalhe: {str(e)}]"
+            )
+            return error_msg
 
 
 class VetReportGenerator:
@@ -77,7 +92,7 @@ class VetReportGenerator:
             os.makedirs(self.output_dir)
 
     def _pdf_to_pil_images(self, pdf_path: str) -> list:
-        """Converte páginas do PDF em objetos PIL.Image para a IA e para o Word."""
+        """Converte páginas do PDF em objetos PIL.Image para a IA e Word."""
         doc = fitz.open(pdf_path)
         pil_images = []
 
@@ -129,30 +144,40 @@ class VetReportGenerator:
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p.add_run().add_picture(img_byte_arr, width=Inches(IMAGE_WIDTH_INCHES))
-            doc.add_paragraph(f"Imagem {i+1}").style = "Caption"
+            doc.add_paragraph(f"Imagem {i + 1}").style = "Caption"
 
         # Seção do Laudo da IA
         doc.add_page_break()
         doc.add_heading('Laudo Sugerido (Gerado por IA)', level=1)
 
         # Nota de aviso
-        warning = doc.add_paragraph(
-            "Nota: Este texto foi gerado automaticamente. O Médico Veterinário deve revisar e validar todas as informações.")
-        warning.runs[0].font.color.rgb = RGBColor(
-            255, 0, 0)  # Texto em vermelho
+        warning_text = (
+            "Nota: Este texto foi gerado automaticamente. "
+            "O Médico Veterinário deve revisar e validar todas as "
+            "informações."
+        )
+        warning = doc.add_paragraph(warning_text)
+        warning.runs[0].font.color.rgb = RGBColor(255, 0, 0)
         warning.runs[0].font.italic = True
 
         # Inserir o texto da IA
-        # O texto vem em Markdown, vamos apenas inseri-lo como texto limpo por enquanto
+        # O texto vem em Markdown, vamos apenas inseri-lo como texto
+        # limpo por enquanto
         doc.add_paragraph(ai_text)
 
         # Rodapé de Assinatura
         doc.add_paragraph("_" * 30)
-        doc.add_paragraph("Assinatura e Carimbo do Veterinário Responsável")
+        doc.add_paragraph(
+            "Assinatura e Carimbo do Veterinário Responsável"
+        )
 
         # Salvar
-        base_name = os.path.splitext(os.path.basename(original_path))[0]
-        filename = os.path.join(self.output_dir, f"Laudo_AI_{base_name}.docx")
+        base_name = os.path.splitext(
+            os.path.basename(original_path)
+        )[0]
+        filename = os.path.join(
+            self.output_dir, f"Laudo_AI_{base_name}.docx"
+        )
         doc.save(filename)
         print(f"✅ Laudo gerado com sucesso: {filename}")
 

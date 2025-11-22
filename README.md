@@ -229,4 +229,3 @@ PAICS/
 
 Este projeto é fornecido como está, para uso interno.
 
-# PAICS

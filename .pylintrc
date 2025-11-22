@@ -1,0 +1,31 @@
+[MASTER]
+ignore=venv,.venv,build,dist,*.egg-info
+
+[MESSAGES CONTROL]
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    too-few-public-methods,
+    too-many-arguments,
+    import-error,
+    no-member,
+    broad-except
+
+[FORMAT]
+max-line-length=100
+indent-string='    '
+indent-after-paren=4
+indent-module=0
+
+[BASIC]
+good-names=i,j,k,ex,pdf_bytes,tmp_file,tmp_path,docx_bytes,img_byte_arr
+
+[DESIGN]
+max-args=7
+max-locals=20
+max-branches=15
+max-statements=60
+max-parents=7
+max-attributes=15
+

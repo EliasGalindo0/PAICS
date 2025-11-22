@@ -23,12 +23,46 @@ default:
 setup:
     #!/usr/bin/env bash
     echo "🔧 Criando ambiente virtual..."
-    {{python}} -m venv {{venv_dir}}
-    echo "✅ Ambiente virtual criado em {{venv_dir}}/"
-    echo ""
-    echo "Para ativar o ambiente virtual:"
-    echo "  Windows: {{venv_dir}}\\Scripts\\activate"
-    echo "  Linux/Mac: source {{venv_dir}}/bin/activate"
+    
+    # Tentar diferentes comandos Python (prioridade: py > python3 > python)
+    PYTHON_CMD=""
+    if command -v py &> /dev/null && py --version &> /dev/null; then
+        PYTHON_CMD="py"
+    elif command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v {{python}} &> /dev/null && {{python}} --version &> /dev/null 2>&1; then
+        PYTHON_CMD="{{python}}"
+    else
+        echo "❌ Erro: Python não encontrado!"
+        echo ""
+        echo "Por favor, instale o Python:"
+        echo "  - Windows: https://www.python.org/downloads/"
+        echo "  - Linux: sudo apt install python3 python3-venv (Ubuntu/Debian)"
+        echo "  - Mac: brew install python3"
+        echo ""
+        exit 1
+    fi
+    
+    echo "Usando: $PYTHON_CMD"
+    
+    # Remover venv existente se estiver vazio ou corrompido
+    if [ -d "{{venv_dir}}" ] && [ ! -d "{{venv_dir}}/Scripts" ] && [ ! -d "{{venv_dir}}/bin" ]; then
+        echo "⚠️  Removendo ambiente virtual vazio/corrompido..."
+        rm -rf {{venv_dir}}
+    fi
+    
+    $PYTHON_CMD -m venv {{venv_dir}}
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Ambiente virtual criado em {{venv_dir}}/"
+        echo ""
+        echo "Para ativar o ambiente virtual:"
+        echo "  Windows: {{venv_dir}}\\Scripts\\activate"
+        echo "  Linux/Mac: source {{venv_dir}}/bin/activate"
+    else
+        echo "❌ Erro ao criar ambiente virtual!"
+        exit 1
+    fi
 
 # Instala todas as dependências do projeto
 install:
@@ -52,30 +86,72 @@ install-venv:
 
 # Instala dependências no ambiente virtual (Windows)
 install-venv-win:
-    #!/usr/bin/env cmd
-    @if not exist "{{venv_dir}}" (
-        echo ❌ Ambiente virtual não encontrado. Execute 'just setup' primeiro.
-        exit /b 1
-    )
-    echo 📦 Instalando dependências no ambiente virtual...
+    #!/usr/bin/env bash
+    if [ ! -d "{{venv_dir}}" ]; then
+        echo "❌ Ambiente virtual não encontrado. Execute 'just setup' primeiro."
+        exit 1
+    fi
+    if [ ! -f "{{venv_dir}}/Scripts/python.exe" ] && [ ! -f "{{venv_dir}}/Scripts/activate" ]; then
+        echo "❌ Ambiente virtual não está completo. Execute 'just setup' novamente."
+        exit 1
+    fi
+    echo "📦 Instalando dependências no ambiente virtual..."
     {{python_venv_win}} -m pip install --upgrade pip
     {{python_venv_win}} -m pip install -r requirements.txt
-    echo ✅ Dependências instaladas!
+    echo "✅ Dependências instaladas!"
 
 # Setup completo: cria venv e instala dependências
 init:
-    @just setup
-    @if os() == "windows" {
-    @just install-venv-win
-    } else {
-    @just install-venv
-    }
-    @echo ""
-    @echo "🎉 Ambiente configurado com sucesso!"
-    @echo ""
-    @echo "⚠️  Não esqueça de configurar a GOOGLE_API_KEY:"
-    @echo "   export GOOGLE_API_KEY='sua_chave_aqui'"
-    @echo "   Ou no Windows: set GOOGLE_API_KEY=sua_chave_aqui"
+    #!/usr/bin/env bash
+    # Verificar se Python está disponível
+    if ! command -v {{python}} &> /dev/null && ! command -v python3 &> /dev/null && ! command -v py &> /dev/null; then
+        echo "❌ Erro: Python não encontrado!"
+        echo ""
+        echo "Por favor, instale o Python ou adicione-o ao PATH."
+        echo "Tente:"
+        echo "  - Instalar Python de https://www.python.org/downloads/"
+        echo "  - Ou usar: py -m venv venv (Windows com Python Launcher)"
+        echo ""
+        exit 1
+    fi
+    
+    just setup
+    
+    # Aguardar um pouco para garantir que o venv foi criado
+    sleep 1
+    
+    # Detectar SO e instalar dependências apropriadamente
+    # Verificar se existe Scripts (Windows) ou bin (Unix) no venv
+    if [ -d "{{venv_dir}}/Scripts" ] || [ -f "{{venv_dir}}/Scripts/activate" ]; then
+        echo "📦 Detectado ambiente Windows, instalando dependências..."
+        just install-venv-win
+    elif [ -d "{{venv_dir}}/bin" ] || [ -f "{{venv_dir}}/bin/activate" ]; then
+        echo "📦 Detectado ambiente Unix/Linux, instalando dependências..."
+        just install-venv
+    else
+        echo "❌ Erro: Ambiente virtual não foi criado corretamente!"
+        echo ""
+        echo "O diretório {{venv_dir}} existe mas está vazio ou incompleto."
+        echo "Possíveis causas:"
+        echo "  1. Python não está instalado corretamente"
+        echo "  2. Python não está no PATH"
+        echo "  3. Erro ao criar o ambiente virtual"
+        echo ""
+        echo "Tente criar manualmente:"
+        echo "  Windows: py -m venv venv"
+        echo "  Linux/Mac: python3 -m venv venv"
+        echo ""
+        echo "Depois execute:"
+        echo "  Windows: just install-venv-win"
+        echo "  Linux/Mac: just install-venv"
+        exit 1
+    fi
+    echo ""
+    echo "🎉 Ambiente configurado com sucesso!"
+    echo ""
+    echo "⚠️  Não esqueça de configurar a GOOGLE_API_KEY:"
+    echo "   export GOOGLE_API_KEY='sua_chave_aqui'"
+    echo "   Ou no Windows: set GOOGLE_API_KEY=sua_chave_aqui"
 
 # Atualiza todas as dependências para as versões mais recentes
 update:
@@ -124,11 +200,24 @@ run-interactive-venv:
 # Verifica se as dependências estão instaladas
 check-deps:
     #!/usr/bin/env bash
+    # Detectar comando Python (prioridade: py > python3 > python)
+    PYTHON_CMD=""
+    if command -v py &> /dev/null && py --version &> /dev/null; then
+        PYTHON_CMD="py"
+    elif command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v {{python}} &> /dev/null && {{python}} --version &> /dev/null 2>&1; then
+        PYTHON_CMD="{{python}}"
+    else
+        echo "❌ Erro: Python não encontrado!"
+        exit 1
+    fi
+    
     echo "🔍 Verificando dependências..."
-    {{python}} -c "import fitz; print('✅ PyMuPDF instalado')" || echo "❌ PyMuPDF não instalado"
-    {{python}} -c "import google.generativeai; print('✅ google-generativeai instalado')" || echo "❌ google-generativeai não instalado"
-    {{python}} -c "import docx; print('✅ python-docx instalado')" || echo "❌ python-docx não instalado"
-    {{python}} -c "from PIL import Image; print('✅ Pillow instalado')" || echo "❌ Pillow não instalado"
+    $PYTHON_CMD -c "import fitz; print('✅ PyMuPDF instalado')" || echo "❌ PyMuPDF não instalado"
+    $PYTHON_CMD -c "import google.generativeai; print('✅ google-generativeai instalado')" || echo "❌ google-generativeai não instalado"
+    $PYTHON_CMD -c "import docx; print('✅ python-docx instalado')" || echo "❌ python-docx não instalado"
+    $PYTHON_CMD -c "from PIL import Image; print('✅ Pillow instalado')" || echo "❌ Pillow não instalado"
 
 # Verifica se a API Key está configurada (arquivo .env ou variável de ambiente)
 check-api-key:
@@ -279,27 +368,68 @@ freeze:
 # Valida se o código Python está sintaticamente correto
 validate:
     #!/usr/bin/env bash
+    # Detectar comando Python (prioridade: py > python3 > python)
+    PYTHON_CMD=""
+    if command -v py &> /dev/null && py --version &> /dev/null; then
+        PYTHON_CMD="py"
+    elif command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v {{python}} &> /dev/null && {{python}} --version &> /dev/null 2>&1; then
+        PYTHON_CMD="{{python}}"
+    else
+        echo "❌ Erro: Python não encontrado!"
+        exit 1
+    fi
+    
     echo "✅ Validando sintaxe Python..."
-    {{python}} -m py_compile main.py && echo "✅ main.py: OK"
-    {{python}} -m py_compile run.py && echo "✅ run.py: OK"
+    $PYTHON_CMD -m py_compile main.py && echo "✅ main.py: OK"
+    $PYTHON_CMD -m py_compile run.py && echo "✅ run.py: OK"
     echo "✅ Validação concluída!"
 
 # Executa um teste rápido importando os módulos
 test-import:
     #!/usr/bin/env bash
+    # Detectar comando Python (prioridade: py > python3 > python)
+    PYTHON_CMD=""
+    if command -v py &> /dev/null && py --version &> /dev/null; then
+        PYTHON_CMD="py"
+    elif command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v {{python}} &> /dev/null && {{python}} --version &> /dev/null 2>&1; then
+        PYTHON_CMD="{{python}}"
+    else
+        echo "❌ Erro: Python não encontrado!"
+        exit 1
+    fi
+    
     echo "🧪 Testando importação de módulos..."
-    {{python}} -c "from main import VetReportGenerator, VetAIAnalyzer; print('✅ Módulos importados com sucesso!')" || echo "❌ Erro ao importar módulos"
+    $PYTHON_CMD -c "from main import VetReportGenerator, VetAIAnalyzer; print('✅ Módulos importados com sucesso!')" || echo "❌ Erro ao importar módulos"
 
 # Testa se o arquivo .env está sendo carregado corretamente
 test-env:
     #!/usr/bin/env bash
     echo "🧪 Testando carregamento do arquivo .env..."
+    
+    # Detectar comando Python (prioridade: py > python3 > python)
+    PYTHON_CMD=""
+    if command -v py &> /dev/null && py --version &> /dev/null; then
+        PYTHON_CMD="py"
+    elif command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v {{python}} &> /dev/null && {{python}} --version &> /dev/null 2>&1; then
+        PYTHON_CMD="{{python}}"
+    else
+        echo "❌ Erro: Python não encontrado!"
+        echo "Instale o Python ou configure-o no PATH."
+        exit 1
+    fi
+    
     if [ -f "test_env.py" ]; then
-        {{python}} test_env.py
+        $PYTHON_CMD test_env.py
     else
         echo "❌ Arquivo test_env.py não encontrado"
         echo "Testando manualmente..."
-        {{python}} -c "from dotenv import load_dotenv; import os; load_dotenv(); key = os.getenv('GOOGLE_API_KEY', 'NÃO_ENCONTRADA'); print('✅ .env carregado!' if key != 'NÃO_ENCONTRADA' else '❌ GOOGLE_API_KEY não encontrada no .env')"
+        $PYTHON_CMD -c "from dotenv import load_dotenv; import os; load_dotenv(); key = os.getenv('GOOGLE_API_KEY', 'NÃO_ENCONTRADA'); print('✅ .env carregado!' if key != 'NÃO_ENCONTRADA' else '❌ GOOGLE_API_KEY não encontrada no .env')"
     fi
 
 # --- Utilitários ---

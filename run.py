@@ -14,7 +14,10 @@ try:
     from main import VetReportGenerator, API_KEY
 except ImportError:
     print("❌ Erro: Não foi possível importar o módulo main.py")
-    print("Certifique-se de que todos os arquivos necessários estão presentes.")
+    print(
+        "Certifique-se de que todos os arquivos necessários estão "
+        "presentes."
+    )
     sys.exit(1)
 
 

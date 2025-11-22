@@ -28,7 +28,8 @@ st.set_page_config(
 )
 
 # Verificar e configurar API Key
-# A chave pode ser definida no arquivo .env ou como variável de ambiente do sistema
+# A chave pode ser definida no arquivo .env ou como variável de
+# ambiente do sistema
 API_KEY = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
 if "SUA_API_KEY_AQUI" not in API_KEY and API_KEY:
     genai.configure(api_key=API_KEY)
@@ -100,8 +101,12 @@ def create_docx_from_edited(images, edited_text, paciente="", data=""):
 
     table = doc.add_table(rows=1, cols=2)
     table.style = 'Table Grid'
-    table.rows[0].cells[0].text = f"Paciente/Tutor: {paciente if paciente else '____________________'}"
-    table.rows[0].cells[1].text = f"Data: {data if data else '____/____/______'}"
+    paciente_text = (
+        paciente if paciente else "____________________"
+    )
+    table.rows[0].cells[0].text = f"Paciente/Tutor: {paciente_text}"
+    data_text = data if data else "____/____/______"
+    table.rows[0].cells[1].text = f"Data: {data_text}"
     doc.add_paragraph()
 
     # Seção de Imagens
@@ -115,7 +120,7 @@ def create_docx_from_edited(images, edited_text, paciente="", data=""):
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         image_width = float(os.getenv("IMAGE_WIDTH_INCHES", "5.5"))
         p.add_run().add_picture(img_byte_arr, width=Inches(image_width))
-        doc.add_paragraph(f"Imagem {i+1}").style = "Caption"
+        doc.add_paragraph(f"Imagem {i + 1}").style = "Caption"
 
     # Seção do Laudo
     doc.add_page_break()
@@ -123,8 +128,11 @@ def create_docx_from_edited(images, edited_text, paciente="", data=""):
 
     # Nota de aviso (se foi gerado por IA)
     if edited_text and st.session_state.get('original_laudo'):
-        warning = doc.add_paragraph(
-            "Nota: Este laudo foi gerado automaticamente e revisado pelo Médico Veterinário.")
+        warning_text = (
+            "Nota: Este laudo foi gerado automaticamente e revisado pelo "
+            "Médico Veterinário."
+        )
+        warning = doc.add_paragraph(warning_text)
         warning.runs[0].font.color.rgb = RGBColor(255, 140, 0)  # Laranja
         warning.runs[0].font.italic = True
         doc.add_paragraph()
@@ -174,10 +182,12 @@ with st.sidebar:
     st.info(
         """
         **PAICS** - Sistema de Análise de Imagens Veterinárias com IA
-        
-        Faça upload de um PDF com imagens de raio-x ou ultrassom veterinário e receba um laudo técnico gerado por IA.
-        
-        O laudo gerado deve ser sempre revisado e validado por um Médico Veterinário qualificado.
+
+        Faça upload de um PDF com imagens de raio-x ou ultrassom
+        veterinário e receba um laudo técnico gerado por IA.
+
+        O laudo gerado deve ser sempre revisado e validado por um Médico
+        Veterinário qualificado.
         """
     )
 
@@ -225,7 +235,7 @@ if uploaded_file is not None:
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.image(
-                    img, caption=f"Imagem {i+1}", use_container_width=True)
+                    img, caption=f"Imagem {i + 1}", use_container_width=True)
             with col2:
                 st.metric("Dimensões", f"{img.width}x{img.height}")
 
@@ -300,15 +310,21 @@ if uploaded_file is not None:
 
                         nome_arquivo = uploaded_file.name.replace('.pdf', '')
                         if paciente_nome:
-                            nome_arquivo = f"{paciente_nome}_{nome_arquivo}"
+                            nome_arquivo = (
+                                f"{paciente_nome}_{nome_arquivo}"
+                            )
                         else:
                             nome_arquivo = f"Laudo_{nome_arquivo}"
 
+                        mime_type = (
+                            "application/vnd.openxmlformats-officedocument"
+                            ".wordprocessingml.document"
+                        )
                         st.download_button(
                             label="📥 Baixar Documento Word",
                             data=docx_bytes,
                             file_name=f"{nome_arquivo}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            mime=mime_type,
                             use_container_width=True,
                             type="primary"
                         )
@@ -328,15 +344,19 @@ if uploaded_file is not None:
                         st.markdown(laudo_display)
         else:
             st.warning(
-                "⚠️ Configure a API Key para gerar laudos automaticamente")
-            st.info("Você ainda pode fazer upload e visualizar as imagens do PDF.")
+                "⚠️ Configure a API Key para gerar laudos automaticamente"
+            )
+            st.info(
+                "Você ainda pode fazer upload e visualizar as imagens do PDF."
+            )
 else:
     st.info("👆 Faça upload de um arquivo PDF para começar")
 
 # Rodapé
 st.divider()
 st.caption(
-    "⚠️ **Importante:** Este sistema gera laudos sugeridos que devem ser sempre revisados e validados "
-    "por um Médico Veterinário qualificado antes de serem utilizados. A IA serve como ferramenta de apoio, "
+    "⚠️ **Importante:** Este sistema gera laudos sugeridos que devem ser "
+    "sempre revisados e validados por um Médico Veterinário qualificado "
+    "antes de serem utilizados. A IA serve como ferramenta de apoio, "
     "não substitui o julgamento clínico profissional."
 )
