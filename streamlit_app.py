@@ -15,6 +15,10 @@ import os
 import tempfile
 from dotenv import load_dotenv
 from main import VetAIAnalyzer, VetReportGenerator
+from fpdf import FPDF
+from fpdf.enums import Align
+import pytesseract
+import re
 
 # --- Carregar variáveis de ambiente do arquivo .env ---
 load_dotenv()
@@ -138,12 +142,14 @@ def create_docx_from_edited(images, edited_text, paciente="", data=""):
         doc.add_paragraph()
 
     # Inserir o texto editado
-    paragraphs = edited_text.split('\n\n')
+    # Substitui quebras de linha duplas por parágrafos separados
+    paragraphs = edited_text.split('\n')
     for para in paragraphs:
         if para.strip():
             doc.add_paragraph(para.strip())
 
     # Rodapé de Assinatura
+    doc.add_paragraph()
     doc.add_paragraph("_" * 50)
     doc.add_paragraph("Assinatura e Carimbo do Veterinário Responsável")
 
@@ -152,6 +158,189 @@ def create_docx_from_edited(images, edited_text, paciente="", data=""):
     doc.save(docx_bytes)
     docx_bytes.seek(0)
     return docx_bytes.getvalue()
+
+
+class PDF(FPDF):
+    """Classe customizada para PDF com cabeçalho e rodapé."""
+
+    def header(self):
+        self.set_font('Arial', 'B', 14)
+        self.cell(0, 10, 'LAUDO VETERINÁRIO DE IMAGEM', border=False, align=Align.C)
+        self.ln(10)
+
+    def footer(self):
+        self.set_y(-30)
+        self.set_font('Arial', '', 10)
+        self.cell(0, 10, "_" * 60, align=Align.L)
+        self.ln(5)
+        self.cell(0, 10, "Assinatura e Carimbo do Veterinário Responsável", align=Align.L)
+
+
+def create_pdf_from_edited(images, edited_text, paciente="", data=""):
+    """Cria documento PDF com imagens e laudo editado usando FPDF."""
+    pdf = PDF('P', 'mm', 'A4')
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Tabela de informações do paciente
+    pdf.set_font('Arial', '', 11)
+    pdf.cell(95, 10, f"Paciente/Tutor: {paciente or '____________________'}", border=1)
+    pdf.cell(95, 10, f"Data: {data or '____/____/______'}", border=1, align=Align.R)
+    pdf.ln(20)
+
+    # Seção de Imagens
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 10, 'Imagens do Exame', align=Align.L)
+    pdf.ln(10)
+
+    max_width_mm = 180
+
+    for i, img in enumerate(images):
+        # Calcula a proporção da imagem para caber na página
+        w_px, h_px = img.size
+        aspect_ratio = h_px / w_px
+        img_width_mm = max_width_mm
+        img_height_mm = img_width_mm * aspect_ratio
+
+        # Verifica se há espaço na página, senão, adiciona uma nova
+        if pdf.get_y() + img_height_mm > (297 - 30):  # Altura A4 - margem rodapé
+            pdf.add_page()
+
+        pdf.image(img, w=img_width_mm, h=img_height_mm)
+        pdf.set_font('Arial', 'I', 9)
+        pdf.cell(0, 10, f"Imagem {i + 1}", align=Align.C)
+        pdf.ln(10)
+
+    # Seção do Laudo
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 10, 'Laudo', align=Align.L)
+    pdf.ln(10)
+
+    # Nota de aviso
+    if edited_text and st.session_state.get('original_laudo'):
+        pdf.set_font('Arial', 'I', 10)
+        pdf.set_text_color(255, 140, 0)  # Laranja
+        pdf.multi_cell(
+            0, 5, "Nota: Este laudo foi gerado automaticamente e revisado pelo Médico Veterinário.")
+        pdf.set_text_color(0, 0, 0)  # Reseta para preto
+        pdf.ln(5)
+
+    # Texto do laudo
+    pdf.set_font('Arial', '', 11)
+    # Remove formatação Markdown que não é compatível
+    clean_text = edited_text.replace('**', '')
+    pdf.multi_cell(0, 5, clean_text)
+
+    # Normalizar saída para bytes (corrige erro quando retorno é bytearray/str/bytes)
+    output = pdf.output(dest='S')
+
+    if isinstance(output, bytearray):
+        return bytes(output)
+    if isinstance(output, bytes):
+        return output
+    if isinstance(output, str):
+        # a fpdf costuma gerar bytes compatíveis com latin-1; ajusta conforme o necessário
+        return output.encode('latin-1', errors='replace')
+
+    # fallback: tentar converter diretamente para bytes
+    return bytes(output)
+
+
+# configurar caminho do tesseract pelo env (opcional)
+TESSERACT_CMD = os.getenv("TESSERACT_CMD", "")
+if TESSERACT_CMD:
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
+
+# idioma para o tesseract (por + eng por padrão; ajuste se desejar)
+TESSERACT_LANG = os.getenv("TESSERACT_LANG", "por+eng")
+
+
+def ocr_extract_metadata(images: list) -> tuple:
+    """
+    Roda OCR nas imagens e tenta extrair:
+      - paciente/tutor (heurística: linhas que contenham 'Paciente', 'Nome', 'Tutor', 'Proprietário', 'Dono')
+      - data (regex dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd e também busca por meses por extenso em pt)
+    Retorna (paciente: str | '', data: str | '').
+    """
+    name_patterns = [
+        r'(?i)Paciente[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,60})',
+        r'(?i)Nome[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,60})',
+        r'(?i)Tutor[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,60})',
+        r'(?i)Propriet[áa]rio[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,60})',
+        r'(?i)Dono[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,60})'
+    ]
+    # date regex common forms
+    date_regex = re.compile(r'(\d{2}[\/\-]\d{2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})')
+    # month names (pt)
+    month_names = r'(janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)'
+    month_regex = re.compile(r'(\d{1,2}\s+' + month_names + r'\s+\d{4})', re.IGNORECASE)
+
+    found_name = ""
+    found_date = ""
+
+    # Limitar número de páginas/processamento para economizar tempo
+    for img in images:
+        try:
+            # opcional: melhorar contraste / conversão para grayscale
+            gray = img.convert('L')
+            # aumentar tamanho ajuda o OCR em alguns casos
+            max_dim = 1600
+            if max(gray.size) < max_dim:
+                scale = max_dim / max(gray.size)
+                new_size = (int(gray.width * scale), int(gray.height * scale))
+                gray = gray.resize(new_size)
+
+            text = pytesseract.image_to_string(gray, lang=TESSERACT_LANG)
+            if not text or not text.strip():
+                continue
+            # procurar por data
+            date_match = date_regex.search(text)
+            if date_match and not found_date:
+                found_date = date_match.group(1).strip()
+
+            # procurar por mês por extenso
+            month_match = month_regex.search(text)
+            if month_match and not found_date:
+                found_date = month_match.group(1).strip()
+
+            # procurar por padrões de nome
+            for pat in name_patterns:
+                m = re.search(pat, text)
+                if m:
+                    candidate = m.group(1).strip()
+                    # limpar ruídos
+                    candidate = re.sub(r'[^A-Za-zÀ-ÖØ-öø-ÿ0-9\s\-,\.]', '', candidate)
+                    if 3 <= len(candidate) <= 60:
+                        found_name = candidate
+                        break
+
+            # se ainda não encontrou nome, tentar heurística: primeira linha com duas palavras (possivelmente nome)
+            if not found_name:
+                for line in text.splitlines():
+                    line = line.strip()
+                    if len(line) > 3 and ' ' in line and len(line) < 60:
+                        # ignorar linhas com muitas dígitos (prováveis números)
+                        if sum(c.isdigit() for c in line) < (len(line) * 0.4):
+                            # escolher como candidato
+                            found_name = re.sub(r'[^A-Za-zÀ-ÖØ-öø-ÿ0-9\s\-,\.]', '', line)
+                            break
+
+            # se já encontrou ambos, quebra
+            if found_name and found_date:
+                break
+        except Exception:
+            # não interromper o fluxo caso OCR falhe em uma imagem
+            continue
+
+    # normalizações simples
+    if found_date:
+        found_date = found_date.replace('\\', '/').strip()
+    if found_name:
+        # remover múltiplos espaços
+        found_name = re.sub(r'\s{2,}', ' ', found_name).strip()
+
+    return found_name, found_date
 
 
 # Sidebar com configurações
@@ -172,8 +361,12 @@ with st.sidebar:
 
     # Informações do paciente (opcional)
     st.subheader("📋 Informações do Paciente")
-    paciente_nome = st.text_input("Nome do Paciente/Tutor", value="")
-    data_exame = st.text_input("Data do Exame", value="")
+    # Preencher por default a partir do OCR (se disponível)
+    ocr_paciente_default = st.session_state.get('ocr_paciente', "")
+    ocr_data_default = st.session_state.get('ocr_data', "")
+
+    paciente_nome = st.text_input("Nome do Paciente/Tutor", value=ocr_paciente_default)
+    data_exame = st.text_input("Data do Exame", value=ocr_data_default)
 
     st.divider()
 
@@ -207,6 +400,8 @@ if 'laudo_text' not in st.session_state:
     st.session_state.laudo_text = ""
 if 'original_laudo' not in st.session_state:
     st.session_state.original_laudo = ""
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
 
 # Upload de PDF
 st.header("📤 Upload de PDF")
@@ -226,18 +421,34 @@ if uploaded_file is not None:
         st.session_state.pdf_uploaded = True
         st.success(f"✅ PDF processado! {len(images)} página(s) encontrada(s).")
 
+        # Extrair metadados via OCR (executar apenas uma vez por upload)
+        if not st.session_state.get('ocr_done', False):
+            with st.spinner("🔎 Extraindo informações (nome/data) via OCR..."):
+                try:
+                    ocr_name, ocr_date = ocr_extract_metadata(images)
+                    if ocr_name:
+                        st.session_state['ocr_paciente'] = ocr_name
+                    if ocr_date:
+                        st.session_state['ocr_data'] = ocr_date
+                    st.session_state['ocr_done'] = True
+                    if ocr_name or ocr_date:
+                        st.success("✅ Informações sugeridas extraídas via OCR.")
+                        # Re-run para atualizar os campos do sidebar com os valores extraídos
+                        st.rerun()
+                except Exception as e:
+                    # não bloquear fluxo principal se OCR falhar
+                    st.session_state['ocr_done'] = True
+                    st.warning("OCR não conseguiu extrair informações automaticamente.")
+
     # Mostrar preview das imagens
     if images:
         st.header("🖼️ Visualização das Imagens")
-        num_cols = 2
 
+        cols = st.columns(2)
         for i, img in enumerate(images):
-            col1, col2 = st.columns([3, 1])
-            with col1:
+            with cols[i % 2]:
                 st.image(
                     img, caption=f"Imagem {i + 1}", use_container_width=True)
-            with col2:
-                st.metric("Dimensões", f"{img.width}x{img.height}")
 
         st.divider()
 
@@ -252,6 +463,8 @@ if uploaded_file is not None:
 
             if generate_button or st.session_state.laudo_gerado:
                 if generate_button:
+                    # Limpar chat anterior ao gerar novo laudo
+                    st.session_state.chat_history = []
                     # Gerar laudo
                     with st.spinner("🤖 Analisando imagens com IA (isso pode levar alguns segundos)..."):
                         try:
@@ -285,7 +498,7 @@ if uploaded_file is not None:
                     st.session_state.laudo_text = edited_laudo
 
                     # Botões de ação
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
 
                     with col1:
                         if st.button("💾 Salvar Edições", use_container_width=True):
@@ -297,37 +510,99 @@ if uploaded_file is not None:
                         if st.button("🔄 Gerar Novo Laudo", use_container_width=True):
                             st.session_state.laudo_gerado = False
                             st.session_state.laudo_text = ""
+                            st.session_state.chat_history = []
                             st.rerun()
 
+                    # Preparar nome do arquivo
+                    nome_arquivo = uploaded_file.name.replace('.pdf', '')
+                    if paciente_nome:
+                        nome_arquivo = f"{paciente_nome}_{nome_arquivo}"
+                    else:
+                        nome_arquivo = f"Laudo_{nome_arquivo}"
+
+                    # Gerar documento Word para download
+                    docx_bytes = create_docx_from_edited(
+                        st.session_state.images,
+                        edited_laudo,
+                        paciente_nome,
+                        data_exame
+                    )
+
                     with col3:
-                        # Gerar documento Word para download
-                        docx_bytes = create_docx_from_edited(
-                            st.session_state.images,
-                            edited_laudo,
-                            paciente_nome,
-                            data_exame
-                        )
-
-                        nome_arquivo = uploaded_file.name.replace('.pdf', '')
-                        if paciente_nome:
-                            nome_arquivo = (
-                                f"{paciente_nome}_{nome_arquivo}"
-                            )
-                        else:
-                            nome_arquivo = f"Laudo_{nome_arquivo}"
-
-                        mime_type = (
+                        mime_type_docx = (
                             "application/vnd.openxmlformats-officedocument"
                             ".wordprocessingml.document"
                         )
                         st.download_button(
-                            label="📥 Baixar Documento Word",
+                            label="📥 Baixar como Word",
                             data=docx_bytes,
                             file_name=f"{nome_arquivo}.docx",
-                            mime=mime_type,
-                            use_container_width=True,
-                            type="primary"
+                            mime=mime_type_docx,
+                            use_container_width=True
                         )
+
+                    with col4:
+                        try:
+                            pdf_bytes = create_pdf_from_edited(
+                                st.session_state.images,
+                                edited_laudo,
+                                paciente_nome,
+                                data_exame
+                            )
+                            st.download_button(
+                                label="📥 Baixar como PDF",
+                                data=pdf_bytes,
+                                file_name=f"{nome_arquivo}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                                type="primary"
+                            )
+                        except Exception as e:
+                            st.error(f"Erro ao gerar PDF: {e}")
+                            st.exception(e)
+
+                    st.divider()
+
+                    # Chat com a IA sobre o laudo
+                    with st.expander("💬 **Converse com a IA para refinar o laudo**"):
+                        # Exibir histórico do chat
+                        for message in st.session_state.chat_history:
+                            with st.chat_message(message["role"]):
+                                st.markdown(message["content"])
+
+                        # Input do usuário
+                        if prompt := st.chat_input("Faça uma pergunta ou peça uma alteração..."):
+                            st.session_state.chat_history.append(
+                                {"role": "user", "content": prompt})
+                            with st.chat_message("user"):
+                                st.markdown(prompt)
+
+                            # Gerar resposta da IA
+                            with st.chat_message("assistant"):
+                                with st.spinner("Analisando seu pedido..."):
+                                    ai_analyzer = init_ai_analyzer()
+                                    if ai_analyzer:
+                                        # Montar o prompt de contexto para o chat
+                                        chat_prompt = f"""
+                                        Você é um assistente de radiologia veterinária.
+                                        O laudo atual é:
+                                        ---
+                                        {edited_laudo}
+                                        ---
+                                        Com base nas imagens já fornecidas e no laudo acima, responda ao seguinte pedido do usuário: "{prompt}"
+                                        Seja direto e profissional. Se o usuário pedir uma alteração, forneça o texto atualizado.
+                                        """
+                                        content_for_ai = [
+                                            chat_prompt] + st.session_state.images
+                                        response = ai_analyzer.model.generate_content(
+                                            content_for_ai)
+                                        response_text = response.text
+                                        st.markdown(response_text)
+                                        st.session_state.chat_history.append(
+                                            {"role": "assistant", "content": response_text})
+                                    else:
+                                        st.error(
+                                            "Analisador de IA não inicializado.")
 
                     st.divider()
 

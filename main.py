@@ -48,7 +48,7 @@ class VetAIAnalyzer:
         """
         # Prompt de Engenharia (System Prompt)
         prompt = """
-        You are a senior veterinary radiologist.
+        You are a senior veterinary radiologist and ultrasound specialist.
         Analyze the images of the radiography/ultrasound attached.
 
         Generate a technical report in Portuguese (Brazil) following this strict structure:
