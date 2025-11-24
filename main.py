@@ -46,24 +46,27 @@ class VetAIAnalyzer:
         """
         Envia imagens para o Gemini e retorna o laudo técnico.
         """
-        # Prompt de Engenharia (System Prompt)
+        # Prompt simplificado ao máximo
         prompt = """
-        You are a senior veterinary radiologist and ultrasound specialist.
-        Analyze the images of the radiography/ultrasound attached.
+        Analyze these veterinary images and write a technical report in Portuguese (Brazil).
 
-        Generate a technical report in Portuguese (Brazil) following this strict structure:
-        1. **Technical Report:**
-            1. **Description of the Findings:** Describe the findings in detail.
-            2. **Impression:** Generate an impression based on the findings in Portuguese (Brazil).
-            3. **Conclusion:** Generate a conclusion based on the findings in Portuguese (Brazil).
-            4. **Recommendations:** Generate recommendations based on the findings in Portuguese (Brazil).
-            5. **References:** Generate references based on the findings in Portuguese (Brazil).
+        Start immediately with:
+        **Descrição dos Achados:**
+        [your detailed findings]
 
-        IMPORTANT:
-        - Be objective and professional.
-        - If the image is not clear, mention it.
-        - DO NOT INVENT FINDINGS IF THE IMAGE DOES NOT ALLOW VISUALIZATION.
-        - The report must be in Portuguese (Brazil).
+        **Impressão Diagnóstica:**
+        [your diagnostic impression]
+
+        **Conclusão:**
+        [your conclusion]
+
+        **Recomendações:**
+        [your recommendations]
+
+        **Referências:**
+        [if applicable]
+
+        CRITICAL: Your response MUST start with "**Descrição dos Achados:**" - nothing before it.
         """
 
         print(
@@ -71,11 +74,77 @@ class VetAIAnalyzer:
             "(isso pode levar alguns segundos)..."
         )
         try:
-            # O Gemini aceita uma lista mista de texto (prompt) e imagens
-            # (PIL Images)
             content = [prompt] + images
             response = self.model.generate_content(content)
-            return response.text
+            text = response.text.strip()
+
+            # ABORDAGEM FINAL: Usar regex para cortar TUDO antes de **Descrição
+            import re
+
+            # Buscar o padrão **Descrição (case insensitive)
+            pattern = r'\*\*Descri[çc][ãa]o dos Achados:?\*\*'
+            match = re.search(pattern, text, re.IGNORECASE)
+
+            if match:
+                # Cortar tudo antes do match
+                start_pos = match.start()
+                text = text[start_pos:]
+            else:
+                # Tentar padrão mais simples
+                pattern_simple = r'\*\*Descri[çc][ãa]o'
+                match_simple = re.search(pattern_simple, text, re.IGNORECASE)
+                if match_simple:
+                    start_pos = match_simple.start()
+                    text = text[start_pos:]
+
+            # Limpar linha por linha para remover porcarias
+            lines = text.split('\n')
+            cleaned = []
+
+            for line in lines:
+                stripped = line.strip()
+
+                # Pular linhas vazias no início
+                if not cleaned and not stripped:
+                    continue
+
+                # Pular separadores
+                if stripped in ['---', '***', '___']:
+                    continue
+
+                # Pular headers markdown
+                if stripped.startswith('#'):
+                    continue
+
+                # Pular tabelas
+                if '|' in stripped:
+                    continue
+
+                # Pular linhas de metadata
+                lower = stripped.lower()
+                skip_patterns = [
+                    'identificação',
+                    'modalidade:',
+                    'médico veterinário',
+                    'data do exame:',
+                    'dmv',
+                    'especialista em'
+                ]
+                if any(p in lower for p in skip_patterns):
+                    continue
+
+                cleaned.append(line)
+
+            result = '\n'.join(cleaned)
+
+            # Remover múltiplas linhas vazias
+            result = re.sub(r'\n{3,}', '\n\n', result)
+
+            # Remover espaços no início/fim
+            result = result.strip()
+
+            return result if result else text
+
         except Exception as e:
             error_msg = (
                 "[ERRO NA IA: Não foi possível gerar o laudo automático. "

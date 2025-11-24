@@ -134,9 +134,8 @@ def create_docx_from_edited(images, edited_text, paciente="", data=""):
         if para.strip():
             doc.add_paragraph(para.strip())
 
-    # NOVA ORDEM: Imagens depois do laudo
+    # NOVA ORDEM: Imagens depois do laudo (SEM cabeçalho para economizar espaço)
     doc.add_page_break()
-    doc.add_heading('Imagens do Exame', level=1)
     for i, img in enumerate(images):
         img_byte_arr = io.BytesIO()
         img.save(img_byte_arr, format='PNG')
@@ -175,6 +174,51 @@ def create_pdf_from_edited(images, edited_text, paciente="", data=""):
     pdf = PDF('P', 'mm', 'A4')
     pdf.set_auto_page_break(auto=True, margin=15)
 
+    # Função para limpar caracteres Unicode problemáticos
+    def clean_unicode_text(text):
+        """Remove ou substitui caracteres Unicode problemáticos para FPDF."""
+        # Substituir aspas curvas e outros caracteres especiais
+        replacements = {
+            ''': "'",
+            ''': "'",
+            '"': '"',
+            '"': '"',
+            '—': '-',
+            '–': '-',
+            '…': '...',
+            '°': ' graus',
+            '™': '',
+            '®': '',
+            '©': '',
+            '•': '-',
+            '→': '->',
+            '←': '<-',
+            '↑': '^',
+            '↓': 'v',
+            '≥': '>=',
+            '≤': '<=',
+            '≠': '!=',
+            '×': 'x',
+            '÷': '/',
+        }
+
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+
+        # Remover asteriscos de markdown
+        text = text.replace('**', '')
+
+        # Tentar codificar para latin-1 e substituir caracteres que falham
+        try:
+            text.encode('latin-1')
+        except UnicodeEncodeError:
+            # Se falhar, substituir caracteres problemáticos por equivalentes ASCII
+            import unicodedata
+            text = unicodedata.normalize('NFKD', text)
+            text = text.encode('latin-1', 'ignore').decode('latin-1')
+
+        return text
+
     # Usar Arial com codificação UTF-8 (suporte nativo do FPDF2)
     pdf.add_page()
     pdf.set_font('Arial', 'B', 12)
@@ -184,33 +228,20 @@ def create_pdf_from_edited(images, edited_text, paciente="", data=""):
     if paciente or data:
         pdf.set_font('Arial', '', 10)
         if paciente:
-            pdf.cell(0, 6, f"Paciente/Tutor: {paciente}", ln=1)
+            paciente_clean = clean_unicode_text(paciente)
+            pdf.cell(0, 6, f"Paciente/Tutor: {paciente_clean}", ln=1)
         if data:
-            pdf.cell(0, 6, f"Data: {data}", ln=1)
-        pdf.ln(4)
-
-    if edited_text and st.session_state.get('original_laudo'):
-        pdf.set_font('Arial', 'I', 10)
-        pdf.set_text_color(255, 140, 0)
-        pdf.multi_cell(
-            0, 5, "Nota: Este laudo foi gerado automaticamente e revisado pelo Médico Veterinário.")
-        pdf.set_text_color(0, 0, 0)
+            data_clean = clean_unicode_text(data)
+            pdf.cell(0, 6, f"Data: {data_clean}", ln=1)
         pdf.ln(4)
 
     pdf.set_font('Arial', '', 11)
-    # Limpar caracteres problemáticos e normalizar texto
-    clean_text = edited_text.replace('**', '')
-    # Substituir aspas curvas por aspas retas
-    clean_text = clean_text.replace(''', "'").replace(''', "'")
-    clean_text = clean_text.replace('"', '"').replace('"', '"')
+    # Limpar caracteres problemáticos
+    clean_text = clean_unicode_text(edited_text)
     pdf.multi_cell(0, 5, clean_text)
 
-    # NOVA ORDEM: Imagens depois do laudo
+    # NOVA ORDEM: Imagens depois do laudo (SEM cabeçalho para economizar espaço)
     pdf.add_page()
-    pdf.set_font('Arial', 'B', 12)
-    pdf.cell(0, 10, 'Imagens do Exame', ln=1)
-    pdf.ln(2)
-
     max_width_mm = 180
 
     for i, img in enumerate(images):
@@ -240,7 +271,7 @@ def create_pdf_from_edited(images, edited_text, paciente="", data=""):
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 10, "_" * 60, align=Align.L)
     pdf.ln(5)
-    pdf.cell(0, 10, "Assinatura e Carimbo do Veterinário Responsável", align=Align.L)
+    pdf.cell(0, 10, "Assinatura e Carimbo do Veterinario Responsavel", align=Align.L)
 
     output = pdf.output(dest='S')
     if isinstance(output, bytearray):
@@ -491,36 +522,15 @@ if uploaded_file is not None:
             # CORREÇÃO: Enviar TODAS as imagens para análise da LLM
             # Mas armazenar separadamente as imagens para o laudo final (sem a primeira)
             st.session_state.images = all_images  # TODAS as páginas para LLM
-            # Sem primeira página
-            st.session_state.images_for_report = all_images[1:] if total_pages > 1 else []
+            # CORREÇÃO: Incluir todas as páginas EXCETO a primeira (identificação)
+            st.session_state.images_for_report = all_images[1:] if total_pages > 1 else all_images
 
             st.success(f"✅ PDF processado! {len(all_images)} página(s) para análise.")
+            if total_pages > 1:
+                st.info(
+                    f"📄 {len(st.session_state.images_for_report)} página(s) serão incluídas no laudo final (primeira página removida)")
 
-    # Mostrar preview das imagens
-    if st.session_state.get('id_page_image'):
-        st.header("🧾 Página de Identificação")
-        st.image(st.session_state['id_page_image'],
-                 caption="Página 1: Dados do Paciente/Tutor (não incluída no laudo final)", use_container_width=True)
-
-        if st.session_state.get('paciente_nome') or st.session_state.get('data_exame'):
-            st.info(
-                f"**Paciente/Tutor:** {st.session_state.get('paciente_nome', 'Não encontrado')} | **Data:** {st.session_state.get('data_exame', 'Não encontrada')}")
-
-        if st.session_state.get('ocr_raw'):
-            with st.expander("🔎 Texto extraído via OCR (debug)"):
-                st.text_area("Texto OCR (bruto)", value=st.session_state.get(
-                    'ocr_raw', ''), height=160)
-        st.divider()
-
-    if st.session_state.images:
-        st.header("🖼️ Visualização de Todas as Imagens")
-        st.info(f"📊 Total: {len(st.session_state.images)} página(s) serão analisadas pela IA")
-        cols = st.columns(2)
-        for i, img in enumerate(st.session_state.images):
-            with cols[i % 2]:
-                st.image(img, caption=f"Página {i + 1}", use_container_width=True)
-    else:
-        st.warning("⚠️ Não há imagens de exame para análise após a filtragem.")
+    # OCR processado em background - informações extraídas sem exibir imagem repetida
 
 # CORREÇÃO: Mover para fora do bloco 'if uploaded_file is not None:'
 if uploaded_file is None:
@@ -630,61 +640,204 @@ if st.session_state.laudo_gerado and st.session_state.laudo_text:
 
     st.divider()
 
-    # Chat com a IA sobre o laudo
-    with st.expander("💬 **Converse com a IA para refinar o laudo**"):
-        # Exibir histórico do chat
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+    # Chat com a IA sobre o laudo - VERSÃO MELHORADA COM FOCO NO USUÁRIO
+    st.subheader("💬 Refinar Laudo com IA")
+    st.markdown(
+        "**Digite suas solicitações abaixo para editar o laudo. As alterações serão aplicadas automaticamente.**")
 
-        # Input do usuário
-        if prompt := st.chat_input("Faça uma pergunta ou peça uma alteração..."):
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
+    # Input do usuário PRIMEIRO (prioridade)
+    prompt = st.text_input(
+        "Digite sua solicitação:",
+        placeholder="Ex: 'Remova a menção sobre derrame pleural' ou 'Adicione mais detalhes sobre a coluna'",
+        key="user_prompt_input"
+    )
 
-            # Gerar resposta da IA
-            with st.chat_message("assistant"):
-                with st.spinner("Analisando seu pedido..."):
-                    ai_analyzer = init_ai_analyzer()
-                    if ai_analyzer:
-                        # Montar o prompt de contexto para o chat
-                        chat_prompt = f"""
-                        Você é um assistente de radiologia veterinária.
-                        O laudo atual é:
-                        ---
-                        {edited_laudo}
-                        ---
-                        Com base nas imagens já fornecidas e no laudo acima, responda ao seguinte pedido do usuário: "{prompt}"
-                        Seja direto e profissional. Se o usuário pedir uma alteração, forneça o texto atualizado.
-                        """
-                        content_for_ai = [chat_prompt] + st.session_state.images
-                        response = ai_analyzer.model.generate_content(content_for_ai)
-                        response_text = response.text
-                        st.markdown(response_text)
-                        st.session_state.chat_history.append(
-                            {"role": "assistant", "content": response_text})
-                    else:
-                        st.error("Analisador de IA não inicializado.")
+    col_send, col_examples = st.columns([1, 4])
+
+    with col_send:
+        send_button = st.button("🚀 Enviar", type="primary", use_container_width=True)
+
+    with col_examples:
+        # Dropdown com exemplos como referência
+        example_selected = st.selectbox(
+            "Ou escolha um exemplo:",
+            [
+                "-- Exemplos de comandos --",
+                "Revise a gramática e ortografia",
+                "Adicionar mais detalhes técnicos",
+                "Reorganizar em seções claras",
+                "Remover informação sobre [tópico]",
+                "Adicionar recomendação de [exame/tratamento]",
+                "Simplificar a linguagem mantendo precisão",
+                "Adicionar seção de prognóstico"
+            ],
+            key="example_selector"
+        )
+
+    # Se usuário selecionou um exemplo, usar como prompt
+    if example_selected != "-- Exemplos de comandos --":
+        prompt = example_selected
+        send_button = True
+
+    # Processar solicitação do usuário
+    if send_button and prompt:
+        with st.spinner("🤖 Processando sua solicitação e atualizando o laudo..."):
+            ai_analyzer = init_ai_analyzer()
+            if ai_analyzer:
+                # Prompt otimizado para merge automático
+                chat_prompt = f"""
+                Você é um assistente especializado em radiologia veterinária que trabalha em colaboração com veterinários.
+                
+                LAUDO ATUAL:
+                ---
+                {edited_laudo}
+                ---
+                
+                SOLICITAÇÃO DO VETERINÁRIO: "{prompt}"
+                
+                INSTRUÇÕES IMPORTANTES:
+                1. Analise a solicitação cuidadosamente
+                2. Se for para REMOVER: remova completamente e ajuste o texto para manter coesão
+                3. Se for para ADICIONAR: integre naturalmente ao laudo, consultando as imagens se necessário
+                4. Se for para ALTERAR: faça a alteração mantendo o restante intacto
+                5. Se for REVISAR: corrija erros mantendo o conteúdo técnico
+                6. Se for REORGANIZAR: reestruture mantendo todo o conteúdo
+                7. SEMPRE retorne o LAUDO COMPLETO já editado (não apenas trechos)
+                8. NÃO adicione explicações, comentários ou introduções
+                9. Mantenha tom profissional e técnico veterinário
+                10. Preserve formatação e estrutura
+                
+                RETORNE APENAS O LAUDO COMPLETO EDITADO, SEM NENHUM TEXTO ADICIONAL:
+                """
+
+                content_for_ai = [chat_prompt] + st.session_state.images
+
+                try:
+                    response = ai_analyzer.model.generate_content(content_for_ai)
+                    response_text = response.text.strip()
+
+                    # Limpar formatação markdown extra
+                    if response_text.startswith("```"):
+                        lines = response_text.split("\n")
+                        response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
+
+                    # APLICAR AUTOMATICAMENTE as mudanças
+                    st.session_state.laudo_text = response_text
+
+                    # Registrar no histórico
+                    st.session_state.chat_history.append({
+                        "role": "user",
+                        "content": prompt
+                    })
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": "Laudo atualizado com sucesso!",
+                        "updated_laudo": response_text
+                    })
+
+                    st.success(f"✅ Laudo atualizado! Solicitação: '{prompt[:50]}...'")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Erro ao processar solicitação: {str(e)}")
+            else:
+                st.error("Analisador de IA não inicializado.")
 
     st.divider()
 
-    # Preview do laudo formatado
-    with st.expander("👁️ Visualizar Laudo Formatado"):
-        st.markdown("### Laudo Veterinário")
-        if paciente_nome_str:
-            st.markdown(f"**Paciente/Tutor:** {paciente_nome_str}")
-        if st.session_state.get('data_exame'):
-            st.markdown(f"**Data:** {st.session_state.get('data_exame')}")
-        st.markdown("---")
-        # Converter quebras de linha para markdown
-        laudo_display = edited_laudo.replace('\n', '  \n')
-        st.markdown(laudo_display)
+    # Botões de ação rápida (agora como ATALHOS secundários)
+    with st.expander("⚡ Atalhos Rápidos"):
+        col_a, col_b, col_c = st.columns(3)
 
-st.divider()
-st.caption(
-    "⚠️ **Importante:** Este sistema gera laudos sugeridos que devem ser "
-    "sempre revisados e validados por um Médico Veterinário qualificado "
-    "antes de serem utilizados. A IA serve como ferramenta de apoio, "
-    "não substitui o julgamento clínico profissional."
-)
+        with col_a:
+            if st.button("📝 Revisar gramática", use_container_width=True, key="quick_grammar"):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "Revise a gramática e ortografia mantendo o conteúdo técnico",
+                    "is_quick": True
+                })
+                st.rerun()
+
+        with col_b:
+            if st.button("🔍 Mais detalhes", use_container_width=True, key="quick_details"):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "Analise as imagens novamente e adicione mais detalhes técnicos ao laudo",
+                    "is_quick": True
+                })
+                st.rerun()
+
+        with col_c:
+            if st.button("📊 Reorganizar", use_container_width=True, key="quick_structure"):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "Reorganize em seções claras (Histórico, Achados, Impressão, Recomendações)",
+                    "is_quick": True
+                })
+                st.rerun()
+
+    # Histórico de alterações (colapsado por padrão)
+    with st.expander("📜 Histórico de Alterações", expanded=False):
+        if st.session_state.chat_history:
+            for idx, message in enumerate(st.session_state.chat_history):
+                if message["role"] == "user":
+                    st.markdown(f"**🔵 Você:** {message['content']}")
+                else:
+                    st.markdown(f"**🤖 IA:** {message['content']}")
+                st.divider()
+        else:
+            st.info("Nenhuma alteração ainda. Faça uma solicitação acima para começar.")
+
+    # Processar comando rápido pendente (se houver)
+    if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
+        last_msg = st.session_state.chat_history[-1]
+        if last_msg.get("is_quick"):
+            with st.spinner("🤖 Processando atalho rápido..."):
+                ai_analyzer = init_ai_analyzer()
+                if ai_analyzer:
+                    chat_prompt = f"""
+                    Você é um assistente especializado em radiologia veterinária.
+                    
+                    LAUDO ATUAL:
+                    ---
+                    {edited_laudo}
+                    ---
+                    
+                    INSTRUÇÃO: {last_msg['content']}
+                    
+                    Retorne APENAS o laudo completo atualizado, sem explicações adicionais.
+                    Mantenha tom profissional e técnico veterinário.
+                    """
+                    content_for_ai = [chat_prompt] + st.session_state.images
+
+                    try:
+                        response = ai_analyzer.model.generate_content(content_for_ai)
+                        response_text = response.text.strip()
+
+                        if response_text.startswith("```"):
+                            response_text = "\n".join(response_text.split("\n")[1:-1])
+
+                        # APLICAR AUTOMATICAMENTE
+                        st.session_state.laudo_text = response_text
+
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Laudo atualizado!",
+                            "updated_laudo": response_text
+                        })
+
+                        st.success("✅ Laudo atualizado com sucesso!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro: {str(e)}")
+                else:
+                    st.error("Analisador de IA não inicializado.")
+
+# Informações extraídas via OCR (sem exibir a imagem para evitar poluição visual)
+if st.session_state.get('paciente_nome') or st.session_state.get('data_exame'):
+    with st.expander("ℹ️ Dados Extraídos via OCR"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Paciente/Tutor", st.session_state.get('paciente_nome', 'Não encontrado'))
+        with col2:
+            st.metric("Data do Exame", st.session_state.get('data_exame', 'Não encontrada'))
