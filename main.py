@@ -46,27 +46,33 @@ class VetAIAnalyzer:
         """
         Envia imagens para o Gemini e retorna o laudo técnico.
         """
-        # Prompt simplificado ao máximo
         prompt = """
-        Analyze these veterinary images and write a technical report in Portuguese (Brazil).
+        Analyze these veterinary radiographic/ultrasound images and write a technical report in Portuguese (Brazil).
+
+        IMPORTANT CONSIDERATIONS:
+        1. Consider the possibility of positional and motion artifacts
+        2. Consider the possibility of human errors in positioning and image labeling
+        3. If image quality is compromised, mention it in your findings
+        4. Do not invent findings that are not clearly visible
 
         Start immediately with:
         **Descrição dos Achados:**
-        [your detailed findings]
+        [your detailed findings, mentioning any artifacts or positioning issues if present]
 
         **Impressão Diagnóstica:**
-        [your diagnostic impression]
+        [your diagnostic impression based on visible findings]
 
         **Conclusão:**
         [your conclusion]
 
         **Recomendações:**
-        [your recommendations]
+        [your recommendations, including additional views if positioning was suboptimal]
 
         **Referências:**
         [if applicable]
 
         CRITICAL: Your response MUST start with "**Descrição dos Achados:**" - nothing before it.
+        Be professional and acknowledge limitations when present.
         """
 
         print(
@@ -78,49 +84,40 @@ class VetAIAnalyzer:
             response = self.model.generate_content(content)
             text = response.text.strip()
 
-            # ABORDAGEM FINAL: Usar regex para cortar TUDO antes de **Descrição
+            # Limpeza do texto (código anterior mantido)
             import re
 
-            # Buscar o padrão **Descrição (case insensitive)
             pattern = r'\*\*Descri[çc][ãa]o dos Achados:?\*\*'
             match = re.search(pattern, text, re.IGNORECASE)
 
             if match:
-                # Cortar tudo antes do match
                 start_pos = match.start()
                 text = text[start_pos:]
             else:
-                # Tentar padrão mais simples
                 pattern_simple = r'\*\*Descri[çc][ãa]o'
                 match_simple = re.search(pattern_simple, text, re.IGNORECASE)
                 if match_simple:
                     start_pos = match_simple.start()
                     text = text[start_pos:]
 
-            # Limpar linha por linha para remover porcarias
             lines = text.split('\n')
             cleaned = []
 
             for line in lines:
                 stripped = line.strip()
 
-                # Pular linhas vazias no início
                 if not cleaned and not stripped:
                     continue
 
-                # Pular separadores
                 if stripped in ['---', '***', '___']:
                     continue
 
-                # Pular headers markdown
                 if stripped.startswith('#'):
                     continue
 
-                # Pular tabelas
                 if '|' in stripped:
                     continue
 
-                # Pular linhas de metadata
                 lower = stripped.lower()
                 skip_patterns = [
                     'identificação',
@@ -136,11 +133,7 @@ class VetAIAnalyzer:
                 cleaned.append(line)
 
             result = '\n'.join(cleaned)
-
-            # Remover múltiplas linhas vazias
             result = re.sub(r'\n{3,}', '\n\n', result)
-
-            # Remover espaços no início/fim
             result = result.strip()
 
             return result if result else text
@@ -153,6 +146,31 @@ class VetAIAnalyzer:
             return error_msg
 
 
+def load_dicom_image(dicom_path: str) -> Image.Image:
+    """Converte arquivo DICOM em imagem PIL"""
+    try:
+        import pydicom
+        from pydicom.pixel_data_handlers.util import apply_voi_lut
+
+        dicom = pydicom.dcmread(dicom_path)
+        data = apply_voi_lut(dicom.pixel_array, dicom)
+
+        # Normalizar para 0-255
+        data = data - data.min()
+        data = data / data.max()
+        data = (data * 255).astype('uint8')
+
+        img = Image.fromarray(data)
+
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        return img
+    except Exception as e:
+        print(f"Erro ao processar DICOM: {e}")
+        return None
+
+
 class VetReportGenerator:
     def __init__(self, output_dir: str = None):
         self.output_dir = output_dir or OUTPUT_DIR
@@ -160,13 +178,61 @@ class VetReportGenerator:
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
+    def _load_images_from_path(self, path: str) -> list:
+        """Carrega imagens de um arquivo ou diretório"""
+        images = []
+
+        if os.path.isfile(path):
+            # Arquivo único
+            ext = os.path.splitext(path)[1].lower()
+
+            if ext == '.pdf':
+                images = self._pdf_to_pil_images(path)
+            elif ext in ['.dcm', '.dicom']:
+                img = load_dicom_image(path)
+                if img:
+                    images.append(img)
+            elif ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']:
+                try:
+                    img = Image.open(path)
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    images.append(img)
+                except Exception as e:
+                    print(f"Erro ao carregar {path}: {e}")
+
+        elif os.path.isdir(path):
+            # Diretório com múltiplas imagens
+            valid_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.dcm', '.dicom', '.bmp', '.tiff']
+
+            for filename in sorted(os.listdir(path)):
+                file_path = os.path.join(path, filename)
+                ext = os.path.splitext(filename)[1].lower()
+
+                if ext in valid_extensions:
+                    if ext == '.pdf':
+                        images.extend(self._pdf_to_pil_images(file_path))
+                    elif ext in ['.dcm', '.dicom']:
+                        img = load_dicom_image(file_path)
+                        if img:
+                            images.append(img)
+                    elif ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']:
+                        try:
+                            img = Image.open(file_path)
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+                            images.append(img)
+                        except Exception as e:
+                            print(f"Erro ao carregar {file_path}: {e}")
+
+        return images
+
     def _pdf_to_pil_images(self, pdf_path: str) -> list:
-        """Converte páginas do PDF em objetos PIL.Image para a IA e Word."""
+        """Converte páginas do PDF em objetos PIL.Image"""
         doc = fitz.open(pdf_path)
         pil_images = []
 
         for page in doc:
-            # Zoom configurável para garantir que a IA veja detalhes finos
             zoom = PDF_ZOOM_FACTOR
             pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             mode = "RGBA" if pix.alpha else "RGB"
@@ -176,24 +242,27 @@ class VetReportGenerator:
         doc.close()
         return pil_images
 
-    def create_report(self, pdf_path: str):
-        if not os.path.exists(pdf_path):
-            print(f"Arquivo não encontrado: {pdf_path}")
+    def create_report(self, path: str):
+        """Cria relatório a partir de arquivo ou diretório"""
+        if not os.path.exists(path):
+            print(f"Caminho não encontrado: {path}")
             return
 
-        # 1. Extração das Imagens
-        print(f"📂 Processando arquivo: {pdf_path}")
-        pil_images = self._pdf_to_pil_images(pdf_path)
+        # 1. Carregar imagens
+        print(f"📂 Processando: {path}")
+        pil_images = self._load_images_from_path(path)
 
         if not pil_images:
-            print("Nenhuma imagem encontrada no PDF.")
+            print("Nenhuma imagem encontrada.")
             return
 
-        # 2. Análise da IA (Gemini)
+        print(f"✅ {len(pil_images)} imagem(ns) carregada(s)")
+
+        # 2. Análise da IA
         ai_text_result = self.ai_analyzer.generate_diagnosis(pil_images)
 
-        # 3. Geração do Documento Word
-        self._build_docx(pdf_path, pil_images, ai_text_result)
+        # 3. Geração do documento
+        self._build_docx(path, pil_images, ai_text_result)
 
     def _build_docx(self, original_path, images, ai_text):
         doc = Document()
@@ -267,13 +336,21 @@ class VetReportGenerator:
 
 # --- Execução ---
 if __name__ == "__main__":
-    # Exemplo: Coloque um PDF de raio-x na mesma pasta ou ajuste o caminho
-    pdf_exame = "exame_raio_x.pdf"
+    import sys
 
+    if len(sys.argv) < 2:
+        print("Uso: python main.py <caminho_para_arquivo_ou_diretorio>")
+        print("\nExemplos:")
+        print("  python main.py exame.pdf")
+        print("  python main.py imagem.jpg")
+        print("  python main.py exame.dcm")
+        print("  python main.py pasta_com_imagens/")
+        sys.exit(1)
+
+    path = sys.argv[1]
     generator = VetReportGenerator()
 
-    # Checagem de segurança para não quebrar se não tiver API key
     if "SUA_API_KEY_AQUI" in API_KEY:
-        print("⚠️ AVISO: Você precisa configurar a GOOGLE_API_KEY no código ou nas variáveis de ambiente.")
+        print("⚠️ AVISO: Configure a GOOGLE_API_KEY")
     else:
-        generator.create_report(pdf_exame)
+        generator.create_report(path)
