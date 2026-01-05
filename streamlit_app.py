@@ -431,17 +431,27 @@ def load_dicom_image(dicom_file) -> Image.Image:
     try:
         import pydicom
         from pydicom.pixel_data_handlers.util import apply_voi_lut
+        import numpy as np
 
         # Ler arquivo DICOM
         dicom = pydicom.dcmread(dicom_file)
 
         # Extrair dados de pixel
-        data = apply_voi_lut(dicom.pixel_array, dicom)
+        try:
+            # Tentar aplicar VOI LUT se disponível
+            data = apply_voi_lut(dicom.pixel_array, dicom)
+        except (ValueError, AttributeError, KeyError):
+            # Se falhar, usar pixel_array diretamente
+            data = dicom.pixel_array.astype(float)
 
         # Normalizar para 0-255
-        data = data - data.min()
-        data = data / data.max()
-        data = (data * 255).astype('uint8')
+        if data.max() > data.min():
+            data = data - data.min()
+            data = data / data.max()
+            data = (data * 255).astype('uint8')
+        else:
+            # Se todos os pixels forem iguais, converter diretamente
+            data = data.astype('uint8')
 
         # Converter para PIL
         img = Image.fromarray(data)
@@ -453,7 +463,20 @@ def load_dicom_image(dicom_file) -> Image.Image:
         return img
     except Exception as e:
         st.error(f"Erro ao processar DICOM: {e}")
-        return None
+        # Tentar método alternativo básico
+        try:
+            import pydicom
+            dicom = pydicom.dcmread(dicom_file)
+            data = dicom.pixel_array
+
+            # Normalização simples
+            data = ((data - data.min()) / (data.max() - data.min()) * 255).astype('uint8')
+            img = Image.fromarray(data).convert('RGB')
+            st.warning("⚠️ DICOM processado com método alternativo (pode ter menos qualidade)")
+            return img
+        except:
+            st.error("Não foi possível processar este arquivo DICOM")
+            return None
 
 
 def load_image_file(file) -> Image.Image:
