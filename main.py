@@ -6,10 +6,42 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PIL import Image
 import io
 import os
+import sys
 from dotenv import load_dotenv
 
 # --- Carregar variáveis de ambiente do arquivo .env ---
 load_dotenv()
+if os.name == "nt":
+    # Forçar stdout/stderr a usar UTF-8 em consoles Windows
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+def _safe_print(*args, **kwargs):
+    """
+    Print that won't crash on Windows consoles using legacy encodings (e.g., cp1252).
+    Falls back to replacing non-encodable characters.
+    """
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        sep = kwargs.get("sep", " ")
+        end = kwargs.get("end", "\n")
+        text = sep.join(str(a) for a in args) + end
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        try:
+            sys.stdout.write(text.encode(encoding, errors="replace").decode(
+                encoding, errors="replace"))
+        except Exception:
+            # Last resort: drop problematic characters
+            sys.stdout.write(text.encode(
+                "utf-8", errors="replace").decode("utf-8", errors="replace"))
+
 
 # --- Configuração da IA ---
 # A chave pode ser definida no arquivo .env ou como variável de
@@ -75,10 +107,7 @@ class VetAIAnalyzer:
         Be professional and acknowledge limitations when present.
         """
 
-        print(
-            "🤖 Enviando imagens para análise da IA "
-            "(isso pode levar alguns segundos)..."
-        )
+        _safe_print("Enviando imagens para análise da IA (isso pode levar alguns segundos)...")
         try:
             content = [prompt] + images
             response = self.model.generate_content(content)
@@ -249,14 +278,14 @@ class VetReportGenerator:
             return
 
         # 1. Carregar imagens
-        print(f"📂 Processando: {path}")
+        _safe_print(f"Processando: {path}")
         pil_images = self._load_images_from_path(path)
 
         if not pil_images:
-            print("Nenhuma imagem encontrada.")
+            _safe_print("Nenhuma imagem encontrada.")
             return
 
-        print(f"✅ {len(pil_images)} imagem(ns) carregada(s)")
+        _safe_print(f"{len(pil_images)} imagem(ns) carregada(s)")
 
         # 2. Análise da IA
         ai_text_result = self.ai_analyzer.generate_diagnosis(pil_images)
@@ -317,7 +346,7 @@ class VetReportGenerator:
             self.output_dir, f"Laudo_AI_{base_name}.docx"
         )
         doc.save(filename)
-        print(f"✅ Laudo gerado com sucesso: {filename}")
+        _safe_print(f"Laudo gerado com sucesso: {filename}")
 
     def _setup_styles(self, doc):
         style = doc.styles['Normal']
@@ -336,21 +365,19 @@ class VetReportGenerator:
 
 # --- Execução ---
 if __name__ == "__main__":
-    import sys
-
     if len(sys.argv) < 2:
-        print("Uso: python main.py <caminho_para_arquivo_ou_diretorio>")
-        print("\nExemplos:")
-        print("  python main.py exame.pdf")
-        print("  python main.py imagem.jpg")
-        print("  python main.py exame.dcm")
-        print("  python main.py pasta_com_imagens/")
+        _safe_print("Uso: python main.py <caminho_para_arquivo_ou_diretorio>")
+        _safe_print("\nExemplos:")
+        _safe_print("  python main.py exame.pdf")
+        _safe_print("  python main.py imagem.jpg")
+        _safe_print("  python main.py exame.dcm")
+        _safe_print("  python main.py pasta_com_imagens/")
         sys.exit(1)
 
     path = sys.argv[1]
     generator = VetReportGenerator()
 
     if "SUA_API_KEY_AQUI" in API_KEY:
-        print("⚠️ AVISO: Configure a GOOGLE_API_KEY")
+        _safe_print("AVISO: Configure a GOOGLE_API_KEY")
     else:
         generator.create_report(path)

@@ -5,10 +5,11 @@
 python := "python"
 pip := "pip"
 venv_dir := "venv"
-python_venv := "{{venv_dir}}/bin/python"  # Linux/Mac
-python_venv_win := "{{venv_dir}}/Scripts/python.exe"  # Windows
-pip_venv := "{{venv_dir}}/bin/pip"  # Linux/Mac
-pip_venv_win := "{{venv_dir}}/Scripts/pip.exe"  # Windows
+# NOTE: use Just path-join so values expand correctly (Just does not re-interpolate {{ }} inside variables)
+python_venv := venv_dir / "bin/python"  # Linux/Mac
+python_venv_win := venv_dir / "Scripts/python.exe"  # Windows
+pip_venv := venv_dir / "bin/pip"  # Linux/Mac
+pip_venv_win := venv_dir / "Scripts/pip.exe"  # Windows
 
 # Detecta o sistema operacional
 os := if os() == "windows" { "windows" } else { "unix" }
@@ -457,7 +458,31 @@ streamlit:
     #!/usr/bin/env bash
     echo "🚀 Iniciando aplicação Streamlit..."
     echo "A aplicação estará disponível em: http://localhost:8501"
-    streamlit run streamlit_app.py
+    if [ -d "{{venv_dir}}" ]; then
+        # Verificar se streamlit está instalado
+        if [ "{{os}}" = "windows" ]; then
+            if ! "{{python_venv_win}}" -m streamlit --version &> /dev/null; then
+                echo "❌ Streamlit não está instalado no ambiente virtual."
+                echo "📦 Instalando dependências..."
+                "{{python_venv_win}}" -m pip install --upgrade pip
+                "{{python_venv_win}}" -m pip install -r requirements.txt
+                echo "✅ Dependências instaladas!"
+            fi
+            "{{python_venv_win}}" -m streamlit run streamlit_app.py
+        else
+            if ! "{{python_venv}}" -m streamlit --version &> /dev/null; then
+                echo "❌ Streamlit não está instalado no ambiente virtual."
+                echo "📦 Instalando dependências..."
+                "{{python_venv}}" -m pip install --upgrade pip
+                "{{python_venv}}" -m pip install -r requirements.txt
+                echo "✅ Dependências instaladas!"
+            fi
+            "{{python_venv}}" -m streamlit run streamlit_app.py
+        fi
+    else
+        echo "⚠️  Ambiente virtual não encontrado. Usando Python do sistema..."
+        {{python}} -m streamlit run streamlit_app.py
+    fi
 
 # Executa a aplicação Streamlit usando o ambiente virtual
 streamlit-venv:
@@ -475,12 +500,58 @@ streamlit-dev:
     #!/usr/bin/env bash
     echo "🚀 Iniciando aplicação Streamlit em modo desenvolvimento..."
     echo "A aplicação estará disponível em: http://localhost:8501"
-    streamlit run streamlit_app.py --server.runOnSave true
+    if [ -d "{{venv_dir}}" ]; then
+        if [ "{{os}}" = "windows" ]; then
+            if ! "{{python_venv_win}}" -m streamlit --version &> /dev/null; then
+                echo "❌ Streamlit não está instalado no ambiente virtual."
+                echo "📦 Instalando dependências..."
+                "{{python_venv_win}}" -m pip install --upgrade pip
+                "{{python_venv_win}}" -m pip install -r requirements.txt
+                echo "✅ Dependências instaladas!"
+            fi
+            "{{python_venv_win}}" -m streamlit run streamlit_app.py --server.runOnSave true
+        else
+            if ! "{{python_venv}}" -m streamlit --version &> /dev/null; then
+                echo "❌ Streamlit não está instalado no ambiente virtual."
+                echo "📦 Instalando dependências..."
+                "{{python_venv}}" -m pip install --upgrade pip
+                "{{python_venv}}" -m pip install -r requirements.txt
+                echo "✅ Dependências instaladas!"
+            fi
+            "{{python_venv}}" -m streamlit run streamlit_app.py --server.runOnSave true
+        fi
+    else
+        echo "⚠️  Ambiente virtual não encontrado. Usando Python do sistema..."
+        {{python}} -m streamlit run streamlit_app.py --server.runOnSave true
+    fi
 
 # Executa a aplicação Streamlit em uma porta específica
 streamlit-port port="8501":
     #!/usr/bin/env bash
     echo "🚀 Iniciando aplicação Streamlit na porta {{port}}..."
     echo "A aplicação estará disponível em: http://localhost:{{port}}"
-    streamlit run streamlit_app.py --server.port {{port}}
+    if [ -d "{{venv_dir}}" ]; then
+        if [ "{{os}}" = "windows" ]; then
+            if ! "{{python_venv_win}}" -m streamlit --version &> /dev/null; then
+                echo "❌ Streamlit não está instalado no ambiente virtual."
+                echo "📦 Instalando dependências..."
+                "{{python_venv_win}}" -m pip install --upgrade pip
+                "{{python_venv_win}}" -m pip install -r requirements.txt
+                echo "✅ Dependências instaladas!"
+            fi
+            "{{python_venv_win}}" -m streamlit run streamlit_app.py --server.port {{port}}
+        else
+            if ! "{{python_venv}}" -m streamlit --version &> /dev/null; then
+                echo "❌ Streamlit não está instalado no ambiente virtual."
+                echo "📦 Instalando dependências..."
+                "{{python_venv}}" -m pip install --upgrade pip
+                "{{python_venv}}" -m pip install -r requirements.txt
+                echo "✅ Dependências instaladas!"
+            fi
+            "{{python_venv}}" -m streamlit run streamlit_app.py --server.port {{port}}
+        fi
+    else
+        echo "⚠️  Ambiente virtual não encontrado. Usando Python do sistema..."
+        {{python}} -m streamlit run streamlit_app.py --server.port {{port}}
+    fi
 
