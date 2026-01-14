@@ -555,3 +555,36 @@ streamlit-port port="8501":
         {{python}} -m streamlit run streamlit_app.py --server.port {{port}}
     fi
 
+streamlit-kill port="8501":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🛑 Encerrando Streamlit na porta {{port}}..."
+
+    if [ "{{os}}" = "windows" ]; then
+        # Pega PID(s) LISTENING na porta e força encerramento
+        pids=$(netstat -ano 2>/dev/null | findstr "LISTENING" | findstr ":{{port}}" | awk '{print $NF}' | tr -d '\r' | sort -u)
+        if [ -z "${pids:-}" ]; then
+            echo "ℹ️  Nenhum processo LISTENING encontrado na porta {{port}}."
+            exit 0
+        fi
+        echo "Encontrado(s) PID(s): $pids"
+        for pid in $pids; do
+            taskkill /PID "$pid" /F >/dev/null 2>&1 || true
+        done
+        echo "✅ Encerrado."
+    else
+        if command -v lsof >/dev/null 2>&1; then
+            pids=$(lsof -ti ":{{port}}" 2>/dev/null | sort -u | tr '\n' ' ')
+            if [ -z "${pids:-}" ]; then
+                echo "ℹ️  Nenhum processo usando a porta {{port}}."
+                exit 0
+            fi
+            echo "Encontrado(s) PID(s): $pids"
+            kill -9 $pids 2>/dev/null || true
+            echo "✅ Encerrado."
+        else
+            echo "❌ 'lsof' não encontrado. Instale lsof ou encerre manualmente o processo."
+            exit 1
+        fi
+    fi
+

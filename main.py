@@ -53,7 +53,7 @@ genai.configure(api_key=API_KEY)
 # usando 1.5 Pro como base atual)
 # Pode ser configurado via variável de ambiente GEMINI_MODEL_NAME
 MODEL_NAME = os.getenv(
-    "GEMINI_MODEL_NAME", "gemini-2.5-pro"
+    "GEMINI_MODEL_NAME", "gemini-2.5-flash"
 )
 
 # Configuração do diretório de saída (padrão: laudos_com_ia)
