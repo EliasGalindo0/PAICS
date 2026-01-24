@@ -1,0 +1,17 @@
+Collecting pymongo
+  Using cached pymongo-4.16.0-cp313-cp313-win_amd64.whl.metadata (10.0 kB)
+Collecting dnspython<3.0.0,>=2.6.1 (from pymongo)
+  Using cached dnspython-2.8.0-py3-none-any.whl.metadata (5.7 kB)
+Using cached pymongo-4.16.0-cp313-cp313-win_amd64.whl (959 kB)
+Using cached dnspython-2.8.0-py3-none-any.whl (331 kB)
+Installing collected packages: dnspython, pymongo
+  Attempting uninstall: dnspython
+    Found existing installation: dnspython 2.8.0
+    Uninstalling dnspython-2.8.0:
+      Successfully uninstalled dnspython-2.8.0
+  Attempting uninstall: pymongo
+    Found existing installation: pymongo 4.16.0
+    Uninstalling pymongo-4.16.0:
+      Successfully uninstalled pymongo-4.16.0
+
+Successfully installed dnspython-2.8.0 pymongo-4.16.0

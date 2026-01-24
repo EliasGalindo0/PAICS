@@ -1,24 +1,11 @@
 """
 PAICS - Aplicação Streamlit para Análise de Imagens Veterinárias com IA
-Interface web para upload de PDFs, geração de laudos e edição.
+Sistema completo com autenticação, dashboards e banco de dados vetorial.
 """
 
 import streamlit as st
-import fitz  # PyMuPDF
-import google.generativeai as genai
-from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from PIL import Image
-import io
 import os
-import tempfile
 from dotenv import load_dotenv
-from main import VetAIAnalyzer, VetReportGenerator
-from fpdf import FPDF
-from fpdf.enums import Align
-import pytesseract
-import re
 
 # --- Carregar variáveis de ambiente do arquivo .env ---
 load_dotenv()
@@ -30,6 +17,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Redirecionar para login se não estiver autenticado
+if not st.session_state.get('authenticated'):
+    st.switch_page("pages/login.py")
+else:
+    # Redirecionar para dashboard apropriado
+    if st.session_state.get('role') == 'admin':
+        st.switch_page("pages/admin_dashboard.py")
+    else:
+        st.switch_page("pages/user_dashboard.py")
 
 # Verificar e configurar API Key
 # A chave pode ser definida no arquivo .env ou como variável de

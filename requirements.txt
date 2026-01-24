@@ -10,3 +10,5 @@ pytesseract>=0.3.10
 pdf2image>=1.16.3
 pyinstaller>=5.13.0
 pydicom>=2.6.1
+pymongo>=4.6.0
+chromadb>=0.4.22
