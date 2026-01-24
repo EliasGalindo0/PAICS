@@ -76,13 +76,30 @@ just check-mongodb
 mongosh
 ```
 
-### 4. Criar Usuário Administrador
+### 4. Criar Administrador Dummy Inicial
+
+O sistema cria automaticamente um administrador dummy para primeiro acesso:
 
 ```bash
-python scripts/create_admin.py
+# Criar administrador dummy (executado automaticamente pelo 'just start')
+just seed-admin
 ```
 
-Siga as instruções para criar o primeiro administrador.
+**Credenciais do administrador dummy:**
+- **Username:** `admin`
+- **Senha:** `admin`
+
+**⚠️ IMPORTANTE:**
+1. Faça login com essas credenciais
+2. Acesse a página "Usuários" no dashboard
+3. Crie seu próprio usuário administrador
+4. Exclua o usuário dummy após criar seu admin
+
+**Alternativa (método manual):**
+```bash
+# Criar administrador manualmente (não recomendado)
+just create-admin
+```
 
 ### 5. Iniciar o Sistema
 
@@ -101,9 +118,10 @@ O sistema abrirá automaticamente no navegador em `http://localhost:8501`
 
 1. ✅ MongoDB rodando? → `just check-mongodb` ou `mongosh` deve conectar
 2. ✅ `.env` configurado? → Verifique se `GOOGLE_API_KEY` está preenchida
-3. ✅ Admin criado? → Execute `just create-admin` ou `python scripts/create_admin.py`
+3. ✅ Admin dummy criado? → Execute `just seed-admin` (ou use `just start` que faz automaticamente)
 4. ✅ Sistema iniciado? → Execute `just start` ou `streamlit run streamlit_app.py`
 5. ✅ Acesse → `http://localhost:8501`
+6. ✅ Login inicial → Username: `admin`, Senha: `admin`
 
 ## 🐛 Problemas Comuns
 
@@ -117,9 +135,34 @@ O sistema abrirá automaticamente no navegador em `http://localhost:8501`
 - Verifique se o arquivo `.env` existe
 - Verifique se `GOOGLE_API_KEY` está preenchida
 
-### Erro ao criar admin
+### Erro ao criar admin dummy
 - Certifique-se de que o MongoDB está acessível
+- Execute: `just seed-admin`
 - Verifique se o banco foi inicializado
+
+### Não consigo excluir o usuário dummy
+- Certifique-se de ter criado seu próprio usuário administrador primeiro
+- Você não pode excluir seu próprio usuário (faça logout e entre com outro admin)
+
+### Erro: `cannot import name 'cygrpc' from 'grpc._cython'`
+- Ocorre ao usar `google-generativeai` (Gemini) por instalação corrompida ou incompatível do grpc.
+- **Solução:** Execute `just fix-grpc` no terminal (com o venv ativado).
+- Ou manualmente:
+  ```bash
+  pip uninstall -y grpcio grpcio-tools google-generativeai
+  pip cache purge
+  pip install --upgrade --force-reinstall --no-cache-dir "google-generativeai>=0.3.0"
+  ```
+
+### Erro: `No module named 'numpy._core._multiarray_umath'` (ao processar DICOM)
+- NumPy com Python 3.13 no Windows às vezes falha nas extensões C.
+- **Solução 1:** Execute `just fix-numpy` (reinstala o NumPy).
+- **Solução 2:** Se persistir, use **Python 3.11 ou 3.12** no ambiente virtual (3.13 ainda gera incompatibilidades com vários pacotes científicos).
+
+### Erro: `No module named 'rpds.rpds'` (ao validar laudo / chromadb)
+- ChromaDB (banco vetorial) depende de `rpds`; o pacote correto é `rpds-py`.
+- **Solução:** Execute `just fix-rpds`. Ou manualmente: `pip install rpds-py` e `pip install --upgrade chromadb`.
+- O laudo continua sendo **validado** mesmo se o banco vetorial falhar; apenas o “aprendizado” é afetado.
 
 ## 📚 Próximos Passos
 

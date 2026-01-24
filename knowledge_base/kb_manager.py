@@ -2,7 +2,7 @@
 Gerenciador de Knowledge Base
 """
 import os
-import fitz  # PyMuPDF
+# fitz (PyMuPDF) será importado lazy quando necessário (evita problemas de importação circular)
 from typing import List, Dict, Optional
 from database.connection import get_db
 from database.models import KnowledgeBase
@@ -25,6 +25,9 @@ class KnowledgeBaseManager:
         Extrai texto do PDF e armazena no banco vetorial
         """
         try:
+            # Importação lazy para evitar problemas de importação circular
+            import fitz  # PyMuPDF
+            
             # Extrair texto do PDF
             doc = fitz.open(file_path)
             texto_completo = ""

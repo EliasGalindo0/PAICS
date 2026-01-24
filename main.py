@@ -1,18 +1,18 @@
-import fitz  # PyMuPDF
-import google.generativeai as genai
-from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from PIL import Image
 import io
 import os
 import sys
-from dotenv import load_dotenv
 
-# --- Carregar variáveis de ambiente do arquivo .env ---
+import fitz  # PyMuPDF
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
+from dotenv import load_dotenv
+from PIL import Image
+
+from ai.analyzer import VetAIAnalyzer, load_dicom_image
+
 load_dotenv()
 if os.name == "nt":
-    # Forçar stdout/stderr a usar UTF-8 em consoles Windows
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
         if stream and hasattr(stream, "reconfigure"):
@@ -23,181 +23,25 @@ if os.name == "nt":
 
 
 def _safe_print(*args, **kwargs):
-    """
-    Print that won't crash on Windows consoles using legacy encodings (e.g., cp1252).
-    Falls back to replacing non-encodable characters.
-    """
+    """Print que não quebra em consoles Windows com encoding legado."""
     try:
         print(*args, **kwargs)
     except UnicodeEncodeError:
         sep = kwargs.get("sep", " ")
         end = kwargs.get("end", "\n")
         text = sep.join(str(a) for a in args) + end
-        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
         try:
-            sys.stdout.write(text.encode(encoding, errors="replace").decode(
-                encoding, errors="replace"))
+            sys.stdout.write(text.encode(enc, errors="replace").decode(enc, errors="replace"))
         except Exception:
-            # Last resort: drop problematic characters
-            sys.stdout.write(text.encode(
-                "utf-8", errors="replace").decode("utf-8", errors="replace"))
-
-
-# --- Configuração da IA ---
-# A chave pode ser definida no arquivo .env ou como variável de
-# ambiente do sistema
-API_KEY = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
-genai.configure(api_key=API_KEY)
-
-# Configuração do Modelo (ajuste para 'gemini-2.5-pro' se disponível,
-# usando 1.5 Pro como base atual)
-# Pode ser configurado via variável de ambiente GEMINI_MODEL_NAME
-MODEL_NAME = os.getenv(
-    "GEMINI_MODEL_NAME", "gemini-2.5-flash"
-)
-
-# Configuração do diretório de saída (padrão: laudos_com_ia)
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "laudos_com_ia")
-
-# Configuração de processamento de PDF (zoom para melhor qualidade)
-PDF_ZOOM_FACTOR = float(os.getenv("PDF_ZOOM_FACTOR", "2.0"))
-
-# Configuração do tamanho da imagem no documento Word (em polegadas)
-IMAGE_WIDTH_INCHES = float(os.getenv("IMAGE_WIDTH_INCHES", "5.5"))
-
-
-class VetAIAnalyzer:
-    """
-    Classe responsável pela comunicação com a LLM (Gemini).
-    """
-
-    def __init__(self):
-        self.model = genai.GenerativeModel(MODEL_NAME)
-
-    def generate_diagnosis(self, images: list) -> str:
-        """
-        Envia imagens para o Gemini e retorna o laudo técnico.
-        """
-        prompt = """
-        Analyze these veterinary radiographic/ultrasound images and write a technical report in Portuguese (Brazil).
-
-        IMPORTANT CONSIDERATIONS:
-        1. Consider the possibility of positional and motion artifacts
-        2. Consider the possibility of human errors in positioning and image labeling
-        3. If image quality is compromised, mention it in your findings
-        4. Do not invent findings that are not clearly visible
-
-        Start immediately with:
-        **Descrição dos Achados:**
-        [your detailed findings, mentioning any artifacts or positioning issues if present]
-
-        **Impressão Diagnóstica:**
-        [your diagnostic impression based on visible findings]
-
-        **Conclusão:**
-        [your conclusion]
-
-        **Recomendações:**
-        [your recommendations, including additional views if positioning was suboptimal]
-
-        **Referências:**
-        [if applicable]
-
-        CRITICAL: Your response MUST start with "**Descrição dos Achados:**" - nothing before it.
-        Be professional and acknowledge limitations when present.
-        """
-
-        _safe_print("Enviando imagens para análise da IA (isso pode levar alguns segundos)...")
-        try:
-            content = [prompt] + images
-            response = self.model.generate_content(content)
-            text = response.text.strip()
-
-            # Limpeza do texto (código anterior mantido)
-            import re
-
-            pattern = r'\*\*Descri[çc][ãa]o dos Achados:?\*\*'
-            match = re.search(pattern, text, re.IGNORECASE)
-
-            if match:
-                start_pos = match.start()
-                text = text[start_pos:]
-            else:
-                pattern_simple = r'\*\*Descri[çc][ãa]o'
-                match_simple = re.search(pattern_simple, text, re.IGNORECASE)
-                if match_simple:
-                    start_pos = match_simple.start()
-                    text = text[start_pos:]
-
-            lines = text.split('\n')
-            cleaned = []
-
-            for line in lines:
-                stripped = line.strip()
-
-                if not cleaned and not stripped:
-                    continue
-
-                if stripped in ['---', '***', '___']:
-                    continue
-
-                if stripped.startswith('#'):
-                    continue
-
-                if '|' in stripped:
-                    continue
-
-                lower = stripped.lower()
-                skip_patterns = [
-                    'identificação',
-                    'modalidade:',
-                    'médico veterinário',
-                    'data do exame:',
-                    'dmv',
-                    'especialista em'
-                ]
-                if any(p in lower for p in skip_patterns):
-                    continue
-
-                cleaned.append(line)
-
-            result = '\n'.join(cleaned)
-            result = re.sub(r'\n{3,}', '\n\n', result)
-            result = result.strip()
-
-            return result if result else text
-
-        except Exception as e:
-            error_msg = (
-                "[ERRO NA IA: Não foi possível gerar o laudo automático. "
-                f"Detalhe: {str(e)}]"
+            sys.stdout.write(
+                text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
             )
-            return error_msg
 
 
-def load_dicom_image(dicom_path: str) -> Image.Image:
-    """Converte arquivo DICOM em imagem PIL"""
-    try:
-        import pydicom
-        from pydicom.pixel_data_handlers.util import apply_voi_lut
-
-        dicom = pydicom.dcmread(dicom_path)
-        data = apply_voi_lut(dicom.pixel_array, dicom)
-
-        # Normalizar para 0-255
-        data = data - data.min()
-        data = data / data.max()
-        data = (data * 255).astype('uint8')
-
-        img = Image.fromarray(data)
-
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-
-        return img
-    except Exception as e:
-        print(f"Erro ao processar DICOM: {e}")
-        return None
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "laudos_com_ia")
+PDF_ZOOM_FACTOR = float(os.getenv("PDF_ZOOM_FACTOR", "2.0"))
+IMAGE_WIDTH_INCHES = float(os.getenv("IMAGE_WIDTH_INCHES", "5.5"))
 
 
 class VetReportGenerator:
@@ -376,8 +220,8 @@ if __name__ == "__main__":
 
     path = sys.argv[1]
     generator = VetReportGenerator()
-
-    if "SUA_API_KEY_AQUI" in API_KEY:
-        _safe_print("AVISO: Configure a GOOGLE_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
+    if not api_key or api_key == "SUA_API_KEY_AQUI":
+        _safe_print("AVISO: Configure a GOOGLE_API_KEY no .env ou variável de ambiente.")
     else:
         generator.create_report(path)

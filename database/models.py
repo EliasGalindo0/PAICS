@@ -32,7 +32,8 @@ class User(BaseModel):
     """Modelo de usuário"""
 
     def create(self, username: str, email: str, password_hash: str,
-               role: str = "user", nome: str = "", ativo: bool = True) -> str:
+               role: str = "user", nome: str = "", ativo: bool = True,
+               primeiro_acesso: bool = True, senha_temporaria: str = None) -> str:
         """Cria um novo usuário"""
         user_data = {
             "username": username,
@@ -41,6 +42,8 @@ class User(BaseModel):
             "role": role,  # "admin" ou "user"
             "nome": nome,
             "ativo": ativo,
+            "primeiro_acesso": primeiro_acesso,  # Flag para obrigar alteração de senha
+            "senha_temporaria": senha_temporaria,  # Senha temporária gerada pelo admin
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
@@ -77,6 +80,11 @@ class User(BaseModel):
         )
         return result.modified_count > 0
 
+    def delete(self, user_id: str) -> bool:
+        """Exclui um usuário"""
+        result = self.collection.delete_one({"_id": ObjectId(user_id)})
+        return result.deleted_count > 0
+
 
 class Requisicao(BaseModel):
     """Modelo de requisição de laudo"""
@@ -87,13 +95,13 @@ class Requisicao(BaseModel):
         """Cria uma nova requisição"""
         req_data = {
             "user_id": user_id,
-            "imagens": imagens,  # Lista de caminhos/URLs das imagens
+            "imagens": imagens,
             "paciente": paciente,
             "tutor": tutor,
             "clinica": clinica,
-            "tipo_exame": tipo_exame,  # "raio-x" ou "ultrassom"
+            "tipo_exame": tipo_exame,
             "observacoes": observacoes,
-            "status": "pendente",  # "pendente", "em_analise", "validado", "liberado", "rejeitado"
+            "status": "pendente",
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
@@ -113,9 +121,19 @@ class Requisicao(BaseModel):
         docs = self.collection.find(query).sort("created_at", -1)
         return [self.to_dict(doc) for doc in docs]
 
-    def find_all(self, status: Optional[str] = None) -> List[Dict]:
-        """Lista todas as requisições, opcionalmente filtradas por status"""
-        query = {} if status is None else {"status": status}
+    def find_all(self, status: Optional[str] = None, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[Dict]:
+        """Lista todas as requisições, opcionalmente filtradas por status e data"""
+        query = {}
+        if status:
+            query["status"] = status
+        
+        if start_date or end_date:
+            query["created_at"] = {}
+            if start_date:
+                query["created_at"]["$gte"] = start_date
+            if end_date:
+                query["created_at"]["$lte"] = end_date
+                
         docs = self.collection.find(query).sort("created_at", -1)
         return [self.to_dict(doc) for doc in docs]
 
@@ -179,9 +197,19 @@ class Laudo(BaseModel):
         docs = self.collection.find(query).sort("created_at", -1)
         return [self.to_dict(doc) for doc in docs]
 
-    def find_all(self, status: Optional[str] = None) -> List[Dict]:
-        """Lista todos os laudos, opcionalmente filtrados por status"""
-        query = {} if status is None else {"status": status}
+    def find_all(self, status: Optional[str] = None, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[Dict]:
+        """Lista todos os laudos, opcionalmente filtrados por status e data"""
+        query = {}
+        if status:
+            query["status"] = status
+        
+        if start_date or end_date:
+            query["created_at"] = {}
+            if start_date:
+                query["created_at"]["$gte"] = start_date
+            if end_date:
+                query["created_at"]["$lte"] = end_date
+
         docs = self.collection.find(query).sort("created_at", -1)
         return [self.to_dict(doc) for doc in docs]
 

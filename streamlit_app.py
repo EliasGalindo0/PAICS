@@ -114,9 +114,6 @@ def create_docx_from_edited(images, edited_text, metadata=None):
         table.rows[1].cells[0].text = f"Tutor: {metadata.get('tutor', '____________________')}"
         table.rows[1].cells[1].text = ""
 
-        # Linha 3: Clínica
-        table.rows[2].cells[0].text = f"Clínica: {metadata.get('clinica', '____________________')}"
-        table.rows[2].cells[1].text = ""
     else:
         # Fallback para formato antigo
         table = doc.add_table(rows=1, cols=2)
@@ -221,8 +218,6 @@ def create_pdf_from_edited(images, edited_text, metadata=None):
         pdf.cell(
             0, 6, f"Tutor: {clean_unicode_text(metadata.get('tutor', '____________________'))}", ln=1)
         pdf.cell(
-            0, 6, f"Clinica: {clean_unicode_text(metadata.get('clinica', '____________________'))}", ln=1)
-        pdf.cell(
             0, 6, f"Data: {clean_unicode_text(metadata.get('data', '____/____/______'))}", ln=1)
         pdf.ln(4)
 
@@ -306,11 +301,6 @@ def ocr_extract_metadata(images: list) -> dict:
         r'(?i)Propriet[áa]rio[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,60})',
         r'(?i)Respons[áa]vel[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,60})',
     ]
-    clinic_patterns = [
-        r'(?i)Cl[ií]nica[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,80})',
-        r'(?i)Hospital[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,80})',
-        r'(?i)Centro[:\s]*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\-\.\s,]{3,80})',
-    ]
 
     date_regex = re.compile(r'(\d{2}[\/\-]\d{2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})')
     month_names = r'(janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)'
@@ -319,7 +309,6 @@ def ocr_extract_metadata(images: list) -> dict:
     metadata = {
         'paciente': "",
         'tutor': "",
-        'clinica': "",
         'data': ""
     }
 
@@ -367,17 +356,6 @@ def ocr_extract_metadata(images: list) -> dict:
                         candidate = re.sub(r'[^A-Za-zÀ-ÖØ-öø-ÿ0-9\s\-,\.]', '', candidate)
                         if 3 <= len(candidate) <= 60:
                             metadata['tutor'] = candidate
-                            break
-
-            # Procurar por clínica
-            if not metadata['clinica']:
-                for pat in clinic_patterns:
-                    m = re.search(pat, text)
-                    if m:
-                        candidate = m.group(1).strip()
-                        candidate = re.sub(r'[^A-Za-zÀ-ÖØ-öø-ÿ0-9\s\-,\.]', '', candidate)
-                        if 3 <= len(candidate) <= 80:
-                            metadata['clinica'] = candidate
                             break
 
             # Se já encontrou todos, quebra
@@ -626,8 +604,6 @@ if uploaded_files:
                         if st.session_state.metadata.get('tutor'):
                             st.write(f"**Tutor:** {st.session_state.metadata['tutor']}")
                     with col2:
-                        if st.session_state.metadata.get('clinica'):
-                            st.write(f"**Clínica:** {st.session_state.metadata['clinica']}")
                         if st.session_state.metadata.get('data'):
                             st.write(f"**Data:** {st.session_state.metadata['data']}")
 

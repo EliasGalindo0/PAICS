@@ -93,6 +93,12 @@ def login_user(email: str, password: str) -> tuple[bool, str]:
 
         # Criar sessão
         create_session(user['id'], user['username'], user['role'])
+
+        # Verificar se é primeiro acesso (obrigar alteração de senha)
+        if user.get('primeiro_acesso', False):
+            st.session_state['primeiro_acesso'] = True
+            st.session_state['requer_alteracao_senha'] = True
+
         return True, "Login realizado com sucesso"
 
     except Exception as e:

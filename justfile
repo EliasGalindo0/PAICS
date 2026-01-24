@@ -743,6 +743,95 @@ docker-mongodb-logs:
 # --- Execução Completa do Projeto ---
 
 # Remove completamente o pacote bson conflitante
+# Corrige problemas com Pillow (PIL) - especialmente em Python 3.13
+fix-pillow:
+    #!/usr/bin/env bash
+    echo "🔧 Corrigindo instalação do Pillow (PIL)..."
+    
+    if [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        PYTHON_CMD="{{python_venv_win}}"
+        PIP_CMD="{{venv_dir}}/Scripts/pip.exe"
+    elif [ -f "{{venv_dir}}/bin/python" ]; then
+        PYTHON_CMD="{{python_venv}}"
+        PIP_CMD="{{venv_dir}}/bin/pip"
+    else
+        echo "❌ Ambiente virtual não encontrado"
+        exit 1
+    fi
+    
+    echo "   Desinstalando Pillow..."
+    $PIP_CMD uninstall -y Pillow pillow 2>/dev/null || true
+    
+    echo "   Limpando cache do pip..."
+    $PIP_CMD cache purge 2>/dev/null || true
+    
+    echo "   Reinstalando Pillow..."
+    $PIP_CMD install --upgrade --force-reinstall --no-cache-dir Pillow
+    
+    echo ""
+    echo "✅ Pillow reinstalado!"
+    echo ""
+    echo "   Teste a importação:"
+    echo "   $PYTHON_CMD -c 'from PIL import Image; print(\"✅ PIL funcionando!\")'"
+
+# Corrige NumPy incompatível com Python 3.13 no Windows
+# (No module named 'numpy._core._multiarray_umath' ao processar DICOM)
+fix-numpy:
+    #!/usr/bin/env bash
+    echo "🔧 Corrigindo NumPy (DICOM / pydicom)..."
+    
+    if [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        PYTHON_CMD="{{python_venv_win}}"
+        PIP_CMD="{{venv_dir}}/Scripts/pip.exe"
+    elif [ -f "{{venv_dir}}/bin/python" ]; then
+        PYTHON_CMD="{{python_venv}}"
+        PIP_CMD="{{venv_dir}}/bin/pip"
+    else
+        echo "❌ Ambiente virtual não encontrado"
+        exit 1
+    fi
+    
+    echo "   Desinstalando NumPy..."
+    $PIP_CMD uninstall -y numpy 2>/dev/null || true
+    
+    echo "   Limpando cache do pip..."
+    $PIP_CMD cache purge 2>/dev/null || true
+    
+    echo "   Reinstalando NumPy..."
+    $PIP_CMD install --upgrade --force-reinstall --no-cache-dir "numpy>=1.24.0"
+    
+    echo ""
+    echo "✅ NumPy reinstalado!"
+    echo ""
+    echo "   Teste: $PYTHON_CMD -c \"import numpy; print('numpy', numpy.__version__)\""
+    echo "   Se o erro persistir com Python 3.13 no Windows, use Python 3.11 ou 3.12."
+
+# Corrige ModuleNotFoundError: No module named 'rpds.rpds' (chromadb / jsonschema)
+fix-rpds:
+    #!/usr/bin/env bash
+    echo "🔧 Corrigindo rpds (chromadb / banco vetorial)..."
+    
+    if [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        PIP_CMD="{{venv_dir}}/Scripts/pip.exe"
+    elif [ -f "{{venv_dir}}/bin/python" ]; then
+        PIP_CMD="{{venv_dir}}/bin/pip"
+    else
+        echo "❌ Ambiente virtual não encontrado"
+        exit 1
+    fi
+    
+    echo "   Instalando rpds-py (pacote correto para rpds)..."
+    $PIP_CMD uninstall -y rpds rpds-py 2>/dev/null || true
+    $PIP_CMD install --upgrade --force-reinstall --no-cache-dir rpds-py
+    
+    echo "   Reinstalando chromadb..."
+    $PIP_CMD install --upgrade --force-reinstall --no-cache-dir "chromadb>=0.4.22"
+    
+    echo ""
+    echo "✅ rpds/chromadb reinstalado!"
+    echo "   Teste: python -c \"import chromadb; print('chromadb OK')\""
+    echo "   Se persistir, use Python 3.11 ou 3.12."
+
 fix-bson:
     #!/usr/bin/env bash
     echo "🔧 Removendo pacote bson conflitante..."
@@ -1065,10 +1154,70 @@ start-mongodb:
     echo "💡 Dica: Após iniciar, verifique com: just check-mongodb"
     exit 1
 
-# Cria um usuário administrador (requer MongoDB rodando)
+# Cria o administrador dummy inicial (seed)
+seed-admin:
+    #!/usr/bin/env bash
+    echo "🌱 Criando administrador dummy inicial..."
+    PROJECT_ROOT=$(pwd)
+    
+    if [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        PYTHON_CMD="{{python_venv_win}}"
+    elif [ -f "{{venv_dir}}/bin/python" ]; then
+        PYTHON_CMD="{{python_venv}}"
+    else
+        PYTHON_CMD=""
+        if command -v py &> /dev/null && py --version &> /dev/null; then
+            PYTHON_CMD="py"
+        elif command -v python3 &> /dev/null; then
+            PYTHON_CMD="python3"
+        elif command -v {{python}} &> /dev/null && {{python}} --version &> /dev/null 2>&1; then
+            PYTHON_CMD="{{python}}"
+        fi
+    fi
+    
+    if [ -z "$PYTHON_CMD" ]; then
+        echo "❌ Python não encontrado"
+        exit 1
+    fi
+    
+    # Verificar se MongoDB está acessível
+    if ! PYTHONPATH="$PROJECT_ROOT" $PYTHON_CMD -c "from pymongo import MongoClient; import os; from dotenv import load_dotenv; load_dotenv(); client = MongoClient(os.getenv('MONGO_URI', 'mongodb://localhost:27017/'), serverSelectionTimeoutMS=3000); client.server_info(); print('OK')" 2>/dev/null; then
+        echo "❌ MongoDB não está acessível"
+        echo ""
+        echo "Para iniciar o MongoDB:"
+        echo "  - Windows: just start-mongodb"
+        echo "  - Linux: sudo systemctl start mongod"
+        echo "  - Mac: brew services start mongodb-community"
+        echo ""
+        echo "Ou use Docker: just docker-mongodb-start"
+        exit 1
+    fi
+    
+    # Inicializar banco se necessário
+    echo "   Inicializando banco de dados..."
+    PYTHONPATH="$PROJECT_ROOT" $PYTHON_CMD -c "from database.connection import init_db; init_db(); print('✅ Banco inicializado')" 2>/dev/null || true
+    
+    # Criar admin dummy
+    echo ""
+    PYTHONPATH="$PROJECT_ROOT" $PYTHON_CMD scripts/seed_admin.py
+
+# Cria um usuário administrador manualmente (requer MongoDB rodando)
+# Nota: O método recomendado é usar o seed-admin e criar o admin pela interface
 create-admin:
     #!/usr/bin/env bash
-    echo "👤 Criando usuário administrador..."
+    echo "👤 Criando usuário administrador (método manual)..."
+    echo ""
+    echo "💡 Dica: O método recomendado é:"
+    echo "   1. Execute: just seed-admin"
+    echo "   2. Faça login com admin/admin"
+    echo "   3. Crie seu admin na página 'Usuários'"
+    echo ""
+    read -p "Deseja continuar com o método manual? (s/N): " confirm
+    if [ "$confirm" != "s" ] && [ "$confirm" != "S" ]; then
+        echo "Operação cancelada. Execute 'just seed-admin' para usar o método recomendado."
+        exit 0
+    fi
+    echo ""
     PROJECT_ROOT=$(pwd)
     
     if [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
@@ -1238,8 +1387,8 @@ start:
     fi
     echo ""
     
-    # 5. Inicializar banco de dados e criar admin
-    echo "👤 Passo 5/6: Inicializando banco de dados e criando administrador..."
+    # 5. Inicializar banco de dados e criar admin dummy
+    echo "👤 Passo 5/6: Inicializando banco de dados e criando administrador dummy..."
     if [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
         PYTHON_CMD="{{python_venv_win}}"
     elif [ -f "{{venv_dir}}/bin/python" ]; then
@@ -1270,19 +1419,28 @@ start:
                 echo "   ⚠️  Erro ao inicializar banco (pode já estar inicializado)"
             fi
             
-            # Criar administrador
+            # Criar administrador dummy (seed)
             echo ""
-            echo "   Criando usuário administrador..."
-            echo "   (Siga as instruções na tela)"
-            echo ""
-            if PYTHONPATH="$PROJECT_ROOT" $PYTHON_CMD scripts/create_admin.py; then
-                echo "   ✅ Administrador criado com sucesso"
+            echo "   Criando administrador dummy inicial..."
+            if PYTHONPATH="$PROJECT_ROOT" $PYTHON_CMD scripts/seed_admin.py; then
+                echo ""
+                echo "   ✅ Administrador dummy criado!"
+                echo ""
+                echo "   📋 Credenciais de acesso inicial:"
+                echo "      Username: admin"
+                echo "      Senha: admin"
+                echo ""
+                echo "   ⚠️  IMPORTANTE:"
+                echo "      1. Faça login com essas credenciais"
+                echo "      2. Crie seu próprio usuário administrador na página 'Usuários'"
+                echo "      3. Exclua o usuário dummy após criar seu admin"
             else
-                echo "   ⚠️  Erro ao criar administrador (você pode criar depois através do sistema)"
+                echo "   ⚠️  Erro ao criar administrador dummy"
+                echo "   Você pode criar um admin manualmente: just create-admin"
             fi
         else
             echo "   ⚠️  MongoDB não está acessível"
-            echo "   ⚠️  Pulando inicialização do banco e criação de administrador"
+            echo "   ⚠️  Pulando inicialização do banco e criação de administrador dummy"
             echo ""
             echo "   ℹ️  Para iniciar o MongoDB:"
             if [ "{{os}}" = "windows" ]; then
@@ -1292,8 +1450,8 @@ start:
                 echo "      brew services start mongodb-community  # Mac"
             fi
             echo ""
-            echo "   ℹ️  Depois, para criar o administrador:"
-            echo "      just create-admin"
+            echo "   ℹ️  Depois, para criar o administrador dummy:"
+            echo "      just seed-admin"
             echo ""
             echo "   ℹ️  Para verificar o status do MongoDB:"
             echo "      just check-mongodb"
