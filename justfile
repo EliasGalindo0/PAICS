@@ -1486,3 +1486,80 @@ start:
         {{python}} -m streamlit run streamlit_app.py
     fi
 
+# Limpa o banco de dados e cria admin e usuário dummy
+reset-db:
+    #!/usr/bin/env bash
+    echo "🗑️  Resetando banco de dados e criando usuários dummy..."
+    echo ""
+    echo "⚠️  ATENÇÃO: Esta operação irá APAGAR TODOS os dados do banco!"
+    echo "   - Todas as requisições"
+    echo "   - Todos os laudos"
+    echo "   - Todos os usuários"
+    echo "   - Todas as faturas"
+    echo "   - Todo o conhecimento base"
+    echo ""
+    read -p "Tem certeza que deseja continuar? (s/N): " confirm
+    if [ "$confirm" != "s" ] && [ "$confirm" != "S" ]; then
+        echo "Operação cancelada."
+        exit 0
+    fi
+    echo ""
+    
+    PROJECT_ROOT=$(pwd)
+    
+    # Detectar comando Python
+    if [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        PYTHON_CMD="{{python_venv_win}}"
+    elif [ -f "{{venv_dir}}/bin/python" ]; then
+        PYTHON_CMD="{{python_venv}}"
+    else
+        PYTHON_CMD=""
+        if command -v py &> /dev/null && py --version &> /dev/null; then
+            PYTHON_CMD="py"
+        elif command -v python3 &> /dev/null; then
+            PYTHON_CMD="python3"
+        elif command -v {{python}} &> /dev/null && {{python}} --version &> /dev/null 2>&1; then
+            PYTHON_CMD="{{python}}"
+        fi
+    fi
+    
+    if [ -z "$PYTHON_CMD" ]; then
+        echo "❌ Python não encontrado"
+        exit 1
+    fi
+    
+    # Verificar se MongoDB está acessível
+    echo "🔍 Verificando conexão com MongoDB..."
+    if ! PYTHONPATH="$PROJECT_ROOT" $PYTHON_CMD -c "from pymongo import MongoClient; import os; from dotenv import load_dotenv; load_dotenv(); client = MongoClient(os.getenv('MONGO_URI', 'mongodb://localhost:27017/'), serverSelectionTimeoutMS=3000); client.server_info(); print('OK')" 2>/dev/null; then
+        echo "❌ MongoDB não está acessível"
+        echo ""
+        echo "Para iniciar o MongoDB:"
+        echo "  - Docker: just docker-mongodb-start"
+        echo "  - Windows: just start-mongodb"
+        echo "  - Linux: sudo systemctl start mongod"
+        echo "  - Mac: brew services start mongodb-community"
+        echo ""
+        echo "Ou verifique o status: just check-mongodb"
+        exit 1
+    fi
+    
+    echo "✅ MongoDB está acessível"
+    echo ""
+    
+    # Executar script de reset
+    echo "🔄 Executando reset do banco de dados..."
+    PYTHONPATH="$PROJECT_ROOT" $PYTHON_CMD scripts/reset_db.py
+    
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "✅ Banco de dados resetado com sucesso!"
+        echo ""
+        echo "📋 Credenciais criadas:"
+        echo "   👨‍⚕️ Admin: admin / admin"
+        echo "   👤 User: user / user"
+    else
+        echo ""
+        echo "❌ Erro ao resetar banco de dados"
+        exit 1
+    fi
+

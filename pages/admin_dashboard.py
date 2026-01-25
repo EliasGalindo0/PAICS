@@ -8,6 +8,7 @@ from database.connection import get_db
 from database.models import Requisicao, Laudo, User, Fatura
 import os
 import io
+import zipfile
 import base64
 # PIL.Image será importado lazy quando necessário (evita problemas com Python 3.13)
 
@@ -114,10 +115,6 @@ with st.sidebar:
         ["Requisições", "Laudos", "Usuários", "Financeiro", "Knowledge Base"],
         key="admin_nav"
     )
-    
-    # Se há uma requisição sendo editada e estamos em outra página, mostrar aviso
-    if st.session_state.get('editing_requisicao') and page != "Laudos":
-        st.info("💡 **Você tem uma requisição sendo editada.** Acesse a página 'Laudos' no menu acima para continuar a edição.")
 
 # Página principal baseada na seleção
 if page == "Requisições":
@@ -128,10 +125,10 @@ if page == "Requisições":
     with col_f1:
         # Filtro de data - Padrão hoje
         filter_date = st.date_input("📅 Data", value=datetime.now().date())
-        
+
         # Opção para mostrar todas as datas
         show_all_dates = st.checkbox("Mostrar todas as datas", value=False)
-        
+
         if show_all_dates:
             start_dt = None
             end_dt = None
@@ -150,11 +147,28 @@ if page == "Requisições":
             ["Todos", "raio-x", "ultrassom"]
         )
     with col_f4:
-        search_term = st.text_input("🔍 Buscar (paciente/tutor)")
+        search_term = st.text_input(
+            "🔍 Buscar (qualquer campo)",
+            placeholder="Paciente, tutor, clínica, espécie, histórico..."
+        )
+
+    # Ordenação e visualização
+    col_ord1, col_ord2, col_ord3 = st.columns(3)
+    with col_ord1:
+        sort_by = st.selectbox(
+            "Ordenar por",
+            ["Data (mais recente)", "Data (mais antigo)", "Status", "Clínica", "Paciente"],
+            key="req_sort_by"
+        )
+    with col_ord2:
+        view_mode = st.radio("Visualização", ["Rápida", "Detalhada"],
+                             horizontal=True, key="req_view_mode")
+    with col_ord3:
+        st.write("")
 
     # Buscar todas as requisições do período para as estatísticas
     requisicoes_periodo = requisicao_model.find_all(start_date=start_dt, end_date=end_dt)
-    
+
     # Estatísticas rápidas baseadas no período filtrado
     pendentes_req = [r for r in requisicoes_periodo if r.get('status') == 'pendente']
     em_analise = [r for r in requisicoes_periodo if r.get('status') == 'em_analise']
@@ -164,7 +178,8 @@ if page == "Requisições":
     with col_stat1:
         st.metric("📋 Total no Período", len(requisicoes_periodo))
     with col_stat2:
-        st.metric("⏳ Pendentes", len(pendentes_req), delta=len(pendentes_req) if not show_all_dates else None, delta_color="off")
+        st.metric("⏳ Pendentes", len(pendentes_req), delta=len(pendentes_req)
+                  if not show_all_dates else None, delta_color="off")
     with col_stat3:
         st.metric("🔍 Em Análise", len(em_analise))
     with col_stat4:
@@ -181,105 +196,756 @@ if page == "Requisições":
         requisicoes = [r for r in requisicoes if r.get('tipo_exame') == tipo_filter]
 
     if search_term:
-        search_lower = search_term.lower()
-        requisicoes = [
-            r for r in requisicoes
-            if search_lower in r.get('paciente', '').lower()
-            or search_lower in r.get('tutor', '').lower()
-        ]
+        search_lower = search_term.lower().strip()
+
+        def _searchable(r):
+            parts = [
+                r.get("paciente", ""), r.get("tutor", ""), r.get("clinica", ""),
+                r.get("especie", ""), r.get("raca", ""), r.get(
+                    "medico_veterinario_solicitante", ""),
+                r.get("regiao_estudo", ""), r.get("suspeita_clinica", ""),
+                r.get("historico_clinico", "") or r.get("observacoes", ""),
+            ]
+            return " ".join(p or "" for p in parts).lower()
+        requisicoes = [r for r in requisicoes if search_lower in _searchable(r)]
+
+    # Ordenação
+    _status_order = {"pendente": 0, "em_analise": 1, "validado": 2, "liberado": 3, "rejeitado": 4}
+
+    def _sort_key(r):
+        dt = r.get("created_at") or datetime.min
+        if "Status" in sort_by:
+            return (_status_order.get(r.get("status"), 99), dt)
+        if "Clínica" in sort_by:
+            return (r.get("clinica", "").lower(), dt)
+        if "Paciente" in sort_by:
+            return (r.get("paciente", "").lower(), dt)
+        return (dt,)
+
+    reverse = "mais recente" in sort_by
+    requisicoes = sorted(requisicoes, key=_sort_key, reverse=reverse)
 
     st.metric("Total de Requisições", len(requisicoes))
 
+    def _fmt_dt(x):
+        if x is None:
+            return "—"
+        if hasattr(x, "strftime"):
+            return x.strftime("%d/%m/%Y %H:%M") if hasattr(x, "hour") else x.strftime("%d/%m/%Y")
+        return str(x)[:16]
+
     # Lista de requisições
     for req in requisicoes:
-        with st.expander(f"📄 Requisição #{req['id'][:8]} - {req.get('paciente', 'Sem nome')} - {req.get('status', 'N/A')}"):
-            col1, col2 = st.columns(2)
+        status_req = req.get("status", "N/A")
+        status_label = {"pendente": "⏳ Pendente", "em_analise": "🔍 Em análise", "validado": "✅ Validado",
+                        "liberado": "✅ Concluída", "rejeitado": "❌ Rejeitada"}.get(status_req, status_req)
+        n_imgs = len(req.get("imagens") or [])
 
-            with col1:
-                st.write(f"**Paciente:** {req.get('paciente', 'N/A')}")
-                st.write(f"**Tutor:** {req.get('tutor', 'N/A')}")
-                st.write(f"**Tipo:** {req.get('tipo_exame', 'N/A')}")
-                st.write(f"**Status:** {req.get('status', 'N/A')}")
-                st.write(f"**Data:** {req.get('created_at', 'N/A')}")
+        with st.expander(f"📄 #{req['id'][:8]} · {req.get('paciente', 'Sem nome')} · {status_label} · {n_imgs} img(ns)"):
+            laudo = laudo_model.find_by_requisicao(req["id"])
+            user = user_model.find_by_id(req.get("user_id")) if req.get("user_id") else None
 
-            with col2:
-                # Buscar usuário
-                user = user_model.find_by_id(req.get('user_id'))
-                if user:
-                    st.write(f"**Usuário:** {user.get('nome', user.get('username'))}")
-                    st.write(f"**Email:** {user.get('email')}")
-
-                # Verificar se já existe laudo
-                laudo = laudo_model.find_by_requisicao(req['id'])
-                if laudo:
-                    status_laudo = laudo.get('status')
-                    if status_laudo == 'pendente':
-                        st.warning(f"⏳ Laudo pendente - Aguardando sua revisão!")
-                    elif status_laudo == 'liberado':
-                        st.success(f"✅ Laudo liberado")
+            if view_mode == "Rápida":
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.write(f"**Paciente:** {req.get('paciente', '—')}")
+                    st.write(f"**Tutor:** {req.get('tutor', '—')}")
+                    st.write(f"**Clínica:** {req.get('clinica', '—')}")
+                with c2:
+                    st.write(f"**Status:** {status_label}")
+                    st.write(f"**Data:** {_fmt_dt(req.get('created_at') or req.get('data_exame'))}")
+                    st.write(f"**Tipo:** {req.get('tipo_exame', '—')}")
+                    st.write(f"**Imagens:** {n_imgs} arquivo(s)")
+                with c3:
+                    if user:
+                        st.write(f"**Usuário:** {user.get('nome', user.get('username'))}")
+                    if laudo:
+                        st.info(f"📝 Laudo: {laudo.get('status', 'N/A')}")
                     else:
-                        st.info(f"📝 Laudo: {status_laudo}")
+                        st.warning("⏳ Laudo não criado")
+                # Galeria rápida (expander)
+                if n_imgs:
+                    with st.expander("🖼️ Ver imagens", expanded=False):
+                        from ai.analyzer import load_images_for_analysis
+                        imagens_paths = req.get("imagens") or []
+                        for start in range(0, len(imagens_paths), 3):
+                            cols = st.columns(3)
+                            for k, path in enumerate(imagens_paths[start : start + 3]):
+                                if k < len(cols):
+                                    with cols[k]:
+                                        nome = os.path.basename(path)
+                                        try:
+                                            loaded = load_images_for_analysis([path])
+                                            prev = loaded[0] if loaded else None
+                                        except Exception:
+                                            prev = None
+                                        if prev is not None:
+                                            st.image(prev, use_container_width=True, caption=nome)
+                                        else:
+                                            st.caption(nome)
+            else:
+                st.subheader("📋 Dados completos da requisição")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.write("**Paciente:**", req.get("paciente") or "—")
+                    st.write("**Espécie:**", req.get("especie") or "—")
+                    st.write("**Idade:**", req.get("idade") or "—")
+                    st.write("**Raça:**", req.get("raca") or "—")
+                    st.write("**Sexo:**", req.get("sexo") or "—")
+                    st.write("**Tutor(a):**", req.get("tutor") or "—")
+                    st.write("**Clínica solicitante:**", req.get("clinica") or "—")
+                    st.write("**Médico(a) veterinário(a):**",
+                             req.get("medico_veterinario_solicitante") or "—")
+                with col_b:
+                    st.write("**Região de estudo:**", req.get("regiao_estudo") or "—")
+                    st.write("**Suspeita clínica:**", req.get("suspeita_clinica") or "—")
+                    st.write("**Plantão:**", req.get("plantao") or "—")
+                    st.write("**Data da requisição:**",
+                             _fmt_dt(req.get("created_at") or req.get("data_exame")))
+                    st.write("**Status:**", status_label)
+                    st.write("**Tipo de exame:**", req.get("tipo_exame") or "—")
+                    if user:
+                        st.write("**Usuário:**", user.get("nome", user.get("username")),
+                                 "·", user.get("email", ""))
+                st.write("**Histórico clínico:**")
+                hc = req.get("historico_clinico") or req.get("observacoes") or "—"
+                st.text_area("", value=hc, height=80, disabled=True, key=f"hist_{req['id']}")
+
+                # Galeria de imagens
+                imagens_paths = req.get("imagens") or []
+                if imagens_paths:
+                    with st.expander(f"🖼️ Imagens anexadas ({len(imagens_paths)})", expanded=False):
+                        from ai.analyzer import load_images_for_analysis
+                        n_cols = 3
+                        for start in range(0, len(imagens_paths), n_cols):
+                            cols = st.columns(n_cols)
+                            for k, path in enumerate(imagens_paths[start : start + n_cols]):
+                                if k < len(cols):
+                                    with cols[k]:
+                                        nome = os.path.basename(path)
+                                        preview = None
+                                        try:
+                                            loaded = load_images_for_analysis([path])
+                                            preview = loaded[0] if loaded else None
+                                        except Exception:
+                                            pass
+                                        if preview is not None:
+                                            st.image(preview, use_container_width=True, caption=nome)
+                                        else:
+                                            st.caption(nome)
+                                            st.caption("(prévia indisponível)")
+
+            # Controle de edição inline
+            editing_key = f"editing_{req['id']}"
+            is_editing = st.session_state.get(editing_key, False)
+
+            # Botão para iniciar/parar edição
+            st.divider()
+            col_btn_toggle, col_btn2, col_btn3, col_btn4 = st.columns(4)
+            with col_btn_toggle:
+                if is_editing:
+                    if st.button("❌ Fechar Editor", key=f"close_edit_{req['id']}", use_container_width=True):
+                        del st.session_state[editing_key]
+                        st.rerun()
                 else:
-                    st.warning("⏳ Laudo ainda não foi criado")
-
-            # Observações
-            if req.get('observacoes'):
-                st.write(f"**Observações:** {req.get('observacoes')}")
-
-            # Imagens (preview)
-            if req.get('imagens'):
-                st.write(f"**Imagens:** {len(req.get('imagens', []))} arquivo(s)")
-                # Aqui poderia mostrar preview das imagens
-
-            # Ações
-            col_btn1, col_btn2, col_btn3 = st.columns(3)
-
-            with col_btn1:
-                if st.button("📝 Criar/Editar Laudo", key=f"edit_{req['id']}"):
-                    # Verificar se já existe laudo
-                    laudo_existente = laudo_model.find_by_requisicao(req['id'])
-
-                    if not laudo_existente:
-                        # Gerar laudo automaticamente com IA
-                        try:
-                            with st.spinner("🤖 Gerando laudo com IA..."):
-                                imagens_paths = req.get('imagens', [])
-                                if imagens_paths:
-                                    from ai.analyzer import VetAIAnalyzer, load_images_for_analysis
-                                    images = load_images_for_analysis(imagens_paths)
-                                    if images:
-                                        ai_analyzer = VetAIAnalyzer()
-                                        texto_gerado = ai_analyzer.generate_diagnosis(images)
-                                        laudo_model.create(
-                                            requisicao_id=req['id'],
-                                            texto=texto_gerado,
-                                            texto_original=texto_gerado,
+                    if st.button("📝 Gerar/Editar Laudo", key=f"edit_{req['id']}", use_container_width=True):
+                        # Se não há laudo, gerar com IA primeiro
+                        if not laudo:
+                            try:
+                                with st.spinner("🤖 Gerando laudo com IA..."):
+                                    imagens_paths = req.get("imagens", [])
+                                    if imagens_paths:
+                                        from ai.analyzer import VetAIAnalyzer, load_images_for_analysis
+                                        images = load_images_for_analysis(imagens_paths)
+                                        if images:
+                                            ai_analyzer = VetAIAnalyzer()
+                                            texto_gerado = ai_analyzer.generate_diagnosis(images)
+                                            laudo_model.create(
+                                                requisicao_id=req["id"],
+                                                texto=texto_gerado,
+                                                texto_original=texto_gerado,
+                                                status="pendente",
+                                            )
+                                            st.success("✅ Laudo gerado com IA!")
+                                            laudo = laudo_model.find_by_requisicao(req["id"])
+                                        else:
+                                            st.warning(
+                                                "Nenhuma imagem válida. Criando laudo vazio para edição manual.")
+                                            laudo_id = laudo_model.create(
+                                                requisicao_id=req["id"],
+                                                texto="",
+                                                texto_original="",
+                                                status="pendente",
+                                            )
+                                            laudo = laudo_model.find_by_id(laudo_id)
+                                    else:
+                                        st.warning(
+                                            "Nenhuma imagem. Criando laudo vazio para edição manual.")
+                                        laudo_id = laudo_model.create(
+                                            requisicao_id=req["id"],
+                                            texto="",
+                                            texto_original="",
                                             status="pendente",
                                         )
-                                        st.success("✅ Laudo gerado automaticamente com IA!")
-                                    else:
-                                        st.warning("Nenhuma imagem válida (JPG, PNG, DICOM). Crie o laudo manualmente.")
-                        except Exception as e:
-                            st.warning(f"⚠️ Erro ao gerar laudo automaticamente: {str(e)}")
-                            st.info("Você pode criar o laudo manualmente na página Laudos.")
-
-                    st.session_state['editing_requisicao'] = req['id']
-                    # Mostrar mensagem informativa
-                    st.info("💡 **Laudo criado/editado!** Acesse a página 'Laudos' no menu lateral para revisar e editar o laudo.")
-                    st.rerun()
-
+                                        laudo = laudo_model.find_by_id(laudo_id)
+                            except Exception as e:
+                                st.warning(f"⚠️ Erro ao gerar laudo: {str(e)}")
+                                # Criar laudo vazio mesmo assim
+                                laudo_id = laudo_model.create(
+                                    requisicao_id=req["id"],
+                                    texto="",
+                                    texto_original="",
+                                    status="pendente",
+                                )
+                                laudo = laudo_model.find_by_id(laudo_id)
+                        # Abrir editor
+                        st.session_state[editing_key] = True
+                        st.rerun()
             with col_btn2:
-                if req.get('status') == 'pendente':
-                    if st.button("✅ Iniciar Análise", key=f"start_{req['id']}"):
-                        requisicao_model.update_status(req['id'], 'em_analise')
+                if req.get("status") == "pendente":
+                    if st.button("✅ Iniciar Análise", key=f"start_{req['id']}", use_container_width=True):
+                        requisicao_model.update_status(req["id"], "em_analise")
                         st.success("Análise iniciada")
                         st.rerun()
-
             with col_btn3:
-                if st.button("🗑️ Rejeitar", key=f"reject_{req['id']}"):
-                    requisicao_model.update_status(req['id'], 'rejeitado')
+                if laudo and laudo.get("status") in ("pendente", "validado") and not is_editing:
+                    if st.button("📤 Aprovar/Liberar", key=f"approve_{req['id']}", use_container_width=True):
+                        laudo_model.release(laudo["id"])
+                        requisicao_model.update_status(req["id"], "liberado")
+                        st.success("✅ Laudo liberado para o usuário!")
+                        st.rerun()
+            with col_btn4:
+                if st.button("🗑️ Rejeitar", key=f"reject_{req['id']}", use_container_width=True):
+                    requisicao_model.update_status(req["id"], "rejeitado")
                     st.success("Requisição rejeitada")
                     st.rerun()
+
+            # Editor inline de laudo (quando is_editing = True)
+            if is_editing:
+                # Recarregar laudo (pode ter sido criado agora)
+                laudo = laudo_model.find_by_requisicao(req["id"])
+                if not laudo:
+                    st.error("Erro: Laudo não encontrado. Feche o editor e tente novamente.")
+                else:
+                    imagens_paths = req.get("imagens", [])
+                    st.divider()
+                    st.subheader("✏️ Edição de Laudo")
+                    
+                    # Layout: imagens à esquerda, editor fixo à direita
+                    col_imgs, col_edit = st.columns([1.5, 1])
+                    
+                    # Coluna de imagens (esquerda) - Grid de miniaturas com lightbox
+                    with col_imgs:
+                        st.subheader("🖼️ Imagens para conferência")
+                        
+                        if imagens_paths:
+                            from ai.analyzer import load_images_for_analysis
+                            
+                            # CSS e JavaScript para lightbox
+                            lightbox_id = f"lightbox_{req['id'][:8]}"
+                            st.markdown(f"""
+                                <style>
+                                /* Remover TODOS os espaços brancos dos containers de imagem - CSS Global */
+                                div[id^="img_container_{req['id'][:8]}"] .stImage,
+                                div[id^="img_container_{req['id'][:8]}"] .stImage > div,
+                                div[id^="img_container_{req['id'][:8]}"] .stImage > div > div,
+                                div[id^="img_container_{req['id'][:8]}"] .stImage > div > div > div,
+                                div[id^="img_container_{req['id'][:8]}"] .stImage > div > div > div > div {{
+                                    padding-top: 0 !important;
+                                    margin-top: 0 !important;
+                                    padding-bottom: 0 !important;
+                                    margin-bottom: 0 !important;
+                                    padding: 0 !important;
+                                    margin: 0 !important;
+                                }}
+                                
+                                div[id^="img_container_{req['id'][:8]}"] .stImage img {{
+                                    margin: 0 !important;
+                                    padding: 0 !important;
+                                    display: block !important;
+                                }}
+                                
+                                /* Remover espaços do primeiro elemento dentro do container */
+                                div[id^="img_container_{req['id'][:8]}"] > div:first-child {{
+                                    margin-top: 0 !important;
+                                    padding-top: 0 !important;
+                                }}
+                                
+                                /* Grid de miniaturas - 4 colunas */
+                                .thumb-grid-{req['id'][:8]} {{
+                                    display: grid !important;
+                                    grid-template-columns: repeat(4, 1fr) !important;
+                                    gap: 1.5rem !important;
+                                    margin-bottom: 1.5rem !important;
+                                    width: 100% !important;
+                                }}
+                                
+                                /* Garantir que o container do Streamlit não interfira */
+                                .thumb-grid-{req['id'][:8]} > * {{
+                                    display: block !important;
+                                }}
+                                
+                                .thumb-item-{req['id'][:8]} {{
+                                    cursor: pointer;
+                                    border: 2px solid #e0e0e0;
+                                    border-radius: 8px;
+                                    padding: 0.75rem;
+                                    transition: all 0.3s;
+                                    background: #f5f5f5;
+                                }}
+                                
+                                .thumb-item-{req['id'][:8]}:hover {{
+                                    border-color: #2e7d32;
+                                    transform: scale(1.05);
+                                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                                }}
+                                
+                                .thumb-item-{req['id'][:8]} img {{
+                                    width: 100%;
+                                    height: 220px;
+                                    object-fit: contain;
+                                    border-radius: 4px;
+                                }}
+                                
+                                @media (max-width: 1400px) {{
+                                    .thumb-grid-{req['id'][:8]} {{
+                                        grid-template-columns: repeat(3, 1fr);
+                                    }}
+                                }}
+                                
+                                @media (max-width: 1000px) {{
+                                    .thumb-grid-{req['id'][:8]} {{
+                                        grid-template-columns: repeat(2, 1fr);
+                                    }}
+                                }}
+                                
+                                /* Lightbox Modal */
+                                #{lightbox_id} {{
+                                    display: none;
+                                    position: fixed;
+                                    z-index: 2000;
+                                    left: 0;
+                                    top: 0;
+                                    width: 100%;
+                                    height: 100%;
+                                    background-color: rgba(0,0,0,0.9);
+                                    overflow: auto;
+                                }}
+                                
+                                #{lightbox_id} .lightbox-content {{
+                                    margin: auto;
+                                    display: block;
+                                    width: 90%;
+                                    max-width: 1200px;
+                                    margin-top: 50px;
+                                    animation: zoom 0.3s;
+                                }}
+                                
+                                @keyframes zoom {{
+                                    from {{transform: scale(0.5)}}
+                                    to {{transform: scale(1)}}
+                                }}
+                                
+                                #{lightbox_id} .close {{
+                                    position: absolute;
+                                    top: 15px;
+                                    right: 35px;
+                                    color: #f1f1f1;
+                                    font-size: 40px;
+                                    font-weight: bold;
+                                    cursor: pointer;
+                                }}
+                                
+                                #{lightbox_id} .close:hover {{
+                                    color: #bbb;
+                                }}
+                                
+                                #{lightbox_id} .lightbox-caption {{
+                                    margin: auto;
+                                    display: block;
+                                    width: 90%;
+                                    max-width: 1200px;
+                                    text-align: center;
+                                    color: #ccc;
+                                    padding: 10px 0;
+                                    height: 40px;
+                                }}
+                                
+                                #{lightbox_id} .lightbox-nav {{
+                                    position: absolute;
+                                    top: 50%;
+                                    transform: translateY(-50%);
+                                    background-color: rgba(0,0,0,0.5);
+                                    color: white;
+                                    border: none;
+                                    padding: 16px;
+                                    font-size: 20px;
+                                    cursor: pointer;
+                                    border-radius: 4px;
+                                }}
+                                
+                                #{lightbox_id} .lightbox-nav:hover {{
+                                    background-color: rgba(0,0,0,0.8);
+                                }}
+                                
+                                #{lightbox_id} .lightbox-prev {{
+                                    left: 20px;
+                                }}
+                                
+                                #{lightbox_id} .lightbox-next {{
+                                    right: 20px;
+                                }}
+                                </style>
+                                
+                                <div id="{lightbox_id}" class="lightbox">
+                                    <span class="close">&times;</span>
+                                    <button class="lightbox-nav lightbox-prev">&#10094;</button>
+                                    <button class="lightbox-nav lightbox-next">&#10095;</button>
+                                    <img class="lightbox-content" id="lightbox-img">
+                                    <div class="lightbox-caption" id="lightbox-caption"></div>
+                                </div>
+                                
+                                <script>
+                                // Este código será substituído pelo novo sistema de lightbox abaixo
+                                </script>
+                            """, unsafe_allow_html=True)
+                            
+                            # Preparar todas as imagens para o grid
+                            from ai.analyzer import load_images_for_analysis
+                            import base64
+                            from io import BytesIO
+                            
+                            # Preparar dados das imagens e converter para base64
+                            images_data = []
+                            for i, path in enumerate(imagens_paths):
+                                nome = os.path.basename(path)
+                                preview = None
+                                
+                                try:
+                                    loaded = load_images_for_analysis([path])
+                                    preview = loaded[0] if loaded else None
+                                except Exception:
+                                    pass
+                                
+                                img_data_url = None
+                                if preview is not None:
+                                    buf = BytesIO()
+                                    preview.save(buf, format='PNG')
+                                    buf.seek(0)
+                                    img_base64 = base64.b64encode(buf.read()).decode()
+                                    img_data_url = f"data:image/png;base64,{img_base64}"
+                                
+                                images_data.append({
+                                    'path': path,
+                                    'nome': nome,
+                                    'preview': preview,
+                                    'data_url': img_data_url,
+                                    'index': i
+                                })
+                            
+                            # Inicializar array de imagens para o lightbox E definir função openLightbox ANTES de renderizar
+                            st.markdown(f"""
+                                <script>
+                                window.lightboxImages_{req['id'][:8]} = [];
+                                
+                                // Definir função openLightbox GLOBALMENTE antes de renderizar as imagens
+                                window.openLightbox_{req['id'][:8]} = function(index) {{
+                                    const images = window.lightboxImages_{req['id'][:8]} || [];
+                                    if (images.length === 0 || !images[index]) {{
+                                        console.error('Lightbox: imagens não disponíveis ou índice inválido', index, images.length);
+                                        return;
+                                    }}
+                                    
+                                    const lightbox = document.getElementById('{lightbox_id}');
+                                    const lightboxImg = document.getElementById('lightbox-img');
+                                    const lightboxCaption = document.getElementById('lightbox-caption');
+                                    
+                                    if (lightbox && lightboxImg && lightboxCaption) {{
+                                        lightboxImg.src = images[index].src;
+                                        lightboxCaption.textContent = images[index].caption;
+                                        lightbox.style.display = 'block';
+                                        window.currentLightboxIndex_{req['id'][:8]} = index;
+                                    }} else {{
+                                        console.error('Lightbox: elementos não encontrados', {{lightbox: !!lightbox, lightboxImg: !!lightboxImg, lightboxCaption: !!lightboxCaption}});
+                                    }}
+                                }};
+                            """, unsafe_allow_html=True)
+                            
+                            # Criar grid usando st.columns - 4 colunas
+                            num_cols = 4
+                            for row_start in range(0, len(images_data), num_cols):
+                                cols = st.columns(num_cols)
+                                row_images = images_data[row_start:row_start + num_cols]
+                                
+                                for col_idx, col in enumerate(cols):
+                                    if col_idx < len(row_images):
+                                        img_data = row_images[col_idx]
+                                        nome = img_data['nome']
+                                        preview = img_data['preview']
+                                        img_data_url = img_data['data_url']
+                                        
+                                        with col:
+                                            if preview is not None and img_data_url:
+                                                # Renderizar imagem diretamente em HTML (sem usar st.image para evitar espaços)
+                                                # O array do lightbox será preenchido após o loop
+                                                container_key = f"img_container_{req['id']}_{img_data['index']}"
+                                                nome_display = nome[:40] + ('...' if len(nome) > 40 else '')
+                                                
+                                                # Renderizar tudo em HTML puro para evitar espaços do Streamlit
+                                                # Usar onclick inline para evitar problemas com JavaScript sendo renderizado como texto
+                                                st.markdown(f"""
+                                                    <div id="{container_key}" onclick="if(window.openLightbox_{req['id'][:8]}){{window.openLightbox_{req['id'][:8]}({img_data['index']});}}" style="cursor: pointer; border: 2px solid #e0e0e0; border-radius: 8px; padding: 0.75rem; background: #f5f5f5; margin-bottom: 1rem; transition: all 0.3s; overflow: hidden;" onmouseover="this.style.borderColor='#2e7d32'; this.style.transform='scale(1.02)'" onmouseout="this.style.borderColor='#e0e0e0'; this.style.transform='scale(1)'">
+                                                        <img src="{img_data_url}" alt="Imagem {img_data['index'] + 1}: {nome}" style="width: 100%; height: auto; max-height: 250px; object-fit: contain; display: block; margin: 0; padding: 0; border-radius: 4px;">
+                                                        <div style="text-align: center; margin-top: 0.5rem; font-size: 0.85rem; color: #666; font-weight: 500;">
+                                                            {nome_display}
+                                                        </div>
+                                                    </div>
+                                                """, unsafe_allow_html=True)
+                                            else:
+                                                nome_display = nome[:30] + ('...' if len(nome) > 30 else '')
+                                                st.info(f"📄 {nome_display}\n\nPrévia indisponível")
+                                    
+                                    # Preencher colunas vazias na última linha
+                                    if col_idx >= len(row_images):
+                                        with col:
+                                            st.empty()
+                            
+                            # Preencher array do lightbox com todas as imagens após o loop
+                            import json
+                            images_js_items = []
+                            for img in images_data:
+                                if img.get('data_url'):
+                                    caption = f"Imagem {img['index'] + 1}: {img['nome']}"
+                                    images_js_items.append(
+                                        f"{{src: {json.dumps(img['data_url'])}, caption: {json.dumps(caption)}}}"
+                                    )
+                            images_js_array = ",\n".join(images_js_items)
+                            st.markdown(f"""
+                                <script>
+                                // Preencher array do lightbox com todas as imagens
+                                window.lightboxImages_{req['id'][:8]} = [
+                                    {images_js_array}
+                                ];
+                                </script>
+                            """, unsafe_allow_html=True)
+                            
+                            # JavaScript do lightbox - funções de navegação
+                            st.markdown(f"""
+                                <script>
+                                // Funções de navegação do lightbox
+                                (function() {{
+                                    const lightbox = document.getElementById('{lightbox_id}');
+                                    if (!lightbox) return;
+                                    
+                                    const lightboxImg = document.getElementById('lightbox-img');
+                                    const lightboxCaption = document.getElementById('lightbox-caption');
+                                    const closeBtn = lightbox.querySelector('.close');
+                                    const prevBtn = lightbox.querySelector('.lightbox-prev');
+                                    const nextBtn = lightbox.querySelector('.lightbox-next');
+                                    
+                                    window.currentLightboxIndex_{req['id'][:8]} = 0;
+                                    
+                                    function updateLightbox() {{
+                                        const images = window.lightboxImages_{req['id'][:8]} || [];
+                                        const idx = window.currentLightboxIndex_{req['id'][:8]};
+                                        if (images[idx] && lightboxImg && lightboxCaption) {{
+                                            lightboxImg.src = images[idx].src;
+                                            lightboxCaption.textContent = images[idx].caption;
+                                        }}
+                                    }}
+                                    
+                                    function nextImage() {{
+                                        const images = window.lightboxImages_{req['id'][:8]} || [];
+                                        if (images.length === 0) return;
+                                        window.currentLightboxIndex_{req['id'][:8]} = (window.currentLightboxIndex_{req['id'][:8]} + 1) % images.length;
+                                        updateLightbox();
+                                    }}
+                                    
+                                    function prevImage() {{
+                                        const images = window.lightboxImages_{req['id'][:8]} || [];
+                                        if (images.length === 0) return;
+                                        window.currentLightboxIndex_{req['id'][:8]} = (window.currentLightboxIndex_{req['id'][:8]} - 1 + images.length) % images.length;
+                                        updateLightbox();
+                                    }}
+                                    
+                                    function closeLightbox() {{
+                                        lightbox.style.display = 'none';
+                                    }}
+                                    
+                                    if (closeBtn) closeBtn.onclick = closeLightbox;
+                                    if (nextBtn) nextBtn.onclick = nextImage;
+                                    if (prevBtn) prevBtn.onclick = prevImage;
+                                    
+                                    lightbox.onclick = function(e) {{
+                                        if (e.target === lightbox) closeLightbox();
+                                    }};
+                                    
+                                    document.addEventListener('keydown', function(e) {{
+                                        if (lightbox.style.display === 'block') {{
+                                            if (e.key === 'Escape') closeLightbox();
+                                            if (e.key === 'ArrowRight') nextImage();
+                                            if (e.key === 'ArrowLeft') prevImage();
+                                        }}
+                                    }});
+                                }})();
+                                </script>
+                            """, unsafe_allow_html=True)
+                            
+                            # Baixar todas as imagens em um único ZIP
+                            buf = io.BytesIO()
+                            added = 0
+                            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                                for i, path in enumerate(imagens_paths):
+                                    nome = os.path.basename(path)
+                                    arcname = f"{i + 1}_{nome}"
+                                    try:
+                                        with open(path, "rb") as f:
+                                            zf.writestr(arcname, f.read())
+                                        added += 1
+                                    except Exception:
+                                        pass
+                            buf.seek(0)
+                            zip_bytes = buf.getvalue()
+                            if added > 0 and zip_bytes:
+                                st.download_button(
+                                    "📦 Baixar todas as imagens (ZIP)",
+                                    data=zip_bytes,
+                                    file_name=f"requisicao_{req['id'][:8]}_imagens.zip",
+                                    mime="application/zip",
+                                    key=f"dl_zip_inline_{req['id']}",
+                                    use_container_width=True,
+                                )
+                            st.caption(
+                                "**💡 Dica:** Clique em uma miniatura para ver a imagem em tamanho grande. Use as setas do teclado ou os botões para navegar. **DICOM:** baixe o arquivo e abra em um leitor local (ex.: RadiAnt, OsiriX, 3D Slicer) para visualização com janela/nível, zoom e medições."
+                            )
+                        else:
+                            st.info("Nenhuma imagem associada a esta requisição.")
+                    
+                    # Coluna do editor (direita) - será fixada via JavaScript
+                    with col_edit:
+                        editor_key = f"laudo_edit_inline_{laudo['id']}"
+                        st.subheader("✏️ Editar Laudo")
+                        # Aumentar altura do editor para ocupar mais espaço disponível
+                        texto_editado = st.text_area(
+                            "Conteúdo do laudo",
+                            value=laudo.get("texto", ""),
+                            height=600,
+                            key=editor_key,
+                        )
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            if st.button("💾 Salvar", use_container_width=True, key=f"save_inline_{laudo['id']}"):
+                                laudo_model.update(laudo["id"], {"texto": texto_editado})
+                                st.success("Laudo salvo!")
+                                st.rerun()
+                        with col2:
+                            if st.button("✅ Validar", use_container_width=True, key=f"val_inline_{laudo['id']}"):
+                                user = get_current_user()
+                                laudo_model.validate(laudo["id"], user["id"])
+                                requisicao_model.update_status(req["id"], "validado")
+                                try:
+                                    from vector_db.vector_store import VectorStore
+                                    vector_store = VectorStore()
+                                    vector_store.add_laudo(
+                                        laudo["id"],
+                                        texto_editado,
+                                        metadata={
+                                            "paciente": req.get("paciente"),
+                                            "tipo_exame": req.get("tipo_exame"),
+                                            "status": "validado",
+                                        },
+                                    )
+                                    st.success("Laudo validado e adicionado ao banco de aprendizado!")
+                                except Exception as vec_err:
+                                    st.success("Laudo validado!")
+                                    st.warning(
+                                        f"Não foi possível adicionar ao banco vetorial (chromadb/rpds): {vec_err!s}. "
+                                        "Execute `just fix-rpds` ou use Python 3.11/3.12."
+                                    )
+                                st.rerun()
+                        with col3:
+                            if st.button("📤 Liberar", use_container_width=True, key=f"lib_inline_{laudo['id']}"):
+                                laudo_model.release(laudo["id"])
+                                requisicao_model.update_status(req["id"], "liberado")
+                                st.success("✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
+                                st.balloons()
+                                del st.session_state[editing_key]
+                                st.rerun()
+                        with col4:
+                            if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_inline_{laudo['id']}"):
+                                del st.session_state[editing_key]
+                                st.rerun()
+                    
+                    # JavaScript para fixar a coluna do editor após renderização
+                    st.markdown(f"""
+                        <script>
+                        (function() {{
+                            function fixEditorColumn() {{
+                                // Encontrar o textarea do editor pelo key
+                                const textarea = document.querySelector('textarea');
+                                if (!textarea) return;
+                                
+                                // Encontrar a coluna que contém este textarea
+                                let col = textarea.closest('[data-testid="column"]');
+                                if (!col) {{
+                                    let parent = textarea.parentElement;
+                                    let depth = 0;
+                                    while (parent && parent !== document.body && depth < 20) {{
+                                        if (parent.hasAttribute && parent.getAttribute('data-testid') === 'column') {{
+                                            col = parent;
+                                            break;
+                                        }}
+                                        parent = parent.parentElement;
+                                        depth++;
+                                    }}
+                                }}
+                                
+                                if (col) {{
+                                    // Verificar se é a segunda coluna
+                                    const columnsContainer = col.parentElement;
+                                    if (columnsContainer && columnsContainer.getAttribute('data-testid') === 'stColumns') {{
+                                        const cols = columnsContainer.querySelectorAll('[data-testid="column"]');
+                                        if (cols.length >= 2 && cols[1] === col) {{
+                                            // Aplicar position fixed
+                                            col.style.cssText = `
+                                                position: fixed !important;
+                                                top: 100px !important;
+                                                right: 20px !important;
+                                                width: 45% !important;
+                                                max-width: 550px !important;
+                                                max-height: calc(100vh - 120px) !important;
+                                                background-color: #ffffff !important;
+                                                border: 2px solid #2e7d32 !important;
+                                                border-radius: 8px !important;
+                                                box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
+                                                z-index: 1000 !important;
+                                                padding: 1.5rem !important;
+                                                overflow-y: auto !important;
+                                            `;
+                                            
+                                            // Ajustar margem da primeira coluna
+                                            if (cols[0]) {{
+                                                cols[0].style.marginRight = 'calc(45% + 30px)';
+                                            }}
+                                        }}
+                                    }}
+                                }}
+                            }}
+                            
+                            // Executar após renderização
+                            setTimeout(fixEditorColumn, 100);
+                            setTimeout(fixEditorColumn, 500);
+                            setTimeout(fixEditorColumn, 1000);
+                            
+                            // Observer
+                            const observer = new MutationObserver(function() {{
+                                setTimeout(fixEditorColumn, 50);
+                            }});
+                            observer.observe(document.body, {{ childList: true, subtree: true }});
+                        }})();
+                        </script>
+                    """, unsafe_allow_html=True)
 
 elif page == "Laudos":
     st.header("📝 Gerenciamento de Laudos")
@@ -300,250 +966,142 @@ elif page == "Laudos":
     with col4:
         st.metric("📤 Liberados", len(liberados))
 
-    # Verificar se está editando uma requisição (vindo da aba Requisições)
-    if st.session_state.get('editing_requisicao'):
-        req_id = st.session_state['editing_requisicao']
-        req = requisicao_model.find_by_id(req_id)
+    # Nota: A edição de laudos agora é feita inline na aba "Requisições"
+    # Esta aba serve como lista de consulta/visualização
+    st.info("💡 **Dica:** A edição de laudos é feita diretamente na aba **Requisições**. Use esta aba para consulta e visualização.")
+    st.divider()
 
-        if req:
-            st.subheader(f"Editando Laudo - Requisição #{req_id[:8]}")
+    # Lista de laudos (apenas pendentes por padrão)
+    st.subheader("📋 Lista de Laudos")
 
-            # Imagens da requisição – visíveis para a veterinária conferir o laudo
-            imagens_paths = req.get("imagens", [])
-            if imagens_paths:
-                try:
-                    from ai.analyzer import load_images_for_analysis
-                    imgs = load_images_for_analysis(imagens_paths)
-                    if imgs:
-                        st.subheader("🖼️ Imagens para conferência do laudo")
-                        ncols = min(3, len(imgs))
-                        cols = st.columns(ncols)
-                        for i, img in enumerate(imgs):
-                            with cols[i % ncols]:
-                                st.image(img, use_container_width=True, caption=f"Imagem {i + 1}")
-                        st.markdown("---")
-                    else:
-                        st.warning("Não foi possível carregar as imagens para exibição.")
-                except Exception as e:
-                    st.warning(f"Erro ao exibir imagens: {e}")
-            else:
-                st.info("Nenhuma imagem associada a esta requisição.")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        status_filter = st.selectbox(
+            "Filtrar por Status",
+            ["Apenas pendentes", "Todos", "pendente", "validado", "liberado", "rejeitado"],
+            index=0,
+            help="Por padrão, apenas laudos pendentes de revisão."
+        )
+    with col2:
+        search_term = st.text_input("🔍 Buscar (paciente/tutor/clínica)")
+    with col3:
+        sort_laudos = st.selectbox(
+            "Ordenar", ["Mais recentes", "Mais antigos", "Paciente", "Clínica"], key="laudo_sort")
 
-            # Buscar laudo existente ou criar novo
-            laudo = laudo_model.find_by_requisicao(req_id)
-
-            if not laudo:
-                # Gerar laudo inicial com IA
-                if st.button("🤖 Gerar Laudo com IA"):
-                    with st.spinner("Gerando laudo com IA..."):
-                        try:
-                            imagens_paths = req.get('imagens', [])
-                            if not imagens_paths:
-                                st.error("Nenhuma imagem encontrada na requisição")
-                            else:
-                                from ai.analyzer import VetAIAnalyzer, load_images_for_analysis
-                                images = load_images_for_analysis(imagens_paths)
-                                if images:
-                                    ai_analyzer = VetAIAnalyzer()
-                                    texto_gerado = ai_analyzer.generate_diagnosis(images)
-                                    laudo_id = laudo_model.create(
-                                        requisicao_id=req_id,
-                                        texto=texto_gerado,
-                                        texto_original=texto_gerado,
-                                        status="pendente",
-                                    )
-                                    laudo = laudo_model.find_by_id(laudo_id)
-                                    st.success("Laudo gerado com sucesso!")
-                                    st.rerun()
-                                else:
-                                    st.error("Não foi possível carregar as imagens (JPG, PNG, DICOM)")
-                        except Exception as e:
-                            st.error(f"Erro ao gerar laudo: {str(e)}")
-                            import traceback
-                            st.exception(e)
-
-                # Se ainda não tem laudo, criar um placeholder
-                if not laudo:
-                    texto_inicial = "Clique em 'Gerar Laudo com IA' para gerar o laudo automaticamente, ou edite manualmente abaixo."
-
-                    laudo_id = laudo_model.create(
-                        requisicao_id=req_id,
-                        texto=texto_inicial,
-                        texto_original=texto_inicial,
-                        status="pendente"
-                    )
-                    laudo = laudo_model.find_by_id(laudo_id)
-
-            # Editor de laudo
-            texto_editado = st.text_area(
-                "Editar Laudo",
-                value=laudo.get('texto', ''),
-                height=400
-            )
-
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                if st.button("💾 Salvar", use_container_width=True):
-                    laudo_model.update(laudo['id'], {"texto": texto_editado})
-                    st.success("Laudo salvo!")
-                    st.rerun()
-
-            with col2:
-                if st.button("✅ Validar", use_container_width=True):
-                    user = get_current_user()
-                    laudo_model.validate(laudo['id'], user['id'])
-                    requisicao_model.update_status(req_id, 'validado')
-                    try:
-                        from vector_db.vector_store import VectorStore
-                        vector_store = VectorStore()
-                        vector_store.add_laudo(
-                            laudo['id'],
-                            texto_editado,
-                            metadata={
-                                'paciente': req.get('paciente'),
-                                'tipo_exame': req.get('tipo_exame'),
-                                'status': 'validado'
-                            }
-                        )
-                        st.success("Laudo validado e adicionado ao banco de aprendizado!")
-                    except Exception as vec_err:
-                        st.success("Laudo validado!")
-                        st.warning(
-                            f"Não foi possível adicionar ao banco vetorial (chromadb/rpds): {vec_err!s}. "
-                            "Execute `just fix-rpds` ou use Python 3.11/3.12."
-                        )
-                    st.rerun()
-
-            with col3:
-                if st.button("📤 Liberar", use_container_width=True):
-                    laudo_model.release(laudo['id'])
-                    requisicao_model.update_status(req_id, 'liberado')
-                    st.success(
-                        "✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
-                    st.balloons()
-                    st.rerun()
-
-            with col4:
-                if st.button("❌ Cancelar", use_container_width=True):
-                    del st.session_state['editing_requisicao']
-                    st.rerun()
-
-            # Mostrar informações da requisição
-            with st.expander("ℹ️ Informações da Requisição"):
-                st.write(f"**Paciente:** {req.get('paciente')}")
-                st.write(f"**Tutor:** {req.get('tutor')}")
-                st.write(f"**Tipo:** {req.get('tipo_exame')}")
-        else:
-            st.error("Requisição não encontrada")
-            del st.session_state['editing_requisicao']
+    if status_filter == "Apenas pendentes":
+        status = "pendente"
+    elif status_filter == "Todos":
+        status = None
     else:
-        # Lista de laudos
-        st.subheader("📋 Lista de Laudos")
+        status = status_filter
+    laudos = laudo_model.find_all(status=status)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            status_filter = st.selectbox(
-                "Filtrar por Status",
-                ["Todos", "pendente", "validado", "liberado", "rejeitado"],
-                help="Laudos pendentes precisam de revisão e liberação"
-            )
-        with col2:
-            search_term = st.text_input("🔍 Buscar (paciente/tutor)")
+    # Aplicar busca (paciente, tutor, clínica)
+    if search_term:
+        search_lower = search_term.lower().strip()
+        laudos_filtrados = []
+        for laudo in laudos:
+            req = requisicao_model.find_by_id(laudo.get("requisicao_id"))
+            if req:
+                if (search_lower in (req.get("paciente") or "").lower()
+                        or search_lower in (req.get("tutor") or "").lower()
+                        or search_lower in (req.get("clinica") or "").lower()):
+                    laudos_filtrados.append(laudo)
+        laudos = laudos_filtrados
 
-        status = None if status_filter == "Todos" else status_filter
-        laudos = laudo_model.find_all(status=status)
+    # Ordenar
+    def _laudo_sort_key(l):
+        req = requisicao_model.find_by_id(l.get("requisicao_id"))
+        dt = l.get("created_at") or datetime.min
+        if "Mais antigos" in sort_laudos:
+            return (dt,)
+        if "Paciente" in sort_laudos:
+            return ((req or {}).get("paciente", "").lower(), dt)
+        if "Clínica" in sort_laudos:
+            return ((req or {}).get("clinica", "").lower(), dt)
+        return (dt,)
 
-        # Aplicar busca
-        if search_term:
-            search_lower = search_term.lower()
-            laudos_filtrados = []
-            for laudo in laudos:
-                req = requisicao_model.find_by_id(laudo.get('requisicao_id'))
-                if req:
-                    if (search_lower in req.get('paciente', '').lower()
-                            or search_lower in req.get('tutor', '').lower()):
-                        laudos_filtrados.append(laudo)
-            laudos = laudos_filtrados
+    reverse = "Mais recentes" in sort_laudos
+    laudos_ordenados = sorted(laudos, key=_laudo_sort_key, reverse=reverse)
 
-        # Ordenar: pendentes primeiro
-        laudos_ordenados = sorted(laudos, key=lambda x: (
-            0 if x.get('status') == 'pendente' else
-            1 if x.get('status') == 'validado' else 2
-        ))
+    if status_filter == "Apenas pendentes":
+        st.info("📋 **Mostrando apenas laudos pendentes** de revisão. Altere o filtro para ver validados ou liberados.")
 
-        if not laudos_ordenados:
-            st.info("Nenhum laudo encontrado com os filtros selecionados.")
-        else:
-            for laudo in laudos_ordenados:
-                req = requisicao_model.find_by_id(laudo.get('requisicao_id'))
+    if not laudos_ordenados:
+        st.info("Nenhum laudo encontrado com os filtros selecionados.")
+    else:
+        for laudo in laudos_ordenados:
+            req = requisicao_model.find_by_id(laudo.get('requisicao_id'))
 
-                # Badge de status
-                status_badge = {
-                    "pendente": "⏳ Pendente - Aguardando Revisão",
-                    "validado": "✅ Validado",
-                    "liberado": "📤 Liberado",
-                    "rejeitado": "❌ Rejeitado"
-                }.get(laudo.get('status'), laudo.get('status'))
+            # Badge de status
+            status_badge = {
+                "pendente": "⏳ Pendente - Aguardando Revisão",
+                "validado": "✅ Validado",
+                "liberado": "📤 Liberado",
+                "rejeitado": "❌ Rejeitado"
+            }.get(laudo.get('status'), laudo.get('status'))
 
-                paciente_nome = req.get('paciente', 'N/A') if req else 'N/A'
+            paciente_nome = req.get('paciente', 'N/A') if req else 'N/A'
 
-                with st.expander(f"📄 {paciente_nome} - {status_badge} - #{laudo['id'][:8]}"):
-                    col1, col2 = st.columns(2)
+            with st.expander(f"📄 {paciente_nome} - {status_badge} - #{laudo['id'][:8]}"):
+                col1, col2 = st.columns(2)
 
-                    with col1:
-                        if req:
-                            st.write(f"**Paciente:** {req.get('paciente', 'N/A')}")
-                            st.write(f"**Tutor:** {req.get('tutor', 'N/A')}")
-                            st.write(f"**Tipo de Exame:** {req.get('tipo_exame', 'N/A')}")
+                with col1:
+                    if req:
+                        st.write(f"**Paciente:** {req.get('paciente', 'N/A')}")
+                        st.write(f"**Tutor:** {req.get('tutor', 'N/A')}")
+                        st.write(f"**Tipo de Exame:** {req.get('tipo_exame', 'N/A')}")
 
-                        # Buscar usuário
-                        if req:
-                            user = user_model.find_by_id(req.get('user_id'))
-                            if user:
-                                st.write(f"**Cliente:** {user.get('nome', user.get('username'))}")
+                    # Buscar usuário
+                    if req:
+                        user = user_model.find_by_id(req.get('user_id'))
+                        if user:
+                            st.write(f"**Cliente:** {user.get('nome', user.get('username'))}")
 
-                    with col2:
-                        st.write(f"**Status:** {status_badge}")
-                        st.write(f"**Criado em:** {laudo.get('created_at', 'N/A')}")
-                        if laudo.get('validado_at'):
-                            st.write(f"**Validado em:** {laudo.get('validado_at')}")
-                        if laudo.get('liberado_at'):
-                            st.write(f"**Liberado em:** {laudo.get('liberado_at')}")
+                with col2:
+                    st.write(f"**Status:** {status_badge}")
+                    st.write(f"**Criado em:** {laudo.get('created_at', 'N/A')}")
+                    if laudo.get('validado_at'):
+                        st.write(f"**Validado em:** {laudo.get('validado_at')}")
+                    if laudo.get('liberado_at'):
+                        st.write(f"**Liberado em:** {laudo.get('liberado_at')}")
 
-                    # Preview do laudo
-                    st.divider()
-                    st.subheader("📝 Conteúdo do Laudo")
-                    texto_preview = laudo.get('texto', '')[
-                        :500] + "..." if len(laudo.get('texto', '')) > 500 else laudo.get('texto', '')
-                    st.text_area("Preview", texto_preview, height=150,
-                                 disabled=True, key=f"preview_{laudo['id']}")
+                # Preview do laudo
+                st.divider()
+                st.subheader("📝 Conteúdo do Laudo")
+                texto_preview = laudo.get('texto', '')[
+                    :500] + "..." if len(laudo.get('texto', '')) > 500 else laudo.get('texto', '')
+                st.text_area("Preview", texto_preview, height=150,
+                             disabled=True, key=f"preview_{laudo['id']}")
 
-                    # Ações
-                    col_btn1, col_btn2, col_btn3 = st.columns(3)
+                # Ações - redirecionar para Requisições para editar
+                col_btn1, col_btn2, col_btn3 = st.columns(3)
 
-                    with col_btn1:
-                        if st.button("✏️ Editar/Revisar", key=f"edit_laudo_{laudo['id']}", use_container_width=True):
-                            st.session_state['editing_requisicao'] = laudo.get('requisicao_id')
+                with col_btn1:
+                    if st.button("✏️ Editar na aba Requisições", key=f"edit_laudo_{laudo['id']}", use_container_width=True):
+                        st.info(
+                            "💡 **Vá para a aba 'Requisições' e clique em 'Gerar/Editar Laudo' na requisição correspondente para editar inline.**")
+                        st.rerun()
+
+                with col_btn2:
+                    if laudo.get('status') == 'pendente':
+                        if st.button("✅ Validar", key=f"validate_{laudo['id']}", use_container_width=True):
+                            user = get_current_user()
+                            laudo_model.validate(laudo['id'], user['id'])
+                            if req:
+                                requisicao_model.update_status(req.get('id'), 'validado')
+                            st.success("Laudo validado!")
                             st.rerun()
 
-                    with col_btn2:
-                        if laudo.get('status') == 'pendente':
-                            if st.button("✅ Validar", key=f"validate_{laudo['id']}", use_container_width=True):
-                                user = get_current_user()
-                                laudo_model.validate(laudo['id'], user['id'])
-                                st.success("Laudo validado!")
-                                st.rerun()
-
-                    with col_btn3:
-                        if laudo.get('status') in ['pendente', 'validado']:
-                            if st.button("📤 Liberar", key=f"release_{laudo['id']}", use_container_width=True):
-                                laudo_model.release(laudo['id'])
-                                if req:
-                                    requisicao_model.update_status(req.get('id'), 'liberado')
-                                st.success("✅ Laudo liberado para o usuário!")
-                                st.balloons()
-                                st.rerun()
+                with col_btn3:
+                    if laudo.get('status') in ['pendente', 'validado']:
+                        if st.button("📤 Liberar", key=f"release_{laudo['id']}", use_container_width=True):
+                            laudo_model.release(laudo['id'])
+                            if req:
+                                requisicao_model.update_status(req.get('id'), 'liberado')
+                            st.success("✅ Laudo liberado para o usuário!")
+                            st.balloons()
+                            st.rerun()
 
 elif page == "Usuários":
     st.header("👥 Gerenciamento de Usuários")

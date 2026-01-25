@@ -91,7 +91,11 @@ class Requisicao(BaseModel):
 
     def create(self, user_id: str, imagens: List[str],
                paciente: str = "", tutor: str = "", clinica: str = "",
-               tipo_exame: str = "raio-x", observacoes: str = "") -> str:
+               tipo_exame: str = "raio-x", observacoes: str = "",
+               especie: str = "", idade: str = "", raca: str = "", sexo: str = "",
+               medico_veterinario_solicitante: str = "", regiao_estudo: str = "",
+               suspeita_clinica: str = "", plantao: str = "", historico_clinico: str = "",
+               data_exame: Optional[datetime] = None, status: str = "pendente") -> str:
         """Cria uma nova requisição"""
         req_data = {
             "user_id": user_id,
@@ -101,7 +105,17 @@ class Requisicao(BaseModel):
             "clinica": clinica,
             "tipo_exame": tipo_exame,
             "observacoes": observacoes,
-            "status": "pendente",
+            "especie": especie,
+            "idade": idade,
+            "raca": raca,
+            "sexo": sexo,
+            "medico_veterinario_solicitante": medico_veterinario_solicitante,
+            "regiao_estudo": regiao_estudo,
+            "suspeita_clinica": suspeita_clinica,
+            "plantao": plantao,
+            "historico_clinico": historico_clinico,
+            "data_exame": data_exame or datetime.utcnow(),
+            "status": status,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
@@ -142,6 +156,15 @@ class Requisicao(BaseModel):
         result = self.collection.update_one(
             {"_id": ObjectId(req_id)},
             {"$set": {"status": status, "updated_at": datetime.utcnow()}}
+        )
+        return result.modified_count > 0
+
+    def update(self, req_id: str, updates: Dict) -> bool:
+        """Atualiza uma requisição (ex.: rascunho)"""
+        updates["updated_at"] = datetime.utcnow()
+        result = self.collection.update_one(
+            {"_id": ObjectId(req_id)},
+            {"$set": updates}
         )
         return result.modified_count > 0
 

@@ -150,50 +150,85 @@ if page == "Meus Laudos":
     if _newly and _last is not None:
         st.success(f"🎉 {len(_newly)} laudo(s) liberado(s)! Disponível(is) para download abaixo.")
 
-    # Filtros
+    # Filtros (padrão: apenas liberados + data atual — carrega menos e é mais leve ao abrir)
     col1, col2, col3 = st.columns(3)
     with col1:
         status = st.selectbox(
             "Filtrar por status",
-            ["Todos", "Pendente", "Validado", "Concluído"],
-            key="laudo_status_filter"
+            ["Apenas liberados", "Todos", "Pendente", "Validado"],
+            index=0,
+            key="laudo_status_filter",
+            help="Por padrão, apenas laudos liberados (para download). Use o filtro para ver pendentes ou aguardando laudo."
         )
     with col2:
-        st.write("")
+        filter_date = st.date_input("📅 Data", value=datetime.now().date(), key="laudo_date_filter")
+        show_all_dates = st.checkbox("Mostrar todas as datas", value=False, key="laudo_show_all_dates")
     with col3:
         st.write("")
 
     _uid = st.session_state.get("user_id")
-    all_reqs = requisicao_model.find_by_user(_uid) if _uid else []
-    reqs_dict = {r["id"]: r for r in all_reqs}
-
-    status_map = {"Todos": None, "Pendente": "pendente", "Validado": "validado", "Concluído": "liberado"}
+    status_map = {"Todos": None, "Pendente": "pendente", "Validado": "validado", "Apenas liberados": "liberado"}
     status_val = status_map.get(status)
-    laudos = laudo_model.find_by_user(st.session_state.get("user_id"), status=status_val)
-    if status_val:
-        laudos_filtrados = []
-        for laudo in laudos:
-            req = reqs_dict.get(laudo.get("requisicao_id"))
-            if req:
-                laudos_filtrados.append(laudo)
-        laudos = laudos_filtrados
-    else:
-        laudos_filtrados = []
-        for laudo in laudos:
-            req = reqs_dict.get(laudo.get("requisicao_id"))
-            if req:
-                laudos_filtrados.append(laudo)
-        laudos = laudos_filtrados
 
-    st.metric("Total de Laudos", len(laudos))
-
-    if not laudos:
-        st.info("Você ainda não possui laudos. Envie uma nova requisição para começar!")
-    else:
-        for laudo in laudos:
+    # Carregamento leve: quando "Apenas liberados", busca só laudos liberados (e suas reqs)
+    if status == "Apenas liberados":
+        laudos_liberados = laudo_model.find_by_user(_uid, status="liberado") if _uid else []
+        items = []
+        for laudo in laudos_liberados:
             req = requisicao_model.find_by_id(laudo.get("requisicao_id"))
-            if not req:
+            if req and req.get("status") != "rascunho":
+                items.append((req, laudo))
+        filtered = items
+    else:
+        all_reqs = [r for r in (requisicao_model.find_by_user(_uid) if _uid else []) if r.get("status") != "rascunho"]
+        items = []
+        for req in all_reqs:
+            laudo = laudo_model.find_by_requisicao(req["id"])
+            items.append((req, laudo))
+        if status_val == "pendente":
+            filtered = [(r, l) for r, l in items if l is None or l.get("status") == "pendente"]
+        elif status_val == "validado":
+            filtered = [(r, l) for r, l in items if l and l.get("status") == "validado"]
+        else:
+            filtered = items
+
+    # Filtro por data: inicialmente apenas requisições do dia selecionado
+    if not show_all_dates:
+        def _req_date(req):
+            d = req.get("created_at") or req.get("data_exame")
+            if d is None:
+                return None
+            return d.date() if hasattr(d, "date") else d
+
+        filtered = [(r, l) for r, l in filtered if _req_date(r) == filter_date]
+
+    if status == "Apenas liberados":
+        st.info("📋 **Mostrando apenas laudos liberados.** Altere o filtro para ver pendentes, validados ou aguardando laudo.")
+    if not show_all_dates:
+        st.caption(f"📅 Exibindo requisições de **{filter_date.strftime('%d/%m/%Y')}**. Marque «Mostrar todas as datas» para ver o histórico.")
+
+    st.metric("Total", len(filtered))
+
+    if not filtered:
+        st.info("Você ainda não possui requisições ou laudos. Envie uma nova requisição para começar!")
+    else:
+        for req, laudo in filtered:
+            if laudo is None:
+                status_badge = "⏳ Aguardando laudo"
+                with st.expander(f"**{req.get('paciente', 'N/A')}** – {req.get('tutor', 'N/A')} – {status_badge}", expanded=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**Paciente:** {req.get('paciente', 'N/A')}")
+                        st.write(f"**Tutor:** {req.get('tutor', 'N/A')}")
+                        st.write(f"**Tipo de Exame:** {req.get('tipo_exame', 'N/A')}")
+                    with col2:
+                        st.write(f"**Status:** {status_badge}")
+                        st.write(f"**Requisição em:** {req.get('created_at', 'N/A')}")
+                    st.divider()
+                    st.subheader("📝 Aguardando laudo")
+                    st.info("📤 Requisição enviada. O laudo será criado e liberado pelo veterinário administrador. Você será notificado quando estiver disponível para download.")
                 continue
+
             status_badge = {"pendente": "⏳ Pendente", "validado": "✅ Validado", "liberado": "✅ Concluído"}.get(laudo.get("status"), laudo.get("status"))
             with st.expander(f"**{req.get('paciente', 'N/A')}** – {req.get('tutor', 'N/A')} – {status_badge}", expanded=True):
                 col1, col2 = st.columns(2)
@@ -288,11 +323,20 @@ if page == "Meus Laudos":
 elif page == "Nova Requisição":
     st.header("📤 Nova Requisição de Laudo")
 
-    # Mostrar feedback de requisição enviada
+    # Estilo visual: layout limpo e profissional para ambiente veterinário
+    st.markdown("""
+        <style>
+        .nr-block { background: #f8faf8; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; border-left: 4px solid #2e7d32; }
+        .nr-preview { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem; font-family: 'Segoe UI', sans-serif; font-size: 0.9rem; line-height: 1.5; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Mostrar feedback de requisição enviada (no topo, sempre visível)
     if st.session_state.get('requisicao_enviada') and st.session_state.get('requisicao_info'):
         info = st.session_state['requisicao_info']
-        st.success(f"✅ Requisição enviada com sucesso! ID: {info['req_id'][:8]}")
-
+        
+        # Container destacado para a mensagem de sucesso
+        st.success(f"✅ **Requisição enviada com sucesso!** ID: {info['req_id'][:8]}")
         st.info("📝 O veterinário administrador irá analisar e liberar o laudo. Você será notificado quando estiver disponível para download.")
 
         if st.button("✖️ Fechar", key="close_requisicao_feedback"):
@@ -301,132 +345,252 @@ elif page == "Nova Requisição":
             st.rerun()
 
         st.markdown("---")
+        
+        # Script para rolar para o topo quando a mensagem aparecer (executa após rerun)
+        st.markdown("""
+            <script>
+                (function() {
+                    function scrollToTop() {
+                        if (window.parent && window.parent.scrollTo) {
+                            window.parent.scrollTo({ top: 0, behavior: 'smooth' });
+                        } else if (window.scrollTo) {
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
+                    }
+                    // Tentar imediatamente
+                    scrollToTop();
+                    // Tentar após um pequeno delay (após rerun)
+                    setTimeout(scrollToTop, 100);
+                    setTimeout(scrollToTop, 300);
+                })();
+            </script>
+        """, unsafe_allow_html=True)
 
-    # Usar chave dinâmica para o formulário para garantir que os campos sejam limpos após submit
-    form_key = f"nova_requisicao_{st.session_state.get('form_counter', 0)}"
+    # Inicializar chaves do formulário (evitar KeyError)
+    for k in ["nr_paciente", "nr_tutor", "nr_clinica", "nr_especie", "nr_idade", "nr_raca",
+              "nr_sexo", "nr_medico_vet", "nr_regiao", "nr_suspeita", "nr_plantao", "nr_historico",
+              "nr_tipo_exame"]:
+        if k not in st.session_state:
+            st.session_state[k] = ""
+    if "nr_plantao" not in st.session_state or st.session_state["nr_plantao"] == "":
+        st.session_state["nr_plantao"] = "Não"
+    if "nr_sexo" not in st.session_state or st.session_state["nr_sexo"] == "":
+        st.session_state["nr_sexo"] = "Macho"
 
-    with st.form(form_key, clear_on_submit=True):
-        col1, col2 = st.columns(2)
+    def _fmt_dt(x):
+        if x is None:
+            return ""
+        if hasattr(x, "strftime"):
+            return x.strftime("%d/%m/%Y %H:%M")
+        return str(x)[:16]
 
-        with col1:
-            paciente = st.text_input("Nome do Paciente *")
-            tutor = st.text_input("Nome do Tutor *")
-            clinica = st.text_input("Nome da Clínica")
+    user_id = st.session_state.get("user_id")
+    rascunhos = requisicao_model.find_by_user(user_id, status="rascunho") if user_id else []
+    rascunho_opcoes = ["(nenhum)"] + [f"#{r['id'][:8]} – {r.get('paciente', 'Sem nome')} – {_fmt_dt(r.get('created_at'))}" for r in rascunhos]
+    rascunho_ids = [None] + [r["id"] for r in rascunhos]
+    if "nr_data" not in st.session_state:
+        st.session_state["nr_data"] = datetime.now().date()
 
-        with col2:
-            tipo_exame = st.selectbox("Tipo de Exame *", ["raio-x", "ultrassom"])
-            observacoes = st.text_area("Observações", height=100)
+    col_form, = st.columns([1])
+    with col_form:
+        st.subheader("📋 Dados do Paciente e da Requisição")
+        st.caption("Campos com * são obrigatórios. Preencha os dados, anexe as imagens e envie. O laudo será gerado e liberado pelo veterinário administrador.")
+
+        # Carregar rascunho
+        if rascunhos:
+            idx_sel = st.selectbox(
+                "📁 Carregar rascunho",
+                range(len(rascunho_opcoes)),
+                format_func=lambda i: rascunho_opcoes[i],
+                key="nr_rascunho_sel",
+            )
+            if st.button("🔄 Carregar rascunho", key="nr_load_draft") and idx_sel > 0:
+                r = rascunhos[idx_sel - 1]
+                for k, v in [("nr_paciente", r.get("paciente", "")), ("nr_tutor", r.get("tutor", "")),
+                             ("nr_clinica", r.get("clinica", "")), ("nr_especie", r.get("especie", "")),
+                             ("nr_idade", r.get("idade", "")), ("nr_raca", r.get("raca", "")),
+                             ("nr_sexo", r.get("sexo", "") or "Macho"), ("nr_medico_vet", r.get("medico_veterinario_solicitante", "")),
+                             ("nr_regiao", r.get("regiao_estudo", "")), ("nr_suspeita", r.get("suspeita_clinica", "")),
+                             ("nr_plantao", r.get("plantao", "") or "Não"), ("nr_historico", r.get("historico_clinico", "") or r.get("observacoes", "")),
+                             ("nr_tipo_exame", r.get("tipo_exame", "raio-x"))]:
+                    st.session_state[k] = v or ""
+                de = r.get("data_exame") or r.get("created_at")
+                if de and hasattr(de, "date"):
+                    st.session_state["nr_data"] = de.date()
+                else:
+                    st.session_state["nr_data"] = datetime.now().date()
+                st.session_state["nr_draft_id"] = r["id"]
+                st.rerun()
+
+        paciente = st.text_input("🐾 Nome do Paciente *", value=st.session_state.get("nr_paciente", ""), key="nr_paciente")
+        especie = st.text_input("🐕 Espécie", value=st.session_state.get("nr_especie", ""), key="nr_especie")
+        idade = st.text_input("📅 Idade", value=st.session_state.get("nr_idade", ""), key="nr_idade")
+        raca = st.text_input("🏷️ Raça", value=st.session_state.get("nr_raca", ""), key="nr_raca")
+        sexo = st.radio("Sexo", ["Macho", "Fêmea"], index=0 if st.session_state.get("nr_sexo") == "Macho" else 1, key="nr_sexo", horizontal=True)
+        tutor = st.text_input("👤 Nome do Tutor(a) *", value=st.session_state.get("nr_tutor", ""), key="nr_tutor")
+        clinica = st.text_input("🏥 Clínica Veterinária Solicitante", value=st.session_state.get("nr_clinica", ""), key="nr_clinica")
+        medico_vet = st.text_input("👨‍⚕️ Médico(a) Veterinário(a) Solicitante", value=st.session_state.get("nr_medico_vet", ""), key="nr_medico_vet")
+        regiao = st.text_input("📍 Região de estudo", value=st.session_state.get("nr_regiao", ""), key="nr_regiao")
+        suspeita = st.text_input("🔬 Suspeita clínica", value=st.session_state.get("nr_suspeita", ""), key="nr_suspeita")
+        plantao = st.radio("Plantão", ["Sim", "Não"], index=1, key="nr_plantao", horizontal=True)
+        tipo_exame = st.selectbox("📋 Tipo de exame *", ["raio-x", "ultrassom"], index=0, key="nr_tipo_exame")
+        data_exame = st.date_input("📆 Data", value=st.session_state.get("nr_data", datetime.now().date()), key="nr_data")
+        historico = st.text_area("📝 Histórico Clínico", value=st.session_state.get("nr_historico", ""), height=120, key="nr_historico")
 
         st.subheader("📷 Imagens do Exame")
+        # Usar chave dinâmica para permitir reset do uploader
+        upload_key = f"nr_upload_{st.session_state.get('upload_counter', 0)}"
         uploaded_files = st.file_uploader(
-            "Selecione as imagens (JPG, PNG, DICOM)",
-            type=['jpg', 'jpeg', 'png', 'dcm', 'dicom', 'bmp', 'tiff'],
-            accept_multiple_files=True
+            "Selecione as imagens (JPG, PNG, DICOM). Múltiplas imagens permitidas.",
+            type=["jpg", "jpeg", "png", "dcm", "dicom", "bmp", "tiff"],
+            accept_multiple_files=True,
+            key=upload_key,
         )
-
-        # Preview das imagens (DICOM: salvar em temp e usar load_dicom_image)
         if uploaded_files:
-            st.write(f"**{len(uploaded_files)} arquivo(s) selecionado(s)**")
-            cols = st.columns(min(3, len(uploaded_files)))
-            for idx, file in enumerate(uploaded_files[:3]):
-                with cols[idx]:
-                    try:
-                        ext = os.path.splitext(file.name)[1].lower()
-                        if ext in (".dcm", ".dicom"):
-                            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-                                tmp.write(file.getbuffer().tobytes())
-                                tmp_path = tmp.name
-                            try:
-                                from ai.analyzer import load_dicom_image
-                                img = load_dicom_image(tmp_path)
-                                if img is not None:
-                                    st.image(img, caption=file.name, use_container_width=True)
-                                else:
-                                    st.write(f"Arquivo: {file.name} (DICOM)")
-                            finally:
-                                try:
-                                    os.unlink(tmp_path)
-                                except Exception:
-                                    pass
-                        else:
-                            from PIL import Image
-                            file.seek(0)
-                            img = Image.open(file)
-                            if img.mode != "RGB":
-                                img = img.convert("RGB")
-                            st.image(img, caption=file.name, use_container_width=True)
-                    except Exception:
-                        st.write(f"Arquivo: {file.name}")
+            st.caption(f"✅ {len(uploaded_files)} arquivo(s) anexado(s) ao laudo.")
 
-        submit = st.form_submit_button("📤 Enviar Requisição", type="primary")
+        # Botões: Limpar, Salvar rascunho, Exportar PDF, Enviar
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            limpar = st.button("🗑️ Limpar formulário", key="nr_limpar", use_container_width=True)
+        with c2:
+            salvar_rascunho = st.button("💾 Salvar rascunho", key="nr_rascunho", use_container_width=True)
+        with c3:
+            exportar_pdf = st.button("📄 Exportar PDF", key="nr_exportar", use_container_width=True)
+        with c4:
+            enviar = st.button("📤 Enviar Requisição", type="primary", key="nr_enviar", use_container_width=True)
 
-        if submit:
-            if not paciente or not tutor:
-                st.error("Por favor, preencha pelo menos o nome do paciente e do tutor")
-            elif not uploaded_files:
-                st.error("Por favor, selecione pelo menos uma imagem")
+        if limpar:
+            for k in list(st.session_state.keys()):
+                if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_exportar", "nr_enviar"):
+                    del st.session_state[k]
+            st.session_state["nr_data"] = datetime.now().date()
+            st.session_state["nr_plantao"] = "Não"
+            st.session_state["nr_sexo"] = "Macho"
+            st.session_state["nr_tipo_exame"] = "raio-x"
+            # Incrementar contador do uploader para resetar
+            st.session_state["upload_counter"] = st.session_state.get("upload_counter", 0) + 1
+            st.rerun()
+
+        if salvar_rascunho:
+            if not paciente.strip() or not tutor.strip():
+                st.error("Para salvar rascunho, preencha pelo menos Nome do Paciente e Nome do Tutor(a).")
             else:
-                # Salvar imagens (caminhos absolutos para IA e requisição)
-                user_id = st.session_state.get('user_id')
+                from datetime import datetime as _dt
+                draft_id = st.session_state.get("nr_draft_id")
+                data_exame_dt = _dt.combine(data_exame, _dt.min.time()) if data_exame else _dt.utcnow()
+                payload = {
+                    "paciente": paciente, "tutor": tutor, "clinica": clinica, "tipo_exame": tipo_exame,
+                    "especie": especie, "idade": idade, "raca": raca, "sexo": sexo,
+                    "medico_veterinario_solicitante": medico_vet, "regiao_estudo": regiao,
+                    "suspeita_clinica": suspeita, "plantao": plantao, "historico_clinico": historico,
+                    "observacoes": historico, "data_exame": data_exame_dt,
+                }
+                if draft_id:
+                    requisicao_model.update(draft_id, {**payload, "imagens": []})
+                    st.success("Rascunho atualizado.")
+                else:
+                    rid = requisicao_model.create(
+                        user_id=user_id, imagens=[], status="rascunho",
+                        paciente=payload["paciente"], tutor=payload["tutor"], clinica=payload["clinica"],
+                        tipo_exame=payload["tipo_exame"], observacoes=payload["observacoes"],
+                        especie=payload["especie"], idade=payload["idade"], raca=payload["raca"], sexo=payload["sexo"],
+                        medico_veterinario_solicitante=payload["medico_veterinario_solicitante"],
+                        regiao_estudo=payload["regiao_estudo"], suspeita_clinica=payload["suspeita_clinica"],
+                        plantao=payload["plantao"], historico_clinico=payload["historico_clinico"],
+                        data_exame=payload["data_exame"],
+                    )
+                    st.session_state["nr_draft_id"] = rid
+                    st.success("Rascunho salvo.")
+                st.rerun()
+
+        if exportar_pdf:
+            form_data = {
+                "paciente": paciente, "tutor": tutor, "clinica": clinica, "tipo_exame": tipo_exame,
+                "especie": especie, "idade": idade, "raca": raca, "sexo": sexo,
+                "medico_veterinario_solicitante": medico_vet, "regiao_estudo": regiao,
+                "suspeita_clinica": suspeita, "plantao": plantao, "historico_clinico": historico,
+                "data": data_exame,
+            }
+            paths = []
+            if uploaded_files:
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                tmp_dir = os.path.join(project_root, "uploads", "_tmp_export")
+                os.makedirs(tmp_dir, exist_ok=True)
+                for idx, uf in enumerate(uploaded_files):
+                    base, suf = os.path.splitext(uf.name)
+                    p = os.path.join(tmp_dir, f"{idx}_{base}{suf}")
+                    with open(p, "wb") as fp:
+                        fp.write(uf.getbuffer())
+                    paths.append(p)
+            try:
+                from utils.laudo_pdf import gerar_pdf_preview
+                pdf_bytes = gerar_pdf_preview(form_data, paths)
+                st.download_button("📥 Baixar PDF", data=pdf_bytes, file_name=f"laudo_preview_{paciente or 'exame'}.pdf".replace(" ", "_"), mime="application/pdf", key="nr_dl_pdf")
+            except Exception as e:
+                st.error(f"Erro ao gerar PDF: {e}")
+
+        if enviar:
+            if not paciente or not tutor:
+                st.error("Preencha o Nome do Paciente e o Nome do Tutor(a).")
+            elif not uploaded_files:
+                st.error("Selecione ao menos uma imagem do exame.")
+            else:
                 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 uploads_base = os.path.join(project_root, "uploads")
                 user_images_dir = os.path.join(uploads_base, user_id)
                 os.makedirs(user_images_dir, exist_ok=True)
                 imagens_paths = []
+                for f in uploaded_files:
+                    fp = os.path.abspath(os.path.join(user_images_dir, f.name))
+                    with open(fp, "wb") as out:
+                        out.write(f.getbuffer())
+                    imagens_paths.append(fp)
 
-                for file in uploaded_files:
-                    file_path = os.path.abspath(os.path.join(user_images_dir, file.name))
-                    with open(file_path, "wb") as f:
-                        f.write(file.getbuffer())
-                    imagens_paths.append(file_path)
+                from datetime import datetime as _dt
+                data_exame_dt = _dt.combine(data_exame, _dt.min.time()) if data_exame else _dt.utcnow()
 
-                # Criar requisição e gerar laudo com IA em segundo plano (sem UI para o usuário)
                 try:
                     req_id = requisicao_model.create(
-                        user_id=user_id,
-                        imagens=imagens_paths,
-                        paciente=paciente,
-                        tutor=tutor,
-                        clinica=clinica,
-                        tipo_exame=tipo_exame,
-                        observacoes=observacoes
+                        user_id=user_id, imagens=imagens_paths,
+                        paciente=paciente, tutor=tutor, clinica=clinica, tipo_exame=tipo_exame,
+                        observacoes=historico, especie=especie, idade=idade, raca=raca, sexo=sexo,
+                        medico_veterinario_solicitante=medico_vet, regiao_estudo=regiao,
+                        suspeita_clinica=suspeita, plantao=plantao, historico_clinico=historico,
+                        data_exame=data_exame_dt, status="pendente",
                     )
-
-                    laudo_id = None
-                    try:
-                        from dotenv import load_dotenv
-                        _pr = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                        load_dotenv(os.path.join(_pr, ".env"))
-                        _api_key = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
-                        if _api_key and _api_key != "SUA_API_KEY_AQUI":
-                            from ai.analyzer import VetAIAnalyzer, load_images_for_analysis
-                            images = load_images_for_analysis(imagens_paths)
-                            if images:
-                                ai_analyzer = VetAIAnalyzer()
-                                texto_gerado = ai_analyzer.generate_diagnosis(images)
-                                laudo_id = laudo_model.create(
-                                    requisicao_id=req_id,
-                                    texto=texto_gerado,
-                                    texto_original=texto_gerado,
-                                    status="pendente",
-                                )
-                    except Exception:
-                        import traceback
-                        traceback.print_exc()
-
-                    st.session_state['requisicao_enviada'] = True
-                    st.session_state['requisicao_info'] = {
-                        'req_id': req_id,
-                        'laudo_id': laudo_id,
-                        'paciente': paciente
-                    }
-                    st.session_state['form_counter'] = st.session_state.get('form_counter', 0) + 1
-                    st.rerun()
+                    # Imagens apenas armazenadas. Laudo é gerado pela IA quando o admin
+                    # acessar "Criar/Editar Laudo" (Requisições) ou "Gerar Laudo com IA" (Laudos).
+                    st.session_state["requisicao_enviada"] = True
+                    st.session_state["requisicao_info"] = {"req_id": req_id, "paciente": paciente}
                     
+                    # Limpar formulário completamente
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_exportar", "nr_enviar"):
+                            del st.session_state[k]
+                    
+                    # Resetar valores padrão
+                    st.session_state["nr_data"] = datetime.now().date()
+                    st.session_state["nr_plantao"] = "Não"
+                    st.session_state["nr_sexo"] = "Macho"
+                    st.session_state["nr_tipo_exame"] = "raio-x"
+                    
+                    # Incrementar contador do uploader para forçar reset
+                    st.session_state["upload_counter"] = st.session_state.get("upload_counter", 0) + 1
+                    
+                    # Rolar para o topo após rerun
+                    st.markdown("""
+                        <script>
+                            setTimeout(function() {
+                                window.parent.scrollTo({ top: 0, behavior: 'smooth' });
+                            }, 200);
+                        </script>
+                    """, unsafe_allow_html=True)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao criar requisição: {str(e)}")
-                    import traceback
-                    st.exception(e)
+                    import traceback as _tb
+                    _tb.print_exc()
 
 elif page == "Minhas Faturas":
     st.header("💰 Minhas Faturas")
