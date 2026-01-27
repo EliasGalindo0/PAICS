@@ -31,12 +31,13 @@ def reset_db():
             "requisicoes",
             "laudos",
             "faturas",
-            "knowledge_base"
+            "knowledge_base",
+            "sessions"  # Adicionar sessões também
         ]
 
         for collection_name in collections_to_clear:
             collection = getattr(db, collection_name, None)
-            if collection:
+            if collection is not None:
                 count = collection.count_documents({})
                 collection.delete_many({})
                 print(f"   ✅ {collection_name}: {count} documento(s) removido(s)")

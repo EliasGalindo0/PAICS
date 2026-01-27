@@ -2,8 +2,9 @@
 Dashboard do Usuário
 """
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime
-from auth.auth_utils import get_current_user, clear_session
+from auth.auth_utils import get_current_user, clear_session, logout_user
 from database.connection import get_db
 from database.models import Requisicao, Laudo, User
 import os
@@ -13,12 +14,54 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 # PIL.Image será importado lazy quando necessário (evita problemas com Python 3.13)
 
+# IMPORTANTE: Script deve executar ANTES de qualquer verificação Python
+# Usar st.markdown para garantir execução na página principal (não em iframe)
+# Colocar no início para executar o mais cedo possível
+st.markdown("""
+    <script>
+    // Executar imediatamente quando o script carrega (antes do Python processar)
+    (function() {
+        function checkAndRedirect() {
+            // Verificar se já temos user_id nos query params
+            const url = new URL(window.location);
+            const currentRestoreId = url.searchParams.get('restore_user_id');
+            
+            if (currentRestoreId) {
+                return; // Não fazer nada, já tem o parâmetro
+            }
+            
+            // Verificar localStorage para user_id (salvo no login)
+            const userId = localStorage.getItem('paics_user_id');
+            
+            if (userId && userId.trim() !== '') {
+                // Passar user_id para o Python via query params
+                url.searchParams.set('restore_user_id', userId);
+                window.location.replace(url.toString());
+            }
+        }
+        
+        // Tentar executar imediatamente
+        checkAndRedirect();
+        
+        // Também executar quando o DOM estiver pronto (fallback)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkAndRedirect);
+        } else {
+            setTimeout(checkAndRedirect, 100);
+        }
+    })();
+    </script>
+""", unsafe_allow_html=True)
+
+# IMPORTANTE: st.set_page_config deve vir ANTES do script JavaScript
+# Mas o script JavaScript precisa executar o mais cedo possível
 st.set_page_config(
     page_title="Dashboard Usuário - PAICS",
     page_icon="👤",
     layout="wide",
     menu_items=None
 )
+
 
 # Ocultar menu de navegação de páginas
 st.markdown("""
@@ -29,9 +72,164 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Verificar autenticação
-if not st.session_state.get('authenticated'):
-    st.switch_page("pages/login.py")
+# Script já foi movido para o início do arquivo para garantir execução antes do Python
+
+# Verificar autenticação e tokens
+from auth.auth_utils import verify_and_refresh_session
+
+# Função para carregar tokens do localStorage
+def load_tokens_from_localstorage():
+    """Carrega tokens do localStorage e coloca no session_state"""
+    # Verificar se já temos tokens
+    if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
+        return
+    
+    # Processar tokens da query string primeiro (se vieram do JavaScript)
+    query_params = st.query_params
+    if query_params.get('auto_login') == 'true':
+        access_token_b64 = query_params.get('access_token', [''])[0]
+        refresh_token_b64 = query_params.get('refresh_token', [''])[0]
+        is_encoded = query_params.get('encoded') == 'true'
+        
+        if access_token_b64 and refresh_token_b64:
+            # Decodificar se vieram codificados em base64
+            if is_encoded:
+                import base64
+                try:
+                    access_token = base64.b64decode(access_token_b64).decode()
+                    refresh_token = base64.b64decode(refresh_token_b64).decode()
+                except Exception:
+                    access_token = access_token_b64
+                    refresh_token = refresh_token_b64
+            else:
+                access_token = access_token_b64
+                refresh_token = refresh_token_b64
+            
+            st.session_state['access_token'] = access_token
+            st.session_state['refresh_token'] = refresh_token
+            st.query_params.clear()
+            # Não fazer rerun aqui - deixar o fluxo continuar para verificar a sessão
+            return
+    
+    # Se não temos tokens e não há query params, tentar carregar do localStorage via JavaScript
+    st.markdown("""
+        <script>
+        (function() {
+            const url = new URL(window.location);
+            if (url.searchParams.has('auto_login')) {
+                return;
+            }
+            
+            const accessToken = localStorage.getItem('paics_access_token');
+            const refreshToken = localStorage.getItem('paics_refresh_token');
+            
+            if (accessToken && refreshToken) {
+                const accessTokenB64 = btoa(accessToken);
+                const refreshTokenB64 = btoa(refreshToken);
+                
+                url.searchParams.set('auto_login', 'true');
+                url.searchParams.set('access_token', accessTokenB64);
+                url.searchParams.set('refresh_token', refreshTokenB64);
+                url.searchParams.set('encoded', 'true');
+                window.location.href = url.toString();
+            }
+        })();
+        </script>
+    """, unsafe_allow_html=True)
+
+# PRIMEIRO: Aguardar um pouco para o JavaScript executar e adicionar restore_user_id aos query params
+# O JavaScript executa no navegador, então precisamos dar tempo para ele executar
+import time
+time.sleep(0.3)  # Pequeno delay para JavaScript executar
+
+# Verificar query params para restaurar sessão do banco
+query_params = st.query_params
+restore_user_id = query_params.get('restore_user_id', [''])[0]
+
+# Se há user_id nos query params, tentar restaurar sessão do banco
+if restore_user_id and not st.session_state.get('authenticated'):
+    from auth.auth_utils import restore_session_from_db
+    if restore_session_from_db(restore_user_id):
+        # Sessão restaurada com sucesso, limpar query params
+        st.query_params.clear()
+        st.rerun()
+    else:
+        # Não conseguiu restaurar, limpar localStorage e redirecionar
+        st.markdown("""
+            <script>
+            localStorage.removeItem('paics_user_id');
+            localStorage.removeItem('paics_access_token');
+            localStorage.removeItem('paics_refresh_token');
+            </script>
+        """, unsafe_allow_html=True)
+        st.query_params.clear()
+        st.switch_page("pages/login.py")
+
+# Se não há user_id nos query params e não está autenticado, 
+# tentar restaurar sessão diretamente do banco (sem depender do JavaScript)
+if not restore_user_id and not st.session_state.get('authenticated') and not st.session_state.get('access_token'):
+    from auth.auth_utils import try_restore_session_from_db
+    if try_restore_session_from_db():
+        # Sessão restaurada com sucesso
+        st.rerun()
+    else:
+        # Não conseguiu restaurar, aguardar um pouco para o JavaScript tentar
+        time.sleep(1.0)
+        # Verificar novamente os query params (caso o JavaScript tenha adicionado)
+        query_params = st.query_params
+        restore_user_id = query_params.get('restore_user_id', [''])[0]
+        
+        if restore_user_id:
+            from auth.auth_utils import restore_session_from_db
+            if restore_session_from_db(restore_user_id):
+                st.query_params.clear()
+                st.rerun()
+            else:
+                st.switch_page("pages/login.py")
+        else:
+            # Não conseguiu restaurar de nenhuma forma
+            st.switch_page("pages/login.py")
+
+# Verificar tokens existentes ou sessão autenticada
+if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
+    if not verify_and_refresh_session():
+        # Tokens inválidos, limpar e redirecionar
+        st.markdown("""
+            <script>
+            localStorage.removeItem('paics_user_id');
+            localStorage.removeItem('paics_access_token');
+            localStorage.removeItem('paics_refresh_token');
+            </script>
+        """, unsafe_allow_html=True)
+        st.switch_page("pages/login.py")
+elif not st.session_state.get('authenticated'):
+    # Se não está autenticado e não há user_id para restaurar, redirecionar
+    if not restore_user_id:
+        st.switch_page("pages/login.py")
+
+# Tentar verificar tokens se disponíveis
+if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
+    # Limpar contador de tentativas se tiver tokens
+    if 'auto_login_attempts' in st.session_state:
+        del st.session_state['auto_login_attempts']
+    
+    if not verify_and_refresh_session():
+        # Tokens inválidos, limpar e redirecionar para login
+        st.markdown("""
+            <script>
+            localStorage.removeItem('paics_access_token');
+            localStorage.removeItem('paics_refresh_token');
+            </script>
+        """, unsafe_allow_html=True)
+        st.switch_page("pages/login.py")
+elif not st.session_state.get('authenticated'):
+    # Se não está autenticado e não há auto_login, verificar novamente
+    query_params = st.query_params
+    has_auto_login = query_params.get('auto_login') == 'true'
+    
+    if not has_auto_login:
+        # Não há tokens e não há auto_login, redirecionar para login
+        st.switch_page("pages/login.py")
 
 if st.session_state.get('role') == 'admin':
     st.switch_page("pages/admin_dashboard.py")
@@ -101,9 +299,38 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("🚪 Sair", use_container_width=True):
-        clear_session()
+    if st.button("🚪 Sair", use_container_width=True, type="primary"):
+        # Fazer logout primeiro
+        logout_user(logout_all_devices=False)
+        
+        # Limpar todos os tokens do session_state também
+        if 'access_token' in st.session_state:
+            del st.session_state['access_token']
+        if 'refresh_token' in st.session_state:
+            del st.session_state['refresh_token']
+        if 'remember_me' in st.session_state:
+            del st.session_state['remember_me']
+        
+        # Limpar localStorage e redirecionar imediatamente via JavaScript
+        st.markdown("""
+            <script>
+            (function() {
+                // Limpar localStorage
+                localStorage.removeItem('paics_user_id');
+                localStorage.removeItem('paics_access_token');
+                localStorage.removeItem('paics_refresh_token');
+                
+                // Forçar redirecionamento imediato
+                setTimeout(function() {
+                    window.location.href = '/login';
+                }, 100);
+            })();
+            </script>
+        """, unsafe_allow_html=True)
+        
+        # Também fazer switch_page como fallback
         st.switch_page("pages/login.py")
+        st.stop()
 
     st.divider()
 

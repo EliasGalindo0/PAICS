@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import re
 import sys
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import warnings
 
@@ -118,14 +118,32 @@ class VetAIAnalyzer:
     def __init__(self) -> None:
         self.model = genai.GenerativeModel(MODEL_NAME)
 
-    def generate_diagnosis(self, images: List[Image.Image]) -> str:  # noqa: C901
+    def generate_diagnosis(
+        self, 
+        images: List[Image.Image],
+        paciente_info: Optional[Dict[str, str]] = None
+    ) -> str:  # noqa: C901
         """
         Envia imagens para o Gemini e retorna o laudo técnico em português.
+        
+        Args:
+            images: Lista de imagens PIL para análise
+            paciente_info: Dicionário com informações do paciente (especie, raca, idade, sexo, 
+                          historico_clinico, suspeita_clinica, regiao_estudo)
         """
-        prompt = """
+        # Extrair informações do paciente ou usar valores padrão
+        especie = (paciente_info or {}).get("especie", "Não informado")
+        raca = (paciente_info or {}).get("raca", "Não informado")
+        idade = (paciente_info or {}).get("idade", "Não informado")
+        sexo = (paciente_info or {}).get("sexo", "Não informado")
+        historico = (paciente_info or {}).get("historico_clinico", "") or (paciente_info or {}).get("observacoes", "") or "Não informado"
+        suspeita_clinica = (paciente_info or {}).get("suspeita_clinica", "Não informado")
+        regiao_estudo = (paciente_info or {}).get("regiao_estudo", "Não informado")
+        
+        prompt = f"""
 You are a specialist veterinary radiologist analyzing diagnostic images. Generate a comprehensive technical report in Portuguese (Brazil).
 
-PATIENT CONTEXT:
+PATIENT CONTEXT (USE THIS INFORMATION TO INFORM YOUR ANALYSIS):
 - Species: {especie}
 - Breed: {raca}
 - Age: {idade}
@@ -133,6 +151,8 @@ PATIENT CONTEXT:
 - Clinical History: {historico}
 - Clinical Suspicion: {suspeita_clinica}
 - Study Region: {regiao_estudo}
+
+IMPORTANT: Consider the patient's species, breed, age, and clinical history when analyzing the images. Correlate your findings with the clinical suspicion and study region requested. Use breed-specific anatomical knowledge and age-appropriate normal variations in your interpretation.
 
 IMAGE ANALYSIS GUIDELINES:
 

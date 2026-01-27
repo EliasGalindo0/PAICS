@@ -68,4 +68,11 @@ def init_db():
     db.knowledge_base.create_index("tipo")
     db.knowledge_base.create_index("tags")
 
+    # Índices para sessões
+    db.sessions.create_index("user_id")
+    db.sessions.create_index("refresh_token", unique=True)
+    db.sessions.create_index("device_id")
+    db.sessions.create_index("expires_at")
+    db.sessions.create_index([("user_id", 1), ("active", 1)])
+
     return db

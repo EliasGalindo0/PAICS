@@ -1,23 +1,68 @@
 """
 Dashboard do Administrador
 """
+import time
+from auth.auth_utils import verify_and_refresh_session
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
-from auth.auth_utils import get_current_user, clear_session, require_auth
+from auth.auth_utils import get_current_user, clear_session, require_auth, logout_user
 from database.connection import get_db
 from database.models import Requisicao, Laudo, User, Fatura
 import os
 import io
 import zipfile
 import base64
+
+# IMPORTANTE: Script deve executar ANTES de qualquer verificação Python
+# Usar st.markdown para garantir execução na página principal (não em iframe)
+# Colocar no início para executar o mais cedo possível
+st.markdown("""
+    <script>
+    // Executar imediatamente quando o script carrega (antes do Python processar)
+    (function() {
+        function checkAndRedirect() {
+            // Verificar se já temos user_id nos query params
+            const url = new URL(window.location);
+            const currentRestoreId = url.searchParams.get('restore_user_id');
+            
+            if (currentRestoreId) {
+                return; // Não fazer nada, já tem o parâmetro
+            }
+            
+            // Verificar localStorage para user_id (salvo no login)
+            const userId = localStorage.getItem('paics_user_id');
+            
+            if (userId && userId.trim() !== '') {
+                // Passar user_id para o Python via query params
+                url.searchParams.set('restore_user_id', userId);
+                window.location.replace(url.toString());
+            }
+        }
+        
+        // Tentar executar imediatamente
+        checkAndRedirect();
+        
+        // Também executar quando o DOM estiver pronto (fallback)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkAndRedirect);
+        } else {
+            setTimeout(checkAndRedirect, 100);
+        }
+    })();
+    </script>
+""", unsafe_allow_html=True)
 # PIL.Image será importado lazy quando necessário (evita problemas com Python 3.13)
 
+# IMPORTANTE: st.set_page_config deve vir ANTES do script JavaScript
+# Mas o script JavaScript precisa executar o mais cedo possível
 st.set_page_config(
     page_title="Dashboard Admin - PAICS",
     page_icon="👨‍⚕️",
     layout="wide",
     menu_items=None
 )
+
 
 # Ocultar menu de navegação de páginas
 st.markdown("""
@@ -28,9 +73,207 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Verificar autenticação
-if not st.session_state.get('authenticated'):
-    st.switch_page("pages/login.py")
+# Script para verificar localStorage e passar user_id para o Python
+# Executar IMEDIATAMENTE quando a página carrega - ANTES de qualquer verificação Python
+# Usar runOnLoad para garantir execução antes do Python processar
+st.markdown("""
+    <script>
+    // Executar imediatamente quando o script carrega
+    (function() {
+        console.log('🚀 [ADMIN-DASH] Script de verificação iniciado');
+        
+        // Verificar se já temos user_id nos query params
+        const url = new URL(window.location);
+        const currentRestoreId = url.searchParams.get('restore_user_id');
+        console.log('📍 [ADMIN-DASH] URL atual:', url.toString());
+        console.log('   restore_user_id atual:', currentRestoreId);
+        
+        if (currentRestoreId) {
+            console.log('⏭️ [ADMIN-DASH] Já tem restore_user_id nos query params:', currentRestoreId);
+        } else {
+            // Verificar localStorage para user_id (salvo no login)
+            const userId = localStorage.getItem('paics_user_id');
+            console.log('🔍 [ADMIN-DASH] Verificando localStorage...');
+            console.log('   User ID encontrado:', userId);
+            const paicsKeys = Object.keys(localStorage).filter(k => k.startsWith('paics'));
+            console.log('   Todos os itens do localStorage (paics*):', paicsKeys);
+            paicsKeys.forEach(k => {
+                console.log(`      ${k}: ${localStorage.getItem(k)?.substring(0, 50)}...`);
+            });
+            
+            if (userId && userId.trim() !== '') {
+                console.log('✅ [ADMIN-DASH] User ID encontrado! Adicionando aos query params...');
+                // Passar user_id para o Python via query params
+                url.searchParams.set('restore_user_id', userId);
+                const newUrl = url.toString();
+                console.log('🔄 [ADMIN-DASH] Redirecionando para:', newUrl.substring(0, 200));
+                // Usar replace para evitar histórico desnecessário e garantir execução imediata
+                window.location.replace(newUrl);
+            } else {
+                console.log('❌ [ADMIN-DASH] User ID não encontrado no localStorage ou está vazio');
+            }
+        }
+    })();
+    </script>
+""", unsafe_allow_html=True)
+
+# Verificar autenticação e tokens
+
+# Função para carregar tokens do localStorage
+
+
+def load_tokens_from_localstorage():
+    """Carrega tokens do localStorage e coloca no session_state"""
+    # Verificar se já temos tokens
+    if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
+        return
+
+    # Processar tokens da query string primeiro (se vieram do JavaScript)
+    query_params = st.query_params
+    if query_params.get('auto_login') == 'true':
+        access_token_b64 = query_params.get('access_token', [''])[0]
+        refresh_token_b64 = query_params.get('refresh_token', [''])[0]
+        is_encoded = query_params.get('encoded') == 'true'
+
+        if access_token_b64 and refresh_token_b64:
+            # Decodificar se vieram codificados em base64
+            if is_encoded:
+                import base64
+                try:
+                    access_token = base64.b64decode(access_token_b64).decode()
+                    refresh_token = base64.b64decode(refresh_token_b64).decode()
+                except Exception:
+                    access_token = access_token_b64
+                    refresh_token = refresh_token_b64
+            else:
+                access_token = access_token_b64
+                refresh_token = refresh_token_b64
+
+            st.session_state['access_token'] = access_token
+            st.session_state['refresh_token'] = refresh_token
+            st.query_params.clear()
+            # Não fazer rerun aqui - deixar o fluxo continuar para verificar a sessão
+            return
+
+    # Se não temos tokens e não há query params, tentar carregar do localStorage via JavaScript
+    st.markdown("""
+        <script>
+        (function() {
+            const url = new URL(window.location);
+            if (url.searchParams.has('auto_login')) {
+                return;
+            }
+            
+            const accessToken = localStorage.getItem('paics_access_token');
+            const refreshToken = localStorage.getItem('paics_refresh_token');
+            
+            if (accessToken && refreshToken) {
+                const accessTokenB64 = btoa(accessToken);
+                const refreshTokenB64 = btoa(refreshToken);
+                
+                url.searchParams.set('auto_login', 'true');
+                url.searchParams.set('access_token', accessTokenB64);
+                url.searchParams.set('refresh_token', refreshTokenB64);
+                url.searchParams.set('encoded', 'true');
+                window.location.href = url.toString();
+            }
+        })();
+        </script>
+    """, unsafe_allow_html=True)
+
+
+# PRIMEIRO: Aguardar um pouco para o JavaScript executar e adicionar restore_user_id aos query params
+# O JavaScript executa no navegador, então precisamos dar tempo para ele executar
+time.sleep(0.5)  # Delay inicial para JavaScript executar
+
+# Verificar query params para restaurar sessão do banco
+query_params = st.query_params
+restore_user_id = query_params.get('restore_user_id', [''])[0]
+
+# Se há user_id nos query params, tentar restaurar sessão do banco
+if restore_user_id and not st.session_state.get('authenticated'):
+    from auth.auth_utils import restore_session_from_db
+    if restore_session_from_db(restore_user_id):
+        # Sessão restaurada com sucesso, limpar query params
+        st.query_params.clear()
+        st.rerun()
+    else:
+        # Não conseguiu restaurar, limpar localStorage e redirecionar
+        st.markdown("""
+            <script>
+            localStorage.removeItem('paics_user_id');
+            localStorage.removeItem('paics_access_token');
+            localStorage.removeItem('paics_refresh_token');
+            </script>
+        """, unsafe_allow_html=True)
+        st.query_params.clear()
+        st.switch_page("pages/login.py")
+
+# Se não há user_id nos query params e não está autenticado, 
+# tentar restaurar sessão diretamente do banco (sem depender do JavaScript)
+if not restore_user_id and not st.session_state.get('authenticated') and not st.session_state.get('access_token'):
+    from auth.auth_utils import try_restore_session_from_db
+    if try_restore_session_from_db():
+        # Sessão restaurada com sucesso
+        st.rerun()
+    else:
+        # Não conseguiu restaurar, aguardar um pouco para o JavaScript tentar
+        time.sleep(1.0)
+        # Verificar novamente os query params (caso o JavaScript tenha adicionado)
+        query_params = st.query_params
+        restore_user_id = query_params.get('restore_user_id', [''])[0]
+        
+        if restore_user_id:
+            from auth.auth_utils import restore_session_from_db
+            if restore_session_from_db(restore_user_id):
+                st.query_params.clear()
+                st.rerun()
+            else:
+                st.switch_page("pages/login.py")
+        else:
+            # Não conseguiu restaurar de nenhuma forma
+            st.switch_page("pages/login.py")
+
+# Verificar tokens existentes ou sessão autenticada
+if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
+    if not verify_and_refresh_session():
+        # Tokens inválidos, limpar e redirecionar
+        st.markdown("""
+            <script>
+            localStorage.removeItem('paics_user_id');
+            localStorage.removeItem('paics_access_token');
+            localStorage.removeItem('paics_refresh_token');
+            </script>
+        """, unsafe_allow_html=True)
+        st.switch_page("pages/login.py")
+elif not st.session_state.get('authenticated'):
+    # Se não está autenticado e não há user_id para restaurar, redirecionar
+    if not restore_user_id:
+        st.switch_page("pages/login.py")
+
+# Tentar verificar tokens se disponíveis
+if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
+    # Limpar contador de tentativas se tiver tokens
+    if 'auto_login_attempts' in st.session_state:
+        del st.session_state['auto_login_attempts']
+    
+    if not verify_and_refresh_session():
+        # Tokens inválidos, limpar e redirecionar para login
+        st.markdown("""
+            <script>
+            localStorage.removeItem('paics_access_token');
+            localStorage.removeItem('paics_refresh_token');
+            </script>
+        """, unsafe_allow_html=True)
+        st.switch_page("pages/login.py")
+elif not st.session_state.get('authenticated'):
+    # Se não está autenticado e não há auto_login, verificar novamente
+    query_params = st.query_params
+    has_auto_login = query_params.get('auto_login') == 'true'
+    
+    if not has_auto_login:
+        # Não há tokens e não há auto_login, redirecionar para login
+        st.switch_page("pages/login.py")
 
 if st.session_state.get('role') != 'admin':
     st.error("Acesso negado. Esta página é apenas para administradores.")
@@ -103,9 +346,38 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("🚪 Sair", use_container_width=True):
-        clear_session()
+    if st.button("🚪 Sair", use_container_width=True, type="primary"):
+        # Fazer logout primeiro
+        logout_user(logout_all_devices=False)
+        
+        # Limpar todos os tokens do session_state também
+        if 'access_token' in st.session_state:
+            del st.session_state['access_token']
+        if 'refresh_token' in st.session_state:
+            del st.session_state['refresh_token']
+        if 'remember_me' in st.session_state:
+            del st.session_state['remember_me']
+        
+        # Limpar localStorage e redirecionar imediatamente via JavaScript
+        st.markdown("""
+            <script>
+            (function() {
+                // Limpar localStorage
+                localStorage.removeItem('paics_user_id');
+                localStorage.removeItem('paics_access_token');
+                localStorage.removeItem('paics_refresh_token');
+                
+                // Forçar redirecionamento imediato
+                setTimeout(function() {
+                    window.location.href = '/login';
+                }, 100);
+            })();
+            </script>
+        """, unsafe_allow_html=True)
+        
+        # Também fazer switch_page como fallback
         st.switch_page("pages/login.py")
+        st.stop()
 
     st.divider()
 
@@ -241,7 +513,7 @@ if page == "Requisições":
                         "liberado": "✅ Concluída", "rejeitado": "❌ Rejeitada"}.get(status_req, status_req)
         n_imgs = len(req.get("imagens") or [])
 
-        with st.expander(f"📄 #{req['id'][:8]} · {req.get('paciente', 'Sem nome')} · {status_label} · {n_imgs} img(ns)"):
+        with st.expander(f"📄 #{req['id'][:8]} · {req.get('paciente', 'Sem nome')} · {status_label} · {n_imgs} imagem(ns)"):
             laudo = laudo_model.find_by_requisicao(req["id"])
             user = user_model.find_by_id(req.get("user_id")) if req.get("user_id") else None
 
@@ -359,7 +631,18 @@ if page == "Requisições":
                                         images = load_images_for_analysis(imagens_paths)
                                         if images:
                                             ai_analyzer = VetAIAnalyzer()
-                                            texto_gerado = ai_analyzer.generate_diagnosis(images)
+                                            # Preparar informações do paciente para a IA
+                                            paciente_info = {
+                                                "especie": req.get("especie", ""),
+                                                "raca": req.get("raca", ""),
+                                                "idade": req.get("idade", ""),
+                                                "sexo": req.get("sexo", ""),
+                                                "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
+                                                "suspeita_clinica": req.get("suspeita_clinica", ""),
+                                                "regiao_estudo": req.get("regiao_estudo", ""),
+                                            }
+                                            texto_gerado = ai_analyzer.generate_diagnosis(
+                                                images, paciente_info)
                                             laudo_model.create(
                                                 requisicao_id=req["id"],
                                                 texto=texto_gerado,
@@ -430,17 +713,17 @@ if page == "Requisições":
                     imagens_paths = req.get("imagens", [])
                     st.divider()
                     st.subheader("✏️ Edição de Laudo")
-                    
+
                     # Layout: imagens à esquerda, editor fixo à direita
                     col_imgs, col_edit = st.columns([1.5, 1])
-                    
+
                     # Coluna de imagens (esquerda) - Grid de miniaturas com lightbox
                     with col_imgs:
                         st.subheader("🖼️ Imagens para conferência")
-                        
+
                         if imagens_paths:
                             from ai.analyzer import load_images_for_analysis
-                            
+
                             # CSS e JavaScript para lightbox
                             lightbox_id = f"lightbox_{req['id'][:8]}"
                             st.markdown(f"""
@@ -609,24 +892,24 @@ if page == "Requisições":
                                 // Este código será substituído pelo novo sistema de lightbox abaixo
                                 </script>
                             """, unsafe_allow_html=True)
-                            
+
                             # Preparar todas as imagens para o grid
                             from ai.analyzer import load_images_for_analysis
                             import base64
                             from io import BytesIO
-                            
+
                             # Preparar dados das imagens e converter para base64
                             images_data = []
                             for i, path in enumerate(imagens_paths):
                                 nome = os.path.basename(path)
                                 preview = None
-                                
+
                                 try:
                                     loaded = load_images_for_analysis([path])
                                     preview = loaded[0] if loaded else None
                                 except Exception:
                                     pass
-                                
+
                                 img_data_url = None
                                 if preview is not None:
                                     buf = BytesIO()
@@ -634,7 +917,7 @@ if page == "Requisições":
                                     buf.seek(0)
                                     img_base64 = base64.b64encode(buf.read()).decode()
                                     img_data_url = f"data:image/png;base64,{img_base64}"
-                                
+
                                 images_data.append({
                                     'path': path,
                                     'nome': nome,
@@ -642,7 +925,7 @@ if page == "Requisições":
                                     'data_url': img_data_url,
                                     'index': i
                                 })
-                            
+
                             # Inicializar array de imagens para o lightbox E definir função openLightbox ANTES de renderizar
                             st.markdown(f"""
                                 <script>
@@ -670,27 +953,28 @@ if page == "Requisições":
                                     }}
                                 }};
                             """, unsafe_allow_html=True)
-                            
+
                             # Criar grid usando st.columns - 4 colunas
                             num_cols = 4
                             for row_start in range(0, len(images_data), num_cols):
                                 cols = st.columns(num_cols)
                                 row_images = images_data[row_start:row_start + num_cols]
-                                
+
                                 for col_idx, col in enumerate(cols):
                                     if col_idx < len(row_images):
                                         img_data = row_images[col_idx]
                                         nome = img_data['nome']
                                         preview = img_data['preview']
                                         img_data_url = img_data['data_url']
-                                        
+
                                         with col:
                                             if preview is not None and img_data_url:
                                                 # Renderizar imagem diretamente em HTML (sem usar st.image para evitar espaços)
                                                 # O array do lightbox será preenchido após o loop
                                                 container_key = f"img_container_{req['id']}_{img_data['index']}"
-                                                nome_display = nome[:40] + ('...' if len(nome) > 40 else '')
-                                                
+                                                nome_display = nome[:40] + \
+                                                    ('...' if len(nome) > 40 else '')
+
                                                 # Renderizar tudo em HTML puro para evitar espaços do Streamlit
                                                 # Usar onclick inline para evitar problemas com JavaScript sendo renderizado como texto
                                                 st.markdown(f"""
@@ -702,14 +986,15 @@ if page == "Requisições":
                                                     </div>
                                                 """, unsafe_allow_html=True)
                                             else:
-                                                nome_display = nome[:30] + ('...' if len(nome) > 30 else '')
+                                                nome_display = nome[:30] + \
+                                                    ('...' if len(nome) > 30 else '')
                                                 st.info(f"📄 {nome_display}\n\nPrévia indisponível")
-                                    
+
                                     # Preencher colunas vazias na última linha
                                     if col_idx >= len(row_images):
                                         with col:
                                             st.empty()
-                            
+
                             # Preencher array do lightbox com todas as imagens após o loop
                             import json
                             images_js_items = []
@@ -728,7 +1013,7 @@ if page == "Requisições":
                                 ];
                                 </script>
                             """, unsafe_allow_html=True)
-                            
+
                             # JavaScript do lightbox - funções de navegação
                             st.markdown(f"""
                                 <script>
@@ -790,7 +1075,7 @@ if page == "Requisições":
                                 }})();
                                 </script>
                             """, unsafe_allow_html=True)
-                            
+
                             # Baixar todas as imagens em um único ZIP
                             buf = io.BytesIO()
                             added = 0
@@ -820,7 +1105,7 @@ if page == "Requisições":
                             )
                         else:
                             st.info("Nenhuma imagem associada a esta requisição.")
-                    
+
                     # Coluna do editor (direita) - será fixada via JavaScript
                     with col_edit:
                         editor_key = f"laudo_edit_inline_{laudo['id']}"
@@ -832,7 +1117,7 @@ if page == "Requisições":
                             height=600,
                             key=editor_key,
                         )
-                        
+
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             if st.button("💾 Salvar", use_container_width=True, key=f"save_inline_{laudo['id']}"):
@@ -856,7 +1141,8 @@ if page == "Requisições":
                                             "status": "validado",
                                         },
                                     )
-                                    st.success("Laudo validado e adicionado ao banco de aprendizado!")
+                                    st.success(
+                                        "Laudo validado e adicionado ao banco de aprendizado!")
                                 except Exception as vec_err:
                                     st.success("Laudo validado!")
                                     st.warning(
@@ -868,7 +1154,8 @@ if page == "Requisições":
                             if st.button("📤 Liberar", use_container_width=True, key=f"lib_inline_{laudo['id']}"):
                                 laudo_model.release(laudo["id"])
                                 requisicao_model.update_status(req["id"], "liberado")
-                                st.success("✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
+                                st.success(
+                                    "✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
                                 st.balloons()
                                 del st.session_state[editing_key]
                                 st.rerun()
@@ -876,7 +1163,7 @@ if page == "Requisições":
                             if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_inline_{laudo['id']}"):
                                 del st.session_state[editing_key]
                                 st.rerun()
-                    
+
                     # JavaScript para fixar a coluna do editor após renderização
                     st.markdown(f"""
                         <script>

@@ -1,7 +1,7 @@
 """
 Modelos de dados para MongoDB
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from pymongo.collection import Collection
@@ -84,6 +84,74 @@ class User(BaseModel):
         """Exclui um usuário"""
         result = self.collection.delete_one({"_id": ObjectId(user_id)})
         return result.deleted_count > 0
+
+
+class Session(BaseModel):
+    """Modelo de sessão para refresh tokens"""
+    
+    def create(self, user_id: str, refresh_token: str, device_id: str, 
+               device_info: str = "", ip_address: str = "") -> str:
+        """Cria uma nova sessão"""
+        session_data = {
+            "user_id": user_id,
+            "refresh_token": refresh_token,
+            "device_id": device_id,
+            "device_info": device_info,
+            "ip_address": ip_address,
+            "created_at": datetime.utcnow(),
+            "last_used_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(days=30),
+            "active": True
+        }
+        result = self.collection.insert_one(session_data)
+        return str(result.inserted_id)
+    
+    def find_by_refresh_token(self, refresh_token: str) -> Optional[Dict]:
+        """Busca sessão por refresh token"""
+        doc = self.collection.find_one({
+            "refresh_token": refresh_token,
+            "active": True
+        })
+        return self.to_dict(doc) if doc else None
+    
+    def find_by_user(self, user_id: str) -> List[Dict]:
+        """Busca todas as sessões ativas de um usuário"""
+        docs = self.collection.find({
+            "user_id": user_id,
+            "active": True
+        }).sort("last_used_at", -1)
+        return [self.to_dict(doc) for doc in docs]
+    
+    def update_last_used(self, session_id: str) -> bool:
+        """Atualiza timestamp de último uso"""
+        result = self.collection.update_one(
+            {"_id": ObjectId(session_id)},
+            {"$set": {"last_used_at": datetime.utcnow()}}
+        )
+        return result.modified_count > 0
+    
+    def deactivate(self, session_id: str) -> bool:
+        """Desativa uma sessão específica"""
+        result = self.collection.update_one(
+            {"_id": ObjectId(session_id)},
+            {"$set": {"active": False, "deactivated_at": datetime.utcnow()}}
+        )
+        return result.modified_count > 0
+    
+    def deactivate_all_user_sessions(self, user_id: str) -> int:
+        """Desativa todas as sessões de um usuário (logout de todos os dispositivos)"""
+        result = self.collection.update_many(
+            {"user_id": user_id, "active": True},
+            {"$set": {"active": False, "deactivated_at": datetime.utcnow()}}
+        )
+        return result.modified_count
+    
+    def cleanup_expired(self) -> int:
+        """Remove sessões expiradas"""
+        result = self.collection.delete_many({
+            "expires_at": {"$lt": datetime.utcnow()}
+        })
+        return result.deleted_count
 
 
 class Requisicao(BaseModel):
