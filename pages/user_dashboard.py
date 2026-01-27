@@ -2,9 +2,8 @@
 Dashboard do Usuário
 """
 import streamlit as st
-import streamlit.components.v1 as components
 from datetime import datetime
-from auth.auth_utils import get_current_user, clear_session, logout_user
+from auth.auth_utils import get_current_user, clear_session, logout_user, verify_and_refresh_session
 from database.connection import get_db
 from database.models import Requisicao, Laudo, User
 import os
@@ -63,19 +62,42 @@ st.set_page_config(
 )
 
 
-# Ocultar menu de navegação de páginas
+# Aplicar tema customizado
+from utils.theme import apply_custom_theme
+apply_custom_theme()
+
+# Ocultar menu de navegação de páginas e reduzir margem superior
 st.markdown("""
     <style>
     [data-testid="stSidebarNav"] {
         display: none;
     }
+    /* Remover header superior */
+    header[data-testid="stHeader"] {
+        display: none !important;
+    }
+    
+    /* Reduzir margem superior */
+    .main .block-container {
+        padding-top: 0.5rem !important;
+    }
+    /* Remover sombras e bordas no modo escuro */
+    [data-theme="dark"] .main .block-container,
+    [data-theme="dark"] .element-container {
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+    [data-theme="dark"] section[data-testid="stSidebar"] {
+        border-right: none !important;
+    }
+    [data-theme="dark"] section[data-testid="stSidebar"] > div:first-child {
+        border-top: none !important;
+        border-bottom: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # Script já foi movido para o início do arquivo para garantir execução antes do Python
-
-# Verificar autenticação e tokens
-from auth.auth_utils import verify_and_refresh_session
 
 # Função para carregar tokens do localStorage
 def load_tokens_from_localstorage():
@@ -291,6 +313,11 @@ if st.session_state.get('requer_alteracao_senha') or st.session_state.get('prime
 
 # Sidebar
 with st.sidebar:
+    # Botão de alternar tema
+    from utils.theme import theme_toggle_button
+    theme_toggle_button()
+    st.divider()
+    
     st.title("👤 Meu Dashboard")
     user = get_current_user()
     if user:

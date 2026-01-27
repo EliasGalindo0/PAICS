@@ -39,4 +39,4 @@ TESSERACT_LANG = os.getenv("TESSERACT_LANG", "por+eng")
 # App Metadata
 APP_NAME = "PAICS"
 APP_VERSION = "1.0.0"
-APP_DESCRIPTION = "Sistema de Análise de Imagens Veterinárias com IA"
+APP_DESCRIPTION = "Sistema de Análise de Imagens Veterinárias"

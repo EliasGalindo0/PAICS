@@ -1,4 +1,4 @@
-# PAICS - Sistema de Análise de Imagens Veterinárias com IA
+# PAICS - Sistema de Análise de Imagens Veterinárias
 
 Sistema automatizado para análise de imagens veterinárias (raio-x e ultrassom) usando Inteligência Artificial (Google Gemini) para geração de laudos técnicos.
 
