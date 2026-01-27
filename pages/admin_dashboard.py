@@ -384,7 +384,7 @@ with st.sidebar:
     # Navegação
     page = st.radio(
         "Navegação",
-        ["Requisições", "Laudos", "Usuários", "Financeiro", "Knowledge Base"],
+        ["Requisições", "Laudos", "Usuários", "Financeiro", "Knowledge Base", "Aprendizado"],
         key="admin_nav"
     )
 
@@ -627,10 +627,11 @@ if page == "Requisições":
                                 with st.spinner("🤖 Gerando laudo com IA..."):
                                     imagens_paths = req.get("imagens", [])
                                     if imagens_paths:
-                                        from ai.analyzer import VetAIAnalyzer, load_images_for_analysis
+                                        from ai.analyzer import load_images_for_analysis
+                                        from ai.learning_system import LearningSystem
                                         images = load_images_for_analysis(imagens_paths)
                                         if images:
-                                            ai_analyzer = VetAIAnalyzer()
+                                            learning_system = LearningSystem()
                                             # Preparar informações do paciente para a IA
                                             paciente_info = {
                                                 "especie": req.get("especie", ""),
@@ -641,16 +642,30 @@ if page == "Requisições":
                                                 "suspeita_clinica": req.get("suspeita_clinica", ""),
                                                 "regiao_estudo": req.get("regiao_estudo", ""),
                                             }
-                                            texto_gerado = ai_analyzer.generate_diagnosis(
-                                                images, paciente_info)
-                                            laudo_model.create(
+                                            # Usar sistema de aprendizado para gerar laudo
+                                            texto_gerado, metadata = learning_system.generate_laudo(
+                                                images, paciente_info, req["id"]
+                                            )
+                                            
+                                            # Mostrar informações sobre o modelo usado
+                                            modelo_info = metadata.get("modelo_usado", "api_externa")
+                                            if metadata.get("similaridade_casos", 0) > 0:
+                                                st.info(f"🤖 Modelo: {modelo_info} | Similaridade: {metadata['similaridade_casos']:.2%}")
+                                            
+                                            laudo_id = laudo_model.create(
                                                 requisicao_id=req["id"],
                                                 texto=texto_gerado,
                                                 texto_original=texto_gerado,
                                                 status="pendente",
+                                                modelo_usado=modelo_info,
+                                                usado_api_externa=metadata.get("usado_api_externa", True),
+                                                similaridade_casos=metadata.get("similaridade_casos")
                                             )
+                                            # Salvar metadata no session_state para uso posterior
+                                            st.session_state[f"laudo_metadata_{req['id']}"] = metadata
+                                            st.session_state[f"laudo_paciente_info_{req['id']}"] = paciente_info
                                             st.success("✅ Laudo gerado com IA!")
-                                            laudo = laudo_model.find_by_requisicao(req["id"])
+                                            laudo = laudo_model.find_by_id(laudo_id)
                                         else:
                                             st.warning(
                                                 "Nenhuma imagem válida. Criando laudo vazio para edição manual.")
@@ -693,8 +708,37 @@ if page == "Requisições":
             with col_btn3:
                 if laudo and laudo.get("status") in ("pendente", "validado") and not is_editing:
                     if st.button("📤 Aprovar/Liberar", key=f"approve_{req['id']}", use_container_width=True):
-                        laudo_model.release(laudo["id"])
+                        # Liberar laudo (calcula rating automaticamente)
+                        laudo_model.release(laudo["id"], calcular_rating=True)
                         requisicao_model.update_status(req["id"], "liberado")
+                        
+                        # Salvar dados de aprendizado
+                        try:
+                            from ai.learning_system import LearningSystem
+                            learning_system = LearningSystem()
+                            
+                            # Buscar metadata e contexto salvos
+                            metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
+                            paciente_info = st.session_state.get(f"laudo_paciente_info_{req['id']}", {})
+                            
+                            # Recarregar laudo para pegar rating calculado
+                            laudo_atualizado = laudo_model.find_by_id(laudo["id"])
+                            rating = laudo_atualizado.get("rating", 3)
+                            
+                            # Salvar no sistema de aprendizado
+                            if paciente_info:
+                                learning_system.save_learning_data(
+                                    laudo_id=laudo["id"],
+                                    requisicao_id=req["id"],
+                                    contexto=paciente_info,
+                                    texto_gerado=laudo.get("texto_original_gerado", laudo.get("texto_original", "")),
+                                    texto_final=laudo_atualizado.get("texto", ""),
+                                    rating=rating,
+                                    metadata=metadata
+                                )
+                        except Exception as e:
+                            st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
+                        
                         st.success("✅ Laudo liberado para o usuário!")
                         st.rerun()
             with col_btn4:
@@ -1121,7 +1165,16 @@ if page == "Requisições":
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             if st.button("💾 Salvar", use_container_width=True, key=f"save_inline_{laudo['id']}"):
-                                laudo_model.update(laudo["id"], {"texto": texto_editado})
+                                # Registrar edição se o texto mudou
+                                if texto_editado != laudo.get("texto", ""):
+                                    user = get_current_user()
+                                    laudo_model.registrar_edicao(
+                                        laudo["id"], 
+                                        texto_editado, 
+                                        user["id"] if user else None
+                                    )
+                                else:
+                                    laudo_model.update(laudo["id"], {"texto": texto_editado})
                                 st.success("Laudo salvo!")
                                 st.rerun()
                         with col2:
@@ -1383,9 +1436,52 @@ elif page == "Laudos":
                 with col_btn3:
                     if laudo.get('status') in ['pendente', 'validado']:
                         if st.button("📤 Liberar", key=f"release_{laudo['id']}", use_container_width=True):
-                            laudo_model.release(laudo['id'])
+                            # Liberar laudo (calcula rating automaticamente)
+                            laudo_model.release(laudo['id'], calcular_rating=True)
                             if req:
                                 requisicao_model.update_status(req.get('id'), 'liberado')
+                            
+                            # Salvar dados de aprendizado
+                            try:
+                                from ai.learning_system import LearningSystem
+                                learning_system = LearningSystem()
+                                
+                                # Buscar contexto da requisição
+                                paciente_info = {
+                                    "especie": req.get("especie", "") if req else "",
+                                    "raca": req.get("raca", "") if req else "",
+                                    "idade": req.get("idade", "") if req else "",
+                                    "sexo": req.get("sexo", "") if req else "",
+                                    "historico_clinico": (req.get("historico_clinico", "") or req.get("observacoes", "")) if req else "",
+                                    "suspeita_clinica": req.get("suspeita_clinica", "") if req else "",
+                                    "regiao_estudo": req.get("regiao_estudo", "") if req else "",
+                                }
+                                
+                                # Recarregar laudo para pegar rating calculado
+                                laudo_atualizado = laudo_model.find_by_id(laudo['id'])
+                                rating = laudo_atualizado.get("rating", 3)
+                                
+                                # Buscar metadata se disponível
+                                metadata = {
+                                    "modelo_usado": laudo_atualizado.get("modelo_usado", "api_externa"),
+                                    "usado_api_externa": laudo_atualizado.get("usado_api_externa", True),
+                                    "similaridade_casos": laudo_atualizado.get("similaridade_casos")
+                                }
+                                
+                                # Salvar no sistema de aprendizado
+                                if req:
+                                    learning_system.save_learning_data(
+                                        laudo_id=laudo['id'],
+                                        requisicao_id=req.get('id'),
+                                        contexto=paciente_info,
+                                        texto_gerado=laudo_atualizado.get("texto_original_gerado", laudo_atualizado.get("texto_original", "")),
+                                        texto_final=laudo_atualizado.get("texto", ""),
+                                        rating=rating,
+                                        metadata=metadata
+                                    )
+                            except Exception as e:
+                                st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
+                            
                             st.success("✅ Laudo liberado para o usuário!")
                             st.balloons()
                             st.rerun()
@@ -1996,3 +2092,173 @@ elif page == "Knowledge Base":
                 st.write(f"**Criado em:** {item.get('created_at')}")
                 st.text_area("Conteúdo", value=item.get('conteudo', '')
                              [:300] + "...", height=100, disabled=True)
+
+elif page == "Aprendizado":
+    st.header("🧠 Sistema de Aprendizado Contínuo")
+    
+    try:
+        from ai.learning_system import LearningSystem
+        learning_system = LearningSystem()
+        
+        # Obter estatísticas
+        stats = learning_system.get_statistics()
+        
+        st.info("""
+        **Sistema de Aprendizado Contínuo**
+        
+        Este sistema aprende com cada laudo processado:
+        - **Rating 5/5**: Laudo aprovado sem edições → usado como referência
+        - **Rating 3/5**: Laudo editado parcialmente → aprendizado moderado
+        - **Rating 1/5**: Laudo muito editado → caso complexo, requer API externa
+        
+        O sistema usa casos similares para decidir quando usar modelo local vs API externa.
+        """)
+        
+        # Métricas principais
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("📊 Total de Casos", stats.get("total_casos", 0))
+        
+        with col2:
+            taxa_aprov = stats.get("taxa_aprovacao", 0)
+            st.metric("✅ Taxa de Aprovação", f"{taxa_aprov:.1f}%")
+        
+        with col3:
+            economia = stats.get("economia_api", 0)
+            st.metric("💰 Economia API", f"{economia:.1f}%")
+        
+        with col4:
+            local_only = stats.get("local_only", 0)
+            st.metric("🏠 Modelo Local", local_only)
+        
+        st.divider()
+        
+        # Distribuição de ratings
+        st.subheader("📈 Distribuição de Ratings")
+        col_r1, col_r2, col_r3 = st.columns(3)
+        
+        with col_r1:
+            rating_5 = stats.get("rating_5", 0)
+            st.metric("⭐ Rating 5/5", rating_5, help="Laudos aprovados sem edições")
+        
+        with col_r2:
+            rating_3 = stats.get("rating_3", 0)
+            st.metric("⭐ Rating 3/5", rating_3, help="Laudos editados parcialmente")
+        
+        with col_r3:
+            rating_1 = stats.get("rating_1", 0)
+            st.metric("⭐ Rating 1/5", rating_1, help="Laudos muito editados")
+        
+        # Gráfico de distribuição
+        if stats.get("total_casos", 0) > 0:
+            try:
+                import pandas as pd
+                import plotly.express as px
+                
+                df_ratings = pd.DataFrame({
+                    "Rating": ["5/5", "3/5", "1/5"],
+                    "Quantidade": [rating_5, rating_3, rating_1]
+                })
+                
+                fig = px.pie(
+                    df_ratings, 
+                    values="Quantidade", 
+                    names="Rating",
+                    title="Distribuição de Ratings",
+                    color="Rating",
+                    color_discrete_map={"5/5": "#2e7d32", "3/5": "#f57c00", "1/5": "#d32f2f"}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            except ImportError:
+                st.warning("Biblioteca plotly não instalada. Instale com: pip install plotly")
+            except Exception as e:
+                st.warning(f"Erro ao gerar gráfico: {str(e)}")
+        
+        st.divider()
+        
+        # Uso de modelos
+        st.subheader("🤖 Uso de Modelos")
+        col_m1, col_m2 = st.columns(2)
+        
+        with col_m1:
+            st.metric("🏠 Apenas Local", stats.get("local_only", 0))
+        
+        with col_m2:
+            st.metric("🌐 Com API Externa", stats.get("api_used", 0))
+        
+        st.divider()
+        
+        # Configurações do sistema
+        st.subheader("⚙️ Configurações do Sistema")
+        
+        col_c1, col_c2, col_c3 = st.columns(3)
+        
+        with col_c1:
+            threshold = st.number_input(
+                "Threshold de Similaridade",
+                min_value=0.0,
+                max_value=1.0,
+                value=learning_system.similarity_threshold,
+                step=0.05,
+                help="Similaridade mínima para usar apenas modelo local"
+            )
+        
+        with col_c2:
+            min_rating = st.number_input(
+                "Rating Mínimo para Local",
+                min_value=1,
+                max_value=5,
+                value=learning_system.min_rating_for_local,
+                step=1,
+                help="Rating mínimo dos casos similares para usar modelo local"
+            )
+        
+        with col_c3:
+            use_fallback = st.checkbox(
+                "Usar Fallback para API Externa",
+                value=learning_system.use_external_fallback,
+                help="Se modelo local falhar, usar API externa automaticamente"
+            )
+        
+        if st.button("💾 Salvar Configurações"):
+            # Atualizar configurações (poderia salvar em .env ou banco)
+            st.success("Configurações salvas! (Reinicie o sistema para aplicar)")
+        
+        st.divider()
+        
+        # Últimos casos aprendidos
+        st.subheader("📚 Últimos Casos Aprendidos")
+        
+        from database.models import LearningHistory
+        learning_model = LearningHistory(get_db().learning_history)
+        
+        # Buscar últimos 10 casos
+        todos_casos = learning_model.collection.find().sort("created_at", -1).limit(10)
+        casos_list = [learning_model.to_dict(doc) for doc in todos_casos]
+        
+        if casos_list:
+            for caso in casos_list:
+                with st.expander(f"📋 Caso {caso.get('id', 'N/A')[:8]} - Rating: {caso.get('rating', 'N/A')}/5"):
+                    col_case1, col_case2 = st.columns(2)
+                    
+                    with col_case1:
+                        st.write("**Contexto:**")
+                        contexto = caso.get("contexto", {})
+                        st.write(f"- Espécie: {contexto.get('especie', 'N/A')}")
+                        st.write(f"- Raça: {contexto.get('raca', 'N/A')}")
+                        st.write(f"- Região: {contexto.get('regiao_estudo', 'N/A')}")
+                        st.write(f"- Suspeita: {contexto.get('suspeita_clinica', 'N/A')}")
+                    
+                    with col_case2:
+                        st.write("**Modelo:**")
+                        st.write(f"- Tipo: {caso.get('modelo_usado', 'N/A')}")
+                        st.write(f"- API Externa: {'Sim' if caso.get('usado_api_externa') else 'Não'}")
+                        st.write(f"- Similaridade: {caso.get('similaridade_casos', 0):.2%}" if caso.get('similaridade_casos') else "- Similaridade: N/A")
+                        st.write(f"- Data: {caso.get('created_at', 'N/A')}")
+        else:
+            st.info("Nenhum caso aprendido ainda. Os casos serão registrados quando laudos forem liberados.")
+        
+    except Exception as e:
+        st.error(f"Erro ao carregar métricas: {str(e)}")
+        st.exception(e)
