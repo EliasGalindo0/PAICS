@@ -11,7 +11,7 @@ setup(
     name="paics",
     version="1.0.0",
     author="PAICS Team",
-    description="Sistema de Análise de Imagens Veterinárias com IA",
+    description="Sistema de Análise de Imagens Veterinárias",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),

@@ -2,7 +2,7 @@
 Modelos de dados para MongoDB
 """
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from bson import ObjectId
 from pymongo.collection import Collection
 
@@ -88,8 +88,8 @@ class User(BaseModel):
 
 class Session(BaseModel):
     """Modelo de sessão para refresh tokens"""
-    
-    def create(self, user_id: str, refresh_token: str, device_id: str, 
+
+    def create(self, user_id: str, refresh_token: str, device_id: str,
                device_info: str = "", ip_address: str = "") -> str:
         """Cria uma nova sessão"""
         session_data = {
@@ -105,7 +105,7 @@ class Session(BaseModel):
         }
         result = self.collection.insert_one(session_data)
         return str(result.inserted_id)
-    
+
     def find_by_refresh_token(self, refresh_token: str) -> Optional[Dict]:
         """Busca sessão por refresh token"""
         doc = self.collection.find_one({
@@ -113,7 +113,7 @@ class Session(BaseModel):
             "active": True
         })
         return self.to_dict(doc) if doc else None
-    
+
     def find_by_user(self, user_id: str) -> List[Dict]:
         """Busca todas as sessões ativas de um usuário"""
         docs = self.collection.find({
@@ -121,7 +121,7 @@ class Session(BaseModel):
             "active": True
         }).sort("last_used_at", -1)
         return [self.to_dict(doc) for doc in docs]
-    
+
     def update_last_used(self, session_id: str) -> bool:
         """Atualiza timestamp de último uso"""
         result = self.collection.update_one(
@@ -129,7 +129,7 @@ class Session(BaseModel):
             {"$set": {"last_used_at": datetime.utcnow()}}
         )
         return result.modified_count > 0
-    
+
     def deactivate(self, session_id: str) -> bool:
         """Desativa uma sessão específica"""
         result = self.collection.update_one(
@@ -137,7 +137,7 @@ class Session(BaseModel):
             {"$set": {"active": False, "deactivated_at": datetime.utcnow()}}
         )
         return result.modified_count > 0
-    
+
     def deactivate_all_user_sessions(self, user_id: str) -> int:
         """Desativa todas as sessões de um usuário (logout de todos os dispositivos)"""
         result = self.collection.update_many(
@@ -145,7 +145,7 @@ class Session(BaseModel):
             {"$set": {"active": False, "deactivated_at": datetime.utcnow()}}
         )
         return result.modified_count
-    
+
     def cleanup_expired(self) -> int:
         """Remove sessões expiradas"""
         result = self.collection.delete_many({
@@ -208,14 +208,14 @@ class Requisicao(BaseModel):
         query = {}
         if status:
             query["status"] = status
-        
+
         if start_date or end_date:
             query["created_at"] = {}
             if start_date:
                 query["created_at"]["$gte"] = start_date
             if end_date:
                 query["created_at"]["$lte"] = end_date
-                
+
         docs = self.collection.find(query).sort("created_at", -1)
         return [self.to_dict(doc) for doc in docs]
 
@@ -304,7 +304,7 @@ class Laudo(BaseModel):
         query = {}
         if status:
             query["status"] = status
-        
+
         if start_date or end_date:
             query["created_at"] = {}
             if start_date:
@@ -342,25 +342,25 @@ class Laudo(BaseModel):
         laudo = self.find_by_id(laudo_id)
         if not laudo:
             return False
-        
+
         updates = {
             "status": "liberado",
             "liberado_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
-        
+
         # Calcular rating se solicitado
         if calcular_rating:
             rating = self._calcular_rating(laudo)
             if rating:
                 updates["rating"] = rating
-        
+
         result = self.collection.update_one(
             {"_id": ObjectId(laudo_id)},
             {"$set": updates}
         )
         return result.modified_count > 0
-    
+
     def _calcular_rating(self, laudo: Dict) -> Optional[int]:
         """
         Calcula rating automático baseado em edições:
@@ -371,17 +371,17 @@ class Laudo(BaseModel):
         texto_atual = laudo.get("texto", "")
         texto_original = laudo.get("texto_original_gerado", "")
         num_edicoes = laudo.get("num_edicoes", 0)
-        
+
         if not texto_original:
             return None
-        
+
         # Se não houve edições e textos são idênticos
         if num_edicoes == 0 and texto_atual.strip() == texto_original.strip():
             return 5
-        
+
         # Calcular similaridade de texto (Levenshtein simplificado)
         similarity = self._calcular_similaridade_texto(texto_atual, texto_original)
-        
+
         # Rating baseado em similaridade e número de edições
         if similarity >= 0.95 and num_edicoes <= 1:
             return 5  # Aprovado sem edições significativas
@@ -389,40 +389,40 @@ class Laudo(BaseModel):
             return 3  # Editado parcialmente
         else:
             return 1  # Muito editado ou regenerado
-    
+
     def _calcular_similaridade_texto(self, texto1: str, texto2: str) -> float:
         """Calcula similaridade entre dois textos (0.0 a 1.0)"""
         if not texto1 or not texto2:
             return 0.0
-        
+
         # Normalizar textos
         t1 = texto1.strip().lower()
         t2 = texto2.strip().lower()
-        
+
         if t1 == t2:
             return 1.0
-        
+
         # Usar algoritmo simples de similaridade baseado em palavras comuns
         palavras1 = set(t1.split())
         palavras2 = set(t2.split())
-        
+
         if not palavras1 or not palavras2:
             return 0.0
-        
+
         palavras_comuns = palavras1.intersection(palavras2)
         palavras_total = palavras1.union(palavras2)
-        
+
         if not palavras_total:
             return 0.0
-        
+
         return len(palavras_comuns) / len(palavras_total)
-    
+
     def registrar_edicao(self, laudo_id: str, novo_texto: str, admin_id: Optional[str] = None) -> bool:
         """Registra uma edição no laudo"""
         laudo = self.find_by_id(laudo_id)
         if not laudo:
             return False
-        
+
         historico = laudo.get("historico_edicoes", [])
         historico.append({
             "texto_anterior": laudo.get("texto", ""),
@@ -430,7 +430,7 @@ class Laudo(BaseModel):
             "admin_id": admin_id,
             "timestamp": datetime.utcnow()
         })
-        
+
         result = self.collection.update_one(
             {"_id": ObjectId(laudo_id)},
             {"$set": {
@@ -541,7 +541,7 @@ class KnowledgeBase(BaseModel):
 class LearningHistory(BaseModel):
     """Modelo para histórico de aprendizado do sistema"""
 
-    def create(self, laudo_id: str, requisicao_id: str, 
+    def create(self, laudo_id: str, requisicao_id: str,
                contexto: Dict, texto_gerado: str, texto_final: str,
                rating: int, modelo_usado: str, usado_api_externa: bool,
                similaridade_casos: Optional[float] = None,
@@ -577,7 +577,7 @@ class LearningHistory(BaseModel):
         query = {
             "rating": {"$gte": min_rating}
         }
-        
+
         # Filtrar por contexto similar
         if contexto.get("especie"):
             query["contexto.especie"] = contexto["especie"]
@@ -587,8 +587,9 @@ class LearningHistory(BaseModel):
             query["contexto.regiao_estudo"] = contexto["regiao_estudo"]
         if contexto.get("suspeita_clinica"):
             # Busca parcial na suspeita clínica
-            query["contexto.suspeita_clinica"] = {"$regex": contexto["suspeita_clinica"], "$options": "i"}
-        
+            query["contexto.suspeita_clinica"] = {
+                "$regex": contexto["suspeita_clinica"], "$options": "i"}
+
         docs = self.collection.find(query).sort([("rating", -1), ("created_at", -1)]).limit(limit)
         return [self.to_dict(doc) for doc in docs]
 
@@ -600,7 +601,7 @@ class LearningHistory(BaseModel):
         rating_1 = self.collection.count_documents({"rating": 1})
         local_only = self.collection.count_documents({"usado_api_externa": False})
         api_used = self.collection.count_documents({"usado_api_externa": True})
-        
+
         return {
             "total_casos": total,
             "rating_5": rating_5,

@@ -209,7 +209,7 @@ if restore_user_id and not st.session_state.get('authenticated'):
         st.query_params.clear()
         st.switch_page("pages/login.py")
 
-# Se não há user_id nos query params e não está autenticado, 
+# Se não há user_id nos query params e não está autenticado,
 # tentar restaurar sessão diretamente do banco (sem depender do JavaScript)
 if not restore_user_id and not st.session_state.get('authenticated') and not st.session_state.get('access_token'):
     from auth.auth_utils import try_restore_session_from_db
@@ -222,7 +222,7 @@ if not restore_user_id and not st.session_state.get('authenticated') and not st.
         # Verificar novamente os query params (caso o JavaScript tenha adicionado)
         query_params = st.query_params
         restore_user_id = query_params.get('restore_user_id', [''])[0]
-        
+
         if restore_user_id:
             from auth.auth_utils import restore_session_from_db
             if restore_session_from_db(restore_user_id):
@@ -256,7 +256,7 @@ if st.session_state.get('access_token') and st.session_state.get('refresh_token'
     # Limpar contador de tentativas se tiver tokens
     if 'auto_login_attempts' in st.session_state:
         del st.session_state['auto_login_attempts']
-    
+
     if not verify_and_refresh_session():
         # Tokens inválidos, limpar e redirecionar para login
         st.markdown("""
@@ -270,7 +270,7 @@ elif not st.session_state.get('authenticated'):
     # Se não está autenticado e não há auto_login, verificar novamente
     query_params = st.query_params
     has_auto_login = query_params.get('auto_login') == 'true'
-    
+
     if not has_auto_login:
         # Não há tokens e não há auto_login, redirecionar para login
         st.switch_page("pages/login.py")
@@ -349,7 +349,7 @@ with st.sidebar:
     if st.button("🚪 Sair", use_container_width=True, type="primary"):
         # Fazer logout primeiro
         logout_user(logout_all_devices=False)
-        
+
         # Limpar todos os tokens do session_state também
         if 'access_token' in st.session_state:
             del st.session_state['access_token']
@@ -357,7 +357,7 @@ with st.sidebar:
             del st.session_state['refresh_token']
         if 'remember_me' in st.session_state:
             del st.session_state['remember_me']
-        
+
         # Limpar localStorage e redirecionar imediatamente via JavaScript
         st.markdown("""
             <script>
@@ -374,7 +374,7 @@ with st.sidebar:
             })();
             </script>
         """, unsafe_allow_html=True)
-        
+
         # Também fazer switch_page como fallback
         st.switch_page("pages/login.py")
         st.stop()
@@ -646,20 +646,24 @@ if page == "Requisições":
                                             texto_gerado, metadata = learning_system.generate_laudo(
                                                 images, paciente_info, req["id"]
                                             )
-                                            
+
                                             # Mostrar informações sobre o modelo usado
-                                            modelo_info = metadata.get("modelo_usado", "api_externa")
+                                            modelo_info = metadata.get(
+                                                "modelo_usado", "api_externa")
                                             if metadata.get("similaridade_casos", 0) > 0:
-                                                st.info(f"🤖 Modelo: {modelo_info} | Similaridade: {metadata['similaridade_casos']:.2%}")
-                                            
+                                                st.info(
+                                                    f"🤖 Modelo: {modelo_info} | Similaridade: {metadata['similaridade_casos']:.2%}")
+
                                             laudo_id = laudo_model.create(
                                                 requisicao_id=req["id"],
                                                 texto=texto_gerado,
                                                 texto_original=texto_gerado,
                                                 status="pendente",
                                                 modelo_usado=modelo_info,
-                                                usado_api_externa=metadata.get("usado_api_externa", True),
-                                                similaridade_casos=metadata.get("similaridade_casos")
+                                                usado_api_externa=metadata.get(
+                                                    "usado_api_externa", True),
+                                                similaridade_casos=metadata.get(
+                                                    "similaridade_casos")
                                             )
                                             # Salvar metadata no session_state para uso posterior
                                             st.session_state[f"laudo_metadata_{req['id']}"] = metadata
@@ -711,34 +715,36 @@ if page == "Requisições":
                         # Liberar laudo (calcula rating automaticamente)
                         laudo_model.release(laudo["id"], calcular_rating=True)
                         requisicao_model.update_status(req["id"], "liberado")
-                        
+
                         # Salvar dados de aprendizado
                         try:
                             from ai.learning_system import LearningSystem
                             learning_system = LearningSystem()
-                            
+
                             # Buscar metadata e contexto salvos
                             metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
-                            paciente_info = st.session_state.get(f"laudo_paciente_info_{req['id']}", {})
-                            
+                            paciente_info = st.session_state.get(
+                                f"laudo_paciente_info_{req['id']}", {})
+
                             # Recarregar laudo para pegar rating calculado
                             laudo_atualizado = laudo_model.find_by_id(laudo["id"])
                             rating = laudo_atualizado.get("rating", 3)
-                            
+
                             # Salvar no sistema de aprendizado
                             if paciente_info:
                                 learning_system.save_learning_data(
                                     laudo_id=laudo["id"],
                                     requisicao_id=req["id"],
                                     contexto=paciente_info,
-                                    texto_gerado=laudo.get("texto_original_gerado", laudo.get("texto_original", "")),
+                                    texto_gerado=laudo.get(
+                                        "texto_original_gerado", laudo.get("texto_original", "")),
                                     texto_final=laudo_atualizado.get("texto", ""),
                                     rating=rating,
                                     metadata=metadata
                                 )
                         except Exception as e:
                             st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
-                        
+
                         st.success("✅ Laudo liberado para o usuário!")
                         st.rerun()
             with col_btn4:
@@ -1169,8 +1175,8 @@ if page == "Requisições":
                                 if texto_editado != laudo.get("texto", ""):
                                     user = get_current_user()
                                     laudo_model.registrar_edicao(
-                                        laudo["id"], 
-                                        texto_editado, 
+                                        laudo["id"],
+                                        texto_editado,
                                         user["id"] if user else None
                                     )
                                 else:
@@ -1440,12 +1446,12 @@ elif page == "Laudos":
                             laudo_model.release(laudo['id'], calcular_rating=True)
                             if req:
                                 requisicao_model.update_status(req.get('id'), 'liberado')
-                            
+
                             # Salvar dados de aprendizado
                             try:
                                 from ai.learning_system import LearningSystem
                                 learning_system = LearningSystem()
-                                
+
                                 # Buscar contexto da requisição
                                 paciente_info = {
                                     "especie": req.get("especie", "") if req else "",
@@ -1456,32 +1462,33 @@ elif page == "Laudos":
                                     "suspeita_clinica": req.get("suspeita_clinica", "") if req else "",
                                     "regiao_estudo": req.get("regiao_estudo", "") if req else "",
                                 }
-                                
+
                                 # Recarregar laudo para pegar rating calculado
                                 laudo_atualizado = laudo_model.find_by_id(laudo['id'])
                                 rating = laudo_atualizado.get("rating", 3)
-                                
+
                                 # Buscar metadata se disponível
                                 metadata = {
                                     "modelo_usado": laudo_atualizado.get("modelo_usado", "api_externa"),
                                     "usado_api_externa": laudo_atualizado.get("usado_api_externa", True),
                                     "similaridade_casos": laudo_atualizado.get("similaridade_casos")
                                 }
-                                
+
                                 # Salvar no sistema de aprendizado
                                 if req:
                                     learning_system.save_learning_data(
                                         laudo_id=laudo['id'],
                                         requisicao_id=req.get('id'),
                                         contexto=paciente_info,
-                                        texto_gerado=laudo_atualizado.get("texto_original_gerado", laudo_atualizado.get("texto_original", "")),
+                                        texto_gerado=laudo_atualizado.get(
+                                            "texto_original_gerado", laudo_atualizado.get("texto_original", "")),
                                         texto_final=laudo_atualizado.get("texto", ""),
                                         rating=rating,
                                         metadata=metadata
                                     )
                             except Exception as e:
                                 st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
-                            
+
                             st.success("✅ Laudo liberado para o usuário!")
                             st.balloons()
                             st.rerun()
@@ -2095,14 +2102,14 @@ elif page == "Knowledge Base":
 
 elif page == "Aprendizado":
     st.header("🧠 Sistema de Aprendizado Contínuo")
-    
+
     try:
         from ai.learning_system import LearningSystem
         learning_system = LearningSystem()
-        
+
         # Obter estatísticas
         stats = learning_system.get_statistics()
-        
+
         st.info("""
         **Sistema de Aprendizado Contínuo**
         
@@ -2113,57 +2120,57 @@ elif page == "Aprendizado":
         
         O sistema usa casos similares para decidir quando usar modelo local vs API externa.
         """)
-        
+
         # Métricas principais
         col1, col2, col3, col4 = st.columns(4)
-        
+
         with col1:
             st.metric("📊 Total de Casos", stats.get("total_casos", 0))
-        
+
         with col2:
             taxa_aprov = stats.get("taxa_aprovacao", 0)
             st.metric("✅ Taxa de Aprovação", f"{taxa_aprov:.1f}%")
-        
+
         with col3:
             economia = stats.get("economia_api", 0)
             st.metric("💰 Economia API", f"{economia:.1f}%")
-        
+
         with col4:
             local_only = stats.get("local_only", 0)
             st.metric("🏠 Modelo Local", local_only)
-        
+
         st.divider()
-        
+
         # Distribuição de ratings
         st.subheader("📈 Distribuição de Ratings")
         col_r1, col_r2, col_r3 = st.columns(3)
-        
+
         with col_r1:
             rating_5 = stats.get("rating_5", 0)
             st.metric("⭐ Rating 5/5", rating_5, help="Laudos aprovados sem edições")
-        
+
         with col_r2:
             rating_3 = stats.get("rating_3", 0)
             st.metric("⭐ Rating 3/5", rating_3, help="Laudos editados parcialmente")
-        
+
         with col_r3:
             rating_1 = stats.get("rating_1", 0)
             st.metric("⭐ Rating 1/5", rating_1, help="Laudos muito editados")
-        
+
         # Gráfico de distribuição
         if stats.get("total_casos", 0) > 0:
             try:
                 import pandas as pd
                 import plotly.express as px
-                
+
                 df_ratings = pd.DataFrame({
                     "Rating": ["5/5", "3/5", "1/5"],
                     "Quantidade": [rating_5, rating_3, rating_1]
                 })
-                
+
                 fig = px.pie(
-                    df_ratings, 
-                    values="Quantidade", 
+                    df_ratings,
+                    values="Quantidade",
                     names="Rating",
                     title="Distribuição de Ratings",
                     color="Rating",
@@ -2174,26 +2181,26 @@ elif page == "Aprendizado":
                 st.warning("Biblioteca plotly não instalada. Instale com: pip install plotly")
             except Exception as e:
                 st.warning(f"Erro ao gerar gráfico: {str(e)}")
-        
+
         st.divider()
-        
+
         # Uso de modelos
         st.subheader("🤖 Uso de Modelos")
         col_m1, col_m2 = st.columns(2)
-        
+
         with col_m1:
             st.metric("🏠 Apenas Local", stats.get("local_only", 0))
-        
+
         with col_m2:
             st.metric("🌐 Com API Externa", stats.get("api_used", 0))
-        
+
         st.divider()
-        
+
         # Configurações do sistema
         st.subheader("⚙️ Configurações do Sistema")
-        
+
         col_c1, col_c2, col_c3 = st.columns(3)
-        
+
         with col_c1:
             threshold = st.number_input(
                 "Threshold de Similaridade",
@@ -2203,7 +2210,7 @@ elif page == "Aprendizado":
                 step=0.05,
                 help="Similaridade mínima para usar apenas modelo local"
             )
-        
+
         with col_c2:
             min_rating = st.number_input(
                 "Rating Mínimo para Local",
@@ -2213,35 +2220,35 @@ elif page == "Aprendizado":
                 step=1,
                 help="Rating mínimo dos casos similares para usar modelo local"
             )
-        
+
         with col_c3:
             use_fallback = st.checkbox(
                 "Usar Fallback para API Externa",
                 value=learning_system.use_external_fallback,
                 help="Se modelo local falhar, usar API externa automaticamente"
             )
-        
+
         if st.button("💾 Salvar Configurações"):
             # Atualizar configurações (poderia salvar em .env ou banco)
             st.success("Configurações salvas! (Reinicie o sistema para aplicar)")
-        
+
         st.divider()
-        
+
         # Últimos casos aprendidos
         st.subheader("📚 Últimos Casos Aprendidos")
-        
+
         from database.models import LearningHistory
         learning_model = LearningHistory(get_db().learning_history)
-        
+
         # Buscar últimos 10 casos
         todos_casos = learning_model.collection.find().sort("created_at", -1).limit(10)
         casos_list = [learning_model.to_dict(doc) for doc in todos_casos]
-        
+
         if casos_list:
             for caso in casos_list:
                 with st.expander(f"📋 Caso {caso.get('id', 'N/A')[:8]} - Rating: {caso.get('rating', 'N/A')}/5"):
                     col_case1, col_case2 = st.columns(2)
-                    
+
                     with col_case1:
                         st.write("**Contexto:**")
                         contexto = caso.get("contexto", {})
@@ -2249,16 +2256,18 @@ elif page == "Aprendizado":
                         st.write(f"- Raça: {contexto.get('raca', 'N/A')}")
                         st.write(f"- Região: {contexto.get('regiao_estudo', 'N/A')}")
                         st.write(f"- Suspeita: {contexto.get('suspeita_clinica', 'N/A')}")
-                    
+
                     with col_case2:
                         st.write("**Modelo:**")
                         st.write(f"- Tipo: {caso.get('modelo_usado', 'N/A')}")
-                        st.write(f"- API Externa: {'Sim' if caso.get('usado_api_externa') else 'Não'}")
-                        st.write(f"- Similaridade: {caso.get('similaridade_casos', 0):.2%}" if caso.get('similaridade_casos') else "- Similaridade: N/A")
+                        st.write(
+                            f"- API Externa: {'Sim' if caso.get('usado_api_externa') else 'Não'}")
+                        st.write(f"- Similaridade: {caso.get('similaridade_casos', 0):.2%}" if caso.get(
+                            'similaridade_casos') else "- Similaridade: N/A")
                         st.write(f"- Data: {caso.get('created_at', 'N/A')}")
         else:
             st.info("Nenhum caso aprendido ainda. Os casos serão registrados quando laudos forem liberados.")
-        
+
     except Exception as e:
         st.error(f"Erro ao carregar métricas: {str(e)}")
         st.exception(e)
