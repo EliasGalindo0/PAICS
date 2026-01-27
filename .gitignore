@@ -48,9 +48,6 @@ laudos_com_ia/
 output/
 temp_laudos/
 
-# Banco de dados vetorial (ChromaDB)
-vector_db/
-
 # Streamlit
 .streamlit/secrets.toml
 

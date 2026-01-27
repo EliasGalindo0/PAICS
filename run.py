@@ -24,7 +24,7 @@ except ImportError:
 def main():
     """Função principal do script auxiliar."""
     print("=" * 60)
-    print("PAICS - Sistema de Análise de Imagens Veterinárias com IA")
+    print("PAICS - Sistema de Análise de Imagens Veterinárias")
     print("=" * 60)
     print()
 

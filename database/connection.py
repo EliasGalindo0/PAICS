@@ -75,4 +75,14 @@ def init_db():
     db.sessions.create_index("expires_at")
     db.sessions.create_index([("user_id", 1), ("active", 1)])
 
+    # Índices para learning history
+    db.learning_history.create_index("laudo_id")
+    db.learning_history.create_index("requisicao_id")
+    db.learning_history.create_index("rating")
+    db.learning_history.create_index("modelo_usado")
+    db.learning_history.create_index("usado_api_externa")
+    db.learning_history.create_index("created_at")
+    db.learning_history.create_index([("contexto.especie", 1), ("contexto.raca", 1)])
+    db.learning_history.create_index([("rating", -1), ("created_at", -1)])
+
     return db

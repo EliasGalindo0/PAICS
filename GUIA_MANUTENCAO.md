@@ -1,6 +1,6 @@
 # Guia de Manutenção - PAICS
 
-**Sistema de Análise de Imagens Veterinárias com IA**
+**Sistema de Análise de Imagens Veterinárias**
 
 Este documento descreve a estrutura do projeto, a função dos principais arquivos e diretórios, os fluxos de negócio e orientações para manutenção.
 

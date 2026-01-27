@@ -1,6 +1,8 @@
 """
 Página de Login
 """
+from utils.logo import display_logo_centered
+from utils.theme import apply_custom_theme
 import streamlit as st
 from auth.auth_utils import login_user, verify_and_refresh_session
 from database.connection import init_db
@@ -12,11 +14,23 @@ st.set_page_config(
     menu_items=None
 )
 
-# Ocultar menu de navegação de páginas
+# Aplicar tema customizado
+apply_custom_theme()
+
+# Ocultar menu de navegação de páginas e reduzir margem superior
 st.markdown("""
     <style>
     [data-testid="stSidebarNav"] {
         display: none;
+    }
+    /* Remover header superior */
+    header[data-testid="stHeader"] {
+        display: none !important;
+    }
+    
+    /* Reduzir margem superior para compensar o logo */
+    .main .block-container {
+        padding-top: 0.5rem !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -113,22 +127,27 @@ if st.session_state.get('authenticated'):
     else:
         st.switch_page("pages/user_dashboard.py")
 
+# Exibir logo
+display_logo_centered(width=250)
+
 st.title("🔐 Login - PAICS")
-st.markdown("Sistema de Análise de Imagens Veterinárias com IA")
+st.markdown("Sistema de Análise de Imagens Veterinárias")
 
 st.info("ℹ️ **Acesso Restrito:** Apenas administradores podem criar contas. Entre em contato com o administrador do sistema para obter suas credenciais de acesso.")
 
 st.subheader("Entrar")
 
 with st.form("login_form"):
-    email_or_username = st.text_input("Email ou Username", placeholder="seu@email.com ou seu_username")
+    email_or_username = st.text_input(
+        "Email ou Username", placeholder="seu@email.com ou seu_username")
     password = st.text_input("Senha", type="password")
     remember_me = st.checkbox("Lembrar-me (manter conectado por 30 dias)", value=False)
     submit = st.form_submit_button("Entrar", type="primary", use_container_width=True)
 
     if submit:
         if email_or_username and password:
-            success, message, tokens = login_user(email_or_username, password, remember_me=remember_me)
+            success, message, tokens = login_user(
+                email_or_username, password, remember_me=remember_me)
             if success:
                 # Sempre salvar tokens no session_state
                 if tokens.get('access_token') and tokens.get('refresh_token'):
@@ -142,7 +161,7 @@ with st.form("login_form"):
 
                     # Usar st.components.v1.html para criar iframe e salvar no localStorage da página principal
                     import streamlit.components.v1 as components
-                    
+
                     # Adicionar listener na página principal ANTES do componente
                     st.markdown("""
                         <script>
@@ -162,7 +181,7 @@ with st.form("login_form"):
                         });
                         </script>
                     """, unsafe_allow_html=True)
-                    
+
                     # Obter user_id do session_state (deve estar disponível após create_session)
                     user_id = st.session_state.get('user_id', '')
                     if not user_id:
@@ -170,7 +189,7 @@ with st.form("login_form"):
                         # O user_id foi definido em create_session, então deve estar disponível
                         pass
                     user_id_b64 = base64.b64encode(user_id.encode()).decode() if user_id else ''
-                    
+
                     # Componente HTML que salva no localStorage da página principal
                     components.html(f"""
                         <!DOCTYPE html>
