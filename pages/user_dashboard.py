@@ -461,15 +461,12 @@ if page == "Meus Laudos":
             # Se não for datetime, retornar None
             if not isinstance(d, datetime):
                 return None
-            # Se tiver timezone UTC (offset 0), converter para local
-            if hasattr(d, "tzinfo") and d.tzinfo is not None:
-                try:
-                    offset_seconds = d.tzinfo.utcoffset(d).total_seconds() if d.tzinfo.utcoffset(d) else 0
-                    if offset_seconds == 0:
-                        # É UTC, converter para local
-                        d = utc_to_local(d)
-                except Exception:
-                    pass
+            # Se for naive, assumir que veio em UTC (Mongo) e converter para local
+            from datetime import timezone as _tzmod
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=_tzmod.utc)
+            # Converter para horário local (GMT-3)
+            d = utc_to_local(d)
             return d.date() if hasattr(d, "date") else d
 
         filtered = [(r, l) for r, l in filtered if _req_date(r) == filter_date]
@@ -480,6 +477,21 @@ if page == "Meus Laudos":
         st.caption(f"📅 Exibindo requisições de **{filter_date.strftime('%d/%m/%Y')}**. Marque «Mostrar todas as datas» para ver o histórico.")
 
     st.metric("Total", len(filtered))
+
+    # Helper local para formatar datas em GMT-3 na seção "Meus Laudos"
+    from datetime import datetime as _UDDateTime, timezone as _UDTimezone
+    from utils.timezone import utc_to_local as _ud_utc_to_local
+
+    def _fmt_dt_meus_laudos(x):
+        if x is None:
+            return "—"
+        if isinstance(x, _UDDateTime):
+            # Valores gravados no Mongo sem tz são UTC por padrão
+            if x.tzinfo is None:
+                x = x.replace(tzinfo=_UDTimezone.utc)
+            x_local = _ud_utc_to_local(x)
+            return x_local.strftime("%d/%m/%Y %H:%M")
+        return str(x)
 
     if not filtered:
         st.info("Você ainda não possui requisições ou laudos. Envie uma nova requisição para começar!")
@@ -495,7 +507,7 @@ if page == "Meus Laudos":
                         st.write(f"**Tipo de Exame:** {req.get('tipo_exame', 'N/A')}")
                     with col2:
                         st.write(f"**Status:** {status_badge}")
-                        st.write(f"**Requisição em:** {req.get('created_at', 'N/A')}")
+                        st.write(f"**Requisição em:** {_fmt_dt_meus_laudos(req.get('created_at'))}")
                     st.divider()
                     st.subheader("📝 Aguardando laudo")
                     st.info("📤 Requisição enviada. O laudo será criado e liberado pelo veterinário administrador. Você será notificado quando estiver disponível para download.")
@@ -650,10 +662,16 @@ elif page == "Nova Requisição":
         st.session_state["nr_sexo"] = "Macho"
 
     def _fmt_dt(x):
+        """Formata datetime assumindo que valores sem tz são UTC e converte para GMT-3."""
+        from datetime import timezone as _tzmod
+        from utils.timezone import utc_to_local
         if x is None:
             return ""
-        if hasattr(x, "strftime"):
-            return x.strftime("%d/%m/%Y %H:%M")
+        if isinstance(x, datetime):
+            if x.tzinfo is None:
+                x = x.replace(tzinfo=_tzmod.utc)
+            x_local = utc_to_local(x)
+            return x_local.strftime("%d/%m/%Y %H:%M")
         return str(x)[:16]
 
     user_id = st.session_state.get("user_id")
@@ -661,7 +679,8 @@ elif page == "Nova Requisição":
     rascunho_opcoes = ["(nenhum)"] + [f"#{r['id'][:8]} – {r.get('paciente', 'Sem nome')} – {_fmt_dt(r.get('created_at'))}" for r in rascunhos]
     rascunho_ids = [None] + [r["id"] for r in rascunhos]
     if "nr_data" not in st.session_state:
-        st.session_state["nr_data"] = datetime.now().date()
+        # Usar data local (GMT-3)
+        st.session_state["nr_data"] = now().date()
 
     col_form, = st.columns([1])
     with col_form:
@@ -736,7 +755,8 @@ elif page == "Nova Requisição":
             for k in list(st.session_state.keys()):
                 if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_exportar", "nr_enviar"):
                     del st.session_state[k]
-            st.session_state["nr_data"] = datetime.now().date()
+            # Resetar com data local (GMT-3)
+            st.session_state["nr_data"] = now().date()
             st.session_state["nr_plantao"] = "Não"
             st.session_state["nr_sexo"] = "Macho"
             st.session_state["nr_tipo_exame"] = "raio-x"
