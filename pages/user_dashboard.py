@@ -522,11 +522,11 @@ if page == "Meus Laudos":
                     st.write(f"**Tipo de Exame:** {req.get('tipo_exame', 'N/A')}")
                 with col2:
                     st.write(f"**Status:** {status_badge}")
-                    st.write(f"**Criado em:** {laudo.get('created_at', 'N/A')}")
+                    st.write(f"**Criado em:** {_fmt_dt_meus_laudos(laudo.get('created_at'))}")
                     if laudo.get('validado_at'):
-                        st.write(f"**Validado em:** {laudo.get('validado_at')}")
+                        st.write(f"**Validado em:** {_fmt_dt_meus_laudos(laudo.get('validado_at'))}")
                     if laudo.get('liberado_at'):
-                        st.write(f"**Liberado em:** {laudo.get('liberado_at')}")
+                        st.write(f"**Liberado em:** {_fmt_dt_meus_laudos(laudo.get('liberado_at'))}")
 
                 if laudo.get("status") == "pendente":
                     st.divider()
