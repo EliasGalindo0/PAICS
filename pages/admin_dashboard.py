@@ -319,10 +319,18 @@ if page == "Requisições":
     st.metric("Total de Requisições", len(requisicoes))
 
     def _fmt_dt(x):
+        """Formata datetime assumindo que valores sem tz são UTC e converte para GMT-3."""
+        from datetime import timezone as _tzmod
+        from utils.timezone import utc_to_local
         if x is None:
             return "—"
-        if hasattr(x, "strftime"):
-            return x.strftime("%d/%m/%Y %H:%M") if hasattr(x, "hour") else x.strftime("%d/%m/%Y")
+        if isinstance(x, datetime):
+            # Se não tiver tz, assumir UTC (comportamento do MongoDB para datetimes)
+            if x.tzinfo is None:
+                x = x.replace(tzinfo=_tzmod.utc)
+            # Converter para horário local (GMT-3)
+            x_local = utc_to_local(x)
+            return x_local.strftime("%d/%m/%Y %H:%M")
         return str(x)[:16]
 
     # Lista de requisições
@@ -1225,11 +1233,11 @@ elif page == "Laudos":
 
                 with col2:
                     st.write(f"**Status:** {status_badge}")
-                    st.write(f"**Criado em:** {laudo.get('created_at', 'N/A')}")
+                    st.write(f"**Criado em:** {_fmt_dt(laudo.get('created_at'))}")
                     if laudo.get('validado_at'):
-                        st.write(f"**Validado em:** {laudo.get('validado_at')}")
+                        st.write(f"**Validado em:** {_fmt_dt(laudo.get('validado_at'))}")
                     if laudo.get('liberado_at'):
-                        st.write(f"**Liberado em:** {laudo.get('liberado_at')}")
+                        st.write(f"**Liberado em:** {_fmt_dt(laudo.get('liberado_at'))}")
 
                 # Preview do laudo
                 st.divider()

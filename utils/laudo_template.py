@@ -13,8 +13,10 @@ def _fmt(s: Any) -> str:
 
 def _fmt_date(d: Any) -> str:
     from datetime import date
+    from utils.timezone import now
     if d is None:
-        return datetime.now().strftime("%d/%m/%Y")
+        # Usar horário local (GMT-3) para data atual
+        return now().strftime("%d/%m/%Y")
     if isinstance(d, datetime):
         return d.strftime("%d/%m/%Y")
     if isinstance(d, date) and not isinstance(d, datetime):
