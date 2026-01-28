@@ -61,11 +61,15 @@ def apply_custom_theme():
         box-shadow: none !important;
         border: none !important;
     }
-    
-    /* Remover header superior completamente */
+
+    /* Header no modo escuro: mesma cor do fundo, sem sombra/borda */
     header[data-testid="stHeader"] {
-        display: none !important;
+        background-color: var(--background-main) !important;
+        box-shadow: none !important;
+        border: none !important;
     }
+    
+    /* Header/Sidebar: manter comportamento padrão do Streamlit */
     
     /* Ajustar margem superior do conteúdo principal */
     .main .block-container {
@@ -454,10 +458,7 @@ def apply_custom_theme():
         --card-background: #ffffff;
     }
 
-    /* Remover header superior completamente */
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
+    /* Header/Sidebar: manter comportamento padrão do Streamlit */
     
     /* Ajustar margem superior do conteúdo principal */
     .main .block-container {

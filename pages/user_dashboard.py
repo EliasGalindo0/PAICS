@@ -71,10 +71,6 @@ st.markdown("""
     [data-testid="stSidebarNav"] {
         display: none;
     }
-    /* Remover header superior */
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
     
     /* Reduzir margem superior */
     .main .block-container {

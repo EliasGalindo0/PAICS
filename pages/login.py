@@ -17,20 +17,30 @@ st.set_page_config(
 # Aplicar tema customizado
 apply_custom_theme()
 
-# Ocultar menu de navegação de páginas e reduzir margem superior
+# Ocultar menu de navegação de páginas e remover qualquer "faixa" de header
 st.markdown("""
     <style>
+    /* Remover margens/padding globais que criam faixa em cima */
+    html, body, .stApp {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
     [data-testid="stSidebarNav"] {
         display: none;
+    }
+    /* Remover sidebar completamente no login */
+    section[data-testid="stSidebar"] {
+        display: none !important;
     }
     /* Remover header superior */
     header[data-testid="stHeader"] {
         display: none !important;
     }
     
-    /* Reduzir margem superior para compensar o logo */
+    /* Encostar conteúdo no topo (sem barra branca) */
     .main .block-container {
-        padding-top: 0.5rem !important;
+        padding-top: 0 !important;
     }
     </style>
 """, unsafe_allow_html=True)

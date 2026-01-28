@@ -5,7 +5,6 @@ Sistema completo com autenticação, dashboards e banco de dados vetorial.
 
 from auth.auth_utils import verify_and_refresh_session
 import streamlit as st
-import os
 from dotenv import load_dotenv
 
 # --- Carregar variáveis de ambiente do arquivo .env ---
@@ -15,8 +14,7 @@ load_dotenv()
 st.set_page_config(
     page_title="PAICS - Análise de Imagens Veterinárias",
     page_icon="🐾",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # Verificar autenticação e tokens
@@ -66,20 +64,20 @@ def load_tokens_from_localstorage():
             if (url.searchParams.has('auto_login')) {
                 return; // Já estamos processando
             }
-            
+
             const accessToken = localStorage.getItem('paics_access_token');
             const refreshToken = localStorage.getItem('paics_refresh_token');
-            
+
             console.log('🔍 [streamlit_app] Verificando localStorage...');
             console.log('Access token encontrado:', !!accessToken);
             console.log('Refresh token encontrado:', !!refreshToken);
-            
+
             if (accessToken && refreshToken) {
                 console.log('✅ [streamlit_app] Tokens encontrados, redirecionando');
                 // Codificar tokens em base64 para evitar problemas com caracteres especiais na URL
                 const accessTokenB64 = btoa(accessToken);
                 const refreshTokenB64 = btoa(refreshToken);
-                
+
                 url.searchParams.set('auto_login', 'true');
                 url.searchParams.set('access_token', accessTokenB64);
                 url.searchParams.set('refresh_token', refreshTokenB64);
