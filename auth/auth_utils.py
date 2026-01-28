@@ -14,6 +14,7 @@ from auth.jwt_utils import (
     refresh_access_token,
     is_token_expiring_soon
 )
+from utils.timezone import now
 
 
 def hash_password(password: str) -> str:
@@ -177,8 +178,7 @@ def restore_session_from_db(user_id: str) -> bool:
         active_session = sessions[0]  # Já ordenado por last_used_at desc
 
         # Verificar se a sessão não expirou
-        from datetime import datetime
-        if active_session.get('expires_at') and active_session['expires_at'] < datetime.utcnow():
+        if active_session.get('expires_at') and active_session['expires_at'] < now():
             return False
 
         # Tentar renovar tokens usando o refresh_token da sessão
@@ -200,7 +200,7 @@ def restore_session_from_db(user_id: str) -> bool:
             if session_id:
                 session_model.collection.update_one(
                     {"_id": ObjectId(session_id)},
-                    {"$set": {"refresh_token": new_refresh, "last_used_at": datetime.utcnow()}}
+                    {"$set": {"refresh_token": new_refresh, "last_used_at": now()}}
                 )
 
             # Criar sessão no Streamlit
@@ -238,8 +238,7 @@ def find_active_session_by_user_id(user_id: str) -> Optional[Dict]:
         active_session = sessions[0]  # Já ordenado por last_used_at desc
 
         # Verificar se a sessão não expirou
-        from datetime import datetime
-        if active_session.get('expires_at') and active_session['expires_at'] < datetime.utcnow():
+        if active_session.get('expires_at') and active_session['expires_at'] < now():
             return None
 
         return active_session
@@ -260,14 +259,14 @@ def try_restore_session_from_db() -> bool:
         user_model = User(db.users)
 
         # Buscar todas as sessões ativas recentes (últimas 24 horas)
-        from datetime import datetime, timedelta
-        recent_cutoff = datetime.utcnow() - timedelta(hours=24)
+        from datetime import timedelta
+        recent_cutoff = now() - timedelta(hours=24)
 
         # Buscar sessões ativas que foram usadas recentemente
         sessions = list(session_model.collection.find({
             "active": True,
             "last_used_at": {"$gte": recent_cutoff},
-            "expires_at": {"$gt": datetime.utcnow()}
+            "expires_at": {"$gt": now()}
         }).sort("last_used_at", -1).limit(10))
 
         if not sessions:

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from auth.auth_utils import get_current_user, clear_session, require_auth, logout_user
 from database.connection import get_db
 from database.models import Requisicao, Laudo, User, Fatura
+from utils.timezone import now, get_date_start, get_date_end, combine_date_local
 import os
 import io
 import zipfile
@@ -396,7 +397,7 @@ if page == "Requisições":
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     with col_f1:
         # Filtro de data - Padrão hoje
-        filter_date = st.date_input("📅 Data", value=datetime.now().date())
+        filter_date = st.date_input("📅 Data", value=now().date())
 
         # Opção para mostrar todas as datas
         show_all_dates = st.checkbox("Mostrar todas as datas", value=False)
@@ -405,8 +406,9 @@ if page == "Requisições":
             start_dt = None
             end_dt = None
         else:
-            start_dt = datetime.combine(filter_date, datetime.min.time())
-            end_dt = datetime.combine(filter_date, datetime.max.time())
+            # Usar timezone local para os filtros
+            start_dt = get_date_start(combine_date_local(filter_date))
+            end_dt = get_date_end(combine_date_local(filter_date))
 
     with col_f2:
         status_filter = st.selectbox(
@@ -1817,9 +1819,9 @@ elif page == "Financeiro":
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            data_inicio = st.date_input("Data Início", value=datetime.now().replace(day=1).date())
+            data_inicio = st.date_input("Data Início", value=now().replace(day=1).date())
         with col2:
-            data_fim = st.date_input("Data Fim", value=datetime.now().date())
+            data_fim = st.date_input("Data Fim", value=now().date())
         with col3:
             valor_exame = st.number_input("Valor por Exame (R$)",
                                           min_value=0.0, value=50.0, step=1.0)
@@ -1832,8 +1834,8 @@ elif page == "Financeiro":
 
                 try:
                     fechamentos = gerar_fechamento_todos_usuarios(
-                        datetime.combine(data_inicio, datetime.min.time()),
-                        datetime.combine(data_fim, datetime.max.time()),
+                        get_date_start(combine_date_local(data_inicio)),
+                        get_date_end(combine_date_local(data_fim)),
                         valor_exame
                     )
 
@@ -1894,8 +1896,8 @@ elif page == "Financeiro":
                 try:
                     fechamento = gerar_fechamento(
                         user_selected['id'],
-                        datetime.combine(data_inicio, datetime.min.time()),
-                        datetime.combine(data_fim, datetime.max.time()),
+                        get_date_start(combine_date_local(data_inicio)),
+                        get_date_end(combine_date_local(data_fim)),
                         valor_exame
                     )
 

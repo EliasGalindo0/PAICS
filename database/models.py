@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from bson import ObjectId
 from pymongo.collection import Collection
+from utils.timezone import now
 
 
 class BaseModel:
@@ -44,8 +45,8 @@ class User(BaseModel):
             "ativo": ativo,
             "primeiro_acesso": primeiro_acesso,  # Flag para obrigar alteração de senha
             "senha_temporaria": senha_temporaria,  # Senha temporária gerada pelo admin
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": now(),
+            "updated_at": now()
         }
         result = self.collection.insert_one(user_data)
         return str(result.inserted_id)
@@ -73,7 +74,7 @@ class User(BaseModel):
 
     def update(self, user_id: str, updates: Dict) -> bool:
         """Atualiza um usuário"""
-        updates["updated_at"] = datetime.utcnow()
+        updates["updated_at"] = now()
         result = self.collection.update_one(
             {"_id": ObjectId(user_id)},
             {"$set": updates}
@@ -98,9 +99,9 @@ class Session(BaseModel):
             "device_id": device_id,
             "device_info": device_info,
             "ip_address": ip_address,
-            "created_at": datetime.utcnow(),
-            "last_used_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(days=30),
+            "created_at": now(),
+            "last_used_at": now(),
+            "expires_at": now() + timedelta(days=30),
             "active": True
         }
         result = self.collection.insert_one(session_data)
@@ -126,7 +127,7 @@ class Session(BaseModel):
         """Atualiza timestamp de último uso"""
         result = self.collection.update_one(
             {"_id": ObjectId(session_id)},
-            {"$set": {"last_used_at": datetime.utcnow()}}
+            {"$set": {"last_used_at": now()}}
         )
         return result.modified_count > 0
 
@@ -134,7 +135,7 @@ class Session(BaseModel):
         """Desativa uma sessão específica"""
         result = self.collection.update_one(
             {"_id": ObjectId(session_id)},
-            {"$set": {"active": False, "deactivated_at": datetime.utcnow()}}
+            {"$set": {"active": False, "deactivated_at": now()}}
         )
         return result.modified_count > 0
 
@@ -142,14 +143,14 @@ class Session(BaseModel):
         """Desativa todas as sessões de um usuário (logout de todos os dispositivos)"""
         result = self.collection.update_many(
             {"user_id": user_id, "active": True},
-            {"$set": {"active": False, "deactivated_at": datetime.utcnow()}}
+            {"$set": {"active": False, "deactivated_at": now()}}
         )
         return result.modified_count
 
     def cleanup_expired(self) -> int:
         """Remove sessões expiradas"""
         result = self.collection.delete_many({
-            "expires_at": {"$lt": datetime.utcnow()}
+            "expires_at": {"$lt": now()}
         })
         return result.deleted_count
 
@@ -182,10 +183,10 @@ class Requisicao(BaseModel):
             "suspeita_clinica": suspeita_clinica,
             "plantao": plantao,
             "historico_clinico": historico_clinico,
-            "data_exame": data_exame or datetime.utcnow(),
+            "data_exame": data_exame or now(),
             "status": status,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": now(),
+            "updated_at": now()
         }
         result = self.collection.insert_one(req_data)
         return str(result.inserted_id)
@@ -223,13 +224,13 @@ class Requisicao(BaseModel):
         """Atualiza o status de uma requisição"""
         result = self.collection.update_one(
             {"_id": ObjectId(req_id)},
-            {"$set": {"status": status, "updated_at": datetime.utcnow()}}
+            {"$set": {"status": status, "updated_at": now()}}
         )
         return result.modified_count > 0
 
     def update(self, req_id: str, updates: Dict) -> bool:
         """Atualiza uma requisição (ex.: rascunho)"""
-        updates["updated_at"] = datetime.utcnow()
+        updates["updated_at"] = now()
         result = self.collection.update_one(
             {"_id": ObjectId(req_id)},
             {"$set": updates}
@@ -253,8 +254,8 @@ class Laudo(BaseModel):
             "texto_original": texto_original,
             "status": status,  # "pendente", "validado", "liberado", "rejeitado"
             "admin_id": admin_id,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": now(),
+            "updated_at": now(),
             "validado_at": None,
             "liberado_at": None,
             # Campos para aprendizado
@@ -317,7 +318,7 @@ class Laudo(BaseModel):
 
     def update(self, laudo_id: str, updates: Dict) -> bool:
         """Atualiza um laudo"""
-        updates["updated_at"] = datetime.utcnow()
+        updates["updated_at"] = now()
         result = self.collection.update_one(
             {"_id": ObjectId(laudo_id)},
             {"$set": updates}
@@ -331,8 +332,8 @@ class Laudo(BaseModel):
             {"$set": {
                 "status": "validado",
                 "admin_id": admin_id,
-                "validado_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "validado_at": now(),
+                "updated_at": now()
             }}
         )
         return result.modified_count > 0
@@ -345,8 +346,8 @@ class Laudo(BaseModel):
 
         updates = {
             "status": "liberado",
-            "liberado_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "liberado_at": now(),
+            "updated_at": now()
         }
 
         # Calcular rating se solicitado
@@ -428,7 +429,7 @@ class Laudo(BaseModel):
             "texto_anterior": laudo.get("texto", ""),
             "texto_novo": novo_texto,
             "admin_id": admin_id,
-            "timestamp": datetime.utcnow()
+            "timestamp": now()
         })
 
         result = self.collection.update_one(
@@ -437,7 +438,7 @@ class Laudo(BaseModel):
                 "texto": novo_texto,
                 "num_edicoes": laudo.get("num_edicoes", 0) + 1,
                 "historico_edicoes": historico,
-                "updated_at": datetime.utcnow()
+                "updated_at": now()
             }}
         )
         return result.modified_count > 0
@@ -455,8 +456,8 @@ class Fatura(BaseModel):
             "exames": exames,  # Lista de dicts com {requisicao_id, valor, data}
             "valor_total": valor_total,
             "status": status,  # "pendente", "paga", "cancelada"
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": now(),
+            "updated_at": now(),
             "paga_at": None
         }
         result = self.collection.insert_one(fatura_data)
@@ -488,9 +489,9 @@ class Fatura(BaseModel):
 
     def update_status(self, fatura_id: str, status: str) -> bool:
         """Atualiza o status de uma fatura"""
-        updates = {"status": status, "updated_at": datetime.utcnow()}
+        updates = {"status": status, "updated_at": now()}
         if status == "paga":
-            updates["paga_at"] = datetime.utcnow()
+            updates["paga_at"] = now()
 
         result = self.collection.update_one(
             {"_id": ObjectId(fatura_id)},
@@ -511,8 +512,8 @@ class KnowledgeBase(BaseModel):
             "conteudo": conteudo,
             "tags": tags or [],
             "arquivo_path": arquivo_path,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": now(),
+            "updated_at": now()
         }
         result = self.collection.insert_one(kb_data)
         return str(result.inserted_id)
@@ -558,8 +559,8 @@ class LearningHistory(BaseModel):
             "usado_api_externa": usado_api_externa,
             "similaridade_casos": similaridade_casos,
             "casos_similares": casos_similares or [],  # IDs de casos similares usados
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": now(),
+            "updated_at": now()
         }
         result = self.collection.insert_one(history_data)
         return str(result.inserted_id)

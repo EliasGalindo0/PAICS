@@ -4,6 +4,7 @@ Dashboard do Usuário
 import streamlit as st
 from datetime import datetime
 from auth.auth_utils import get_current_user, clear_session, logout_user, verify_and_refresh_session
+from utils.timezone import now, utc_to_local
 from database.connection import get_db
 from database.models import Requisicao, Laudo, User
 import os
@@ -374,7 +375,7 @@ if page == "Meus Laudos":
 
     # Notificação de laudos recém liberados
     import datetime as _dt
-    _now = _dt.datetime.utcnow()
+    _now = now()
     _last = st.session_state.get("last_meus_laudos_visit")
     st.session_state["last_meus_laudos_visit"] = _now
     _user_id = st.session_state.get("user_id")
@@ -415,7 +416,7 @@ if page == "Meus Laudos":
             help="Por padrão, apenas laudos liberados (para download). Use o filtro para ver pendentes ou aguardando laudo."
         )
     with col2:
-        filter_date = st.date_input("📅 Data", value=datetime.now().date(), key="laudo_date_filter")
+        filter_date = st.date_input("📅 Data", value=now().date(), key="laudo_date_filter")
         show_all_dates = st.checkbox("Mostrar todas as datas", value=False, key="laudo_show_all_dates")
     with col3:
         st.write("")
@@ -452,6 +453,29 @@ if page == "Meus Laudos":
             d = req.get("created_at") or req.get("data_exame")
             if d is None:
                 return None
+            # Converter para datetime se for string
+            if isinstance(d, str):
+                try:
+                    d = datetime.fromisoformat(d.replace("Z", "+00:00")[:26])
+                except Exception:
+                    try:
+                        # Tentar parsear formato alternativo
+                        from dateutil import parser
+                        d = parser.parse(d)
+                    except Exception:
+                        return None
+            # Se não for datetime, retornar None
+            if not isinstance(d, datetime):
+                return None
+            # Se tiver timezone UTC (offset 0), converter para local
+            if hasattr(d, "tzinfo") and d.tzinfo is not None:
+                try:
+                    offset_seconds = d.tzinfo.utcoffset(d).total_seconds() if d.tzinfo.utcoffset(d) else 0
+                    if offset_seconds == 0:
+                        # É UTC, converter para local
+                        d = utc_to_local(d)
+                except Exception:
+                    pass
             return d.date() if hasattr(d, "date") else d
 
         filtered = [(r, l) for r, l in filtered if _req_date(r) == filter_date]
@@ -534,7 +558,7 @@ if page == "Meus Laudos":
                         pdf.set_font("Arial", "", 10)
                         pdf.cell(0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                         pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(0, 6, f"Data: {datetime.now().strftime('%d/%m/%Y')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                         pdf.ln(4)
                         pdf.set_font("Arial", "B", 12)
                         pdf.cell(0, 10, "Laudo", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -672,7 +696,7 @@ elif page == "Nova Requisição":
                 if de and hasattr(de, "date"):
                     st.session_state["nr_data"] = de.date()
                 else:
-                    st.session_state["nr_data"] = datetime.now().date()
+                    st.session_state["nr_data"] = now().date()
                 st.session_state["nr_draft_id"] = r["id"]
                 st.rerun()
 
@@ -688,7 +712,7 @@ elif page == "Nova Requisição":
         suspeita = st.text_input("🔬 Suspeita clínica", value=st.session_state.get("nr_suspeita", ""), key="nr_suspeita")
         plantao = st.radio("Plantão", ["Sim", "Não"], index=1, key="nr_plantao", horizontal=True)
         tipo_exame = st.selectbox("📋 Tipo de exame *", ["raio-x", "ultrassom"], index=0, key="nr_tipo_exame")
-        data_exame = st.date_input("📆 Data", value=st.session_state.get("nr_data", datetime.now().date()), key="nr_data")
+        data_exame = st.date_input("📆 Data", value=st.session_state.get("nr_data", now().date()), key="nr_data")
         historico = st.text_area("📝 Histórico Clínico", value=st.session_state.get("nr_historico", ""), height=120, key="nr_historico")
 
         st.subheader("📷 Imagens do Exame")
@@ -730,9 +754,9 @@ elif page == "Nova Requisição":
             if not paciente.strip() or not tutor.strip():
                 st.error("Para salvar rascunho, preencha pelo menos Nome do Paciente e Nome do Tutor(a).")
             else:
-                from datetime import datetime as _dt
+                from utils.timezone import combine_date_local
                 draft_id = st.session_state.get("nr_draft_id")
-                data_exame_dt = _dt.combine(data_exame, _dt.min.time()) if data_exame else _dt.utcnow()
+                data_exame_dt = combine_date_local(data_exame) if data_exame else now()
                 payload = {
                     "paciente": paciente, "tutor": tutor, "clinica": clinica, "tipo_exame": tipo_exame,
                     "especie": especie, "idade": idade, "raca": raca, "sexo": sexo,
@@ -801,8 +825,8 @@ elif page == "Nova Requisição":
                         out.write(f.getbuffer())
                     imagens_paths.append(fp)
 
-                from datetime import datetime as _dt
-                data_exame_dt = _dt.combine(data_exame, _dt.min.time()) if data_exame else _dt.utcnow()
+                from utils.timezone import combine_date_local
+                data_exame_dt = combine_date_local(data_exame) if data_exame else now()
 
                 try:
                     req_id = requisicao_model.create(
@@ -824,7 +848,7 @@ elif page == "Nova Requisição":
                             del st.session_state[k]
                     
                     # Resetar valores padrão
-                    st.session_state["nr_data"] = datetime.now().date()
+                    st.session_state["nr_data"] = now().date()
                     st.session_state["nr_plantao"] = "Não"
                     st.session_state["nr_sexo"] = "Macho"
                     st.session_state["nr_tipo_exame"] = "raio-x"

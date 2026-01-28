@@ -60,3 +60,6 @@ Thumbs.db
 
 PAICS.zip
 *.zip
+
+#Uploads
+uploads/

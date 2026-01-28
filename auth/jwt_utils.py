@@ -7,6 +7,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+from utils.timezone import now
 
 load_dotenv()
 
@@ -27,8 +28,8 @@ def generate_access_token(user_id: str, username: str, role: str) -> str:
         "username": username,
         "role": role,
         "type": "access",
-        "exp": datetime.utcnow() + ACCESS_TOKEN_EXPIRY,
-        "iat": datetime.utcnow()
+        "exp": now() + ACCESS_TOKEN_EXPIRY,
+        "iat": now()
     }
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
@@ -39,8 +40,8 @@ def generate_refresh_token(user_id: str, device_id: Optional[str] = None) -> str
         "user_id": user_id,
         "type": "refresh",
         "device_id": device_id or secrets.token_urlsafe(16),
-        "exp": datetime.utcnow() + REFRESH_TOKEN_EXPIRY,
-        "iat": datetime.utcnow()
+        "exp": now() + REFRESH_TOKEN_EXPIRY,
+        "iat": now()
     }
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
@@ -65,7 +66,7 @@ def verify_token(token: str, token_type: str = "access") -> Optional[Dict[str, A
 
         # Verificar se não expirou (jwt.decode já faz isso, mas garantimos)
         exp = payload.get("exp")
-        if exp and datetime.utcnow() > datetime.fromtimestamp(exp):
+        if exp and now() > datetime.fromtimestamp(exp):
             return None
 
         return payload
@@ -134,5 +135,5 @@ def is_token_expiring_soon(token: str, threshold_hours: int = 2) -> bool:
     if not expiry:
         return True
     
-    threshold = datetime.utcnow() + timedelta(hours=threshold_hours)
+    threshold = now() + timedelta(hours=threshold_hours)
     return expiry <= threshold
