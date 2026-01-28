@@ -148,106 +148,101 @@ with st.form("login_form"):
         if email_or_username and password:
             success, message, tokens = login_user(
                 email_or_username, password, remember_me=remember_me)
+
             if success:
                 # Sempre salvar tokens no session_state
                 if tokens.get('access_token') and tokens.get('refresh_token'):
                     st.session_state['access_token'] = tokens['access_token']
                     st.session_state['refresh_token'] = tokens['refresh_token']
 
-                    # Codificar tokens em base64
-                    import base64
-                    access_token_b64 = base64.b64encode(tokens['access_token'].encode()).decode()
-                    refresh_token_b64 = base64.b64encode(tokens['refresh_token'].encode()).decode()
-
-                    # Usar st.components.v1.html para criar iframe e salvar no localStorage da página principal
-                    import streamlit.components.v1 as components
-
-                    # Adicionar listener na página principal ANTES do componente
-                    st.markdown("""
-                        <script>
-                        // Listener para receber tokens do iframe via postMessage (fallback)
-                        window.addEventListener('message', function(event) {
-                            if (event.data && event.data.type === 'saveTokens') {
-                                try {
-                                    localStorage.setItem('paics_access_token', event.data.access_token);
-                                    localStorage.setItem('paics_refresh_token', event.data.refresh_token);
-                                    if (event.data.user_id) {
-                                        localStorage.setItem('paics_user_id', event.data.user_id);
-                                    }
-                                } catch(e) {
-                                    // Erro silencioso
-                                }
-                            }
-                        });
-                        </script>
-                    """, unsafe_allow_html=True)
-
                     # Obter user_id do session_state (deve estar disponível após create_session)
                     user_id = st.session_state.get('user_id', '')
-                    if not user_id:
-                        # Se não estiver no session_state, buscar do user que foi logado
-                        # O user_id foi definido em create_session, então deve estar disponível
-                        pass
-                    user_id_b64 = base64.b64encode(user_id.encode()).decode() if user_id else ''
 
-                    # Componente HTML que salva no localStorage da página principal
+                    # Salvar tokens no localStorage
+                    # Usar uma abordagem que funcione na página principal do Streamlit
+                    import base64
+                    import streamlit.components.v1 as components
+                    
+                    access_token_b64 = base64.b64encode(tokens['access_token'].encode()).decode()
+                    refresh_token_b64 = base64.b64encode(tokens['refresh_token'].encode()).decode()
+                    user_id_b64 = base64.b64encode(user_id.encode()).decode() if user_id else ''
+                    
+                    # Adicionar listener na página principal para receber mensagem
+                    st.markdown("""
+                        <script>
+                        // Listener global na página principal para receber tokens
+                        if (!window.paicsTokenListenerAdded) {
+                            window.addEventListener('message', function(event) {
+                                if (event.data && event.data.type === 'savePaicsTokens') {
+                                    try {
+                                        localStorage.setItem('paics_access_token', event.data.access_token);
+                                        localStorage.setItem('paics_refresh_token', event.data.refresh_token);
+                                        if (event.data.user_id) {
+                                            localStorage.setItem('paics_user_id', event.data.user_id);
+                                        }
+                                        console.log('✅ [LOGIN] Tokens salvos via postMessage');
+                                    } catch(e) {
+                                        console.error('❌ [LOGIN] Erro ao salvar tokens:', e);
+                                    }
+                                }
+                            });
+                            window.paicsTokenListenerAdded = true;
+                        }
+                        </script>
+                    """, unsafe_allow_html=True)
+                    
+                    # Componente que envia tokens via postMessage para a página principal
                     components.html(f"""
-                        <!DOCTYPE html>
-                        <html>
-                        <head><meta charset="UTF-8"></head>
-                        <body>
-                            <script>
+                        <script>
+                        (function() {{
                             try {{
                                 const at = atob('{access_token_b64}');
                                 const rt = atob('{refresh_token_b64}');
                                 const uid = '{user_id_b64}' ? atob('{user_id_b64}') : '';
                                 
-                                // Tentar salvar no localStorage da página principal (window.parent)
+                                // Tentar salvar diretamente primeiro
                                 try {{
-                                    // Acessar window.parent.localStorage (página principal do Streamlit)
-                                    if (window.parent && window.parent !== window) {{
-                                        window.parent.localStorage.setItem('paics_access_token', at);
-                                        window.parent.localStorage.setItem('paics_refresh_token', rt);
-                                        if (uid) {{
-                                            window.parent.localStorage.setItem('paics_user_id', uid);
-                                        }}
-                                    }} else {{
-                                        throw new Error('window.parent não disponível');
+                                    const targetWindow = window.top || window.parent || window;
+                                    targetWindow.localStorage.setItem('paics_access_token', at);
+                                    targetWindow.localStorage.setItem('paics_refresh_token', rt);
+                                    if (uid) {{
+                                        targetWindow.localStorage.setItem('paics_user_id', uid);
                                     }}
+                                    console.log('✅ [LOGIN] Tokens salvos diretamente');
                                 }} catch(e1) {{
-                                    // Fallback: usar postMessage para enviar tokens à página principal
-                                    try {{
-                                        window.parent.postMessage({{
-                                            type: 'saveTokens',
-                                            access_token: at,
-                                            refresh_token: rt,
-                                            user_id: uid
-                                        }}, '*');
-                                    }} catch(e2) {{
-                                        // Último recurso: salvar no localStorage local do iframe
-                                        localStorage.setItem('paics_access_token', at);
-                                        localStorage.setItem('paics_refresh_token', rt);
-                                        if (uid) {{
-                                            localStorage.setItem('paics_user_id', uid);
-                                        }}
-                                    }}
+                                    // Fallback: usar postMessage
+                                    const targetWindow = window.top || window.parent || window;
+                                    targetWindow.postMessage({{
+                                        type: 'savePaicsTokens',
+                                        access_token: at,
+                                        refresh_token: rt,
+                                        user_id: uid
+                                    }}, '*');
+                                    console.log('✅ [LOGIN] Tokens enviados via postMessage');
                                 }}
                             }} catch(e) {{
-                                // Erro silencioso - não afeta o fluxo principal
+                                console.error('❌ [LOGIN] Erro geral:', e);
                             }}
-                            </script>
-                        </body>
-                        </html>
+                        }})();
+                        </script>
                     """, height=0)
 
-                st.success(message)
-                # Não fazer rerun imediatamente - deixar o JavaScript executar
-                # O redirecionamento será feito pela verificação de autenticação
-                import time
-                time.sleep(1.5)  # Delay maior para garantir execução
+                # Marcar que o login foi bem-sucedido
+                st.session_state['login_just_completed'] = True
 
-                # Verificar se os tokens foram salvos antes de redirecionar
-                # (isso será feito na próxima renderização)
+                st.success(message)
+                
+                # Dar um pequeno delay para garantir que o JavaScript execute antes do rerun
+                import time
+                time.sleep(0.1)
+
+                # IMPORTANTE: A função login_user já criou a sessão e definiu:
+                # - st.session_state['authenticated'] = True
+                # - st.session_state['user_id'], 'username', 'role'
+                # - st.session_state['access_token'] e 'refresh_token'
+                #
+                # Fazer rerun para que a verificação no início do arquivo funcione
+                # O session_state será preservado entre reruns
                 st.rerun()
             else:
                 st.error(message)

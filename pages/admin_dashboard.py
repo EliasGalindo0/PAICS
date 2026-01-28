@@ -1,6 +1,7 @@
 """
 Dashboard do Administrador
 """
+from utils.theme import apply_custom_theme
 import time
 from auth.auth_utils import verify_and_refresh_session
 import streamlit as st
@@ -15,48 +16,7 @@ import io
 import zipfile
 import base64
 
-# IMPORTANTE: Script deve executar ANTES de qualquer verificação Python
-# Usar st.markdown para garantir execução na página principal (não em iframe)
-# Colocar no início para executar o mais cedo possível
-st.markdown("""
-    <script>
-    // Executar imediatamente quando o script carrega (antes do Python processar)
-    (function() {
-        function checkAndRedirect() {
-            // Verificar se já temos user_id nos query params
-            const url = new URL(window.location);
-            const currentRestoreId = url.searchParams.get('restore_user_id');
-            
-            if (currentRestoreId) {
-                return; // Não fazer nada, já tem o parâmetro
-            }
-            
-            // Verificar localStorage para user_id (salvo no login)
-            const userId = localStorage.getItem('paics_user_id');
-            
-            if (userId && userId.trim() !== '') {
-                // Passar user_id para o Python via query params
-                url.searchParams.set('restore_user_id', userId);
-                window.location.replace(url.toString());
-            }
-        }
-        
-        // Tentar executar imediatamente
-        checkAndRedirect();
-        
-        // Também executar quando o DOM estiver pronto (fallback)
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', checkAndRedirect);
-        } else {
-            setTimeout(checkAndRedirect, 100);
-        }
-    })();
-    </script>
-""", unsafe_allow_html=True)
-# PIL.Image será importado lazy quando necessário (evita problemas com Python 3.13)
-
-# IMPORTANTE: st.set_page_config deve vir ANTES do script JavaScript
-# Mas o script JavaScript precisa executar o mais cedo possível
+# IMPORTANTE: st.set_page_config deve vir PRIMEIRO
 st.set_page_config(
     page_title="Dashboard Admin - PAICS",
     page_icon="👨‍⚕️",
@@ -64,9 +24,7 @@ st.set_page_config(
     menu_items=None
 )
 
-
 # Aplicar tema customizado (deve ser chamado após st.set_page_config)
-from utils.theme import apply_custom_theme
 apply_custom_theme()
 
 # Ocultar menu de navegação de páginas
@@ -78,283 +36,61 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Script para verificar localStorage e passar user_id para o Python
-# Executar IMEDIATAMENTE quando a página carrega - ANTES de qualquer verificação Python
-# Usar runOnLoad para garantir execução antes do Python processar
-st.markdown("""
-    <script>
-    // Executar imediatamente quando o script carrega
-    (function() {
-        console.log('🚀 [ADMIN-DASH] Script de verificação iniciado');
-        
-        // Verificar se já temos user_id nos query params
-        const url = new URL(window.location);
-        const currentRestoreId = url.searchParams.get('restore_user_id');
-        console.log('📍 [ADMIN-DASH] URL atual:', url.toString());
-        console.log('   restore_user_id atual:', currentRestoreId);
-        
-        if (currentRestoreId) {
-            console.log('⏭️ [ADMIN-DASH] Já tem restore_user_id nos query params:', currentRestoreId);
-        } else {
-            // Verificar localStorage para user_id (salvo no login)
-            const userId = localStorage.getItem('paics_user_id');
-            console.log('🔍 [ADMIN-DASH] Verificando localStorage...');
-            console.log('   User ID encontrado:', userId);
-            const paicsKeys = Object.keys(localStorage).filter(k => k.startsWith('paics'));
-            console.log('   Todos os itens do localStorage (paics*):', paicsKeys);
-            paicsKeys.forEach(k => {
-                console.log(`      ${k}: ${localStorage.getItem(k)?.substring(0, 50)}...`);
-            });
-            
-            if (userId && userId.trim() !== '') {
-                console.log('✅ [ADMIN-DASH] User ID encontrado! Adicionando aos query params...');
-                // Passar user_id para o Python via query params
-                url.searchParams.set('restore_user_id', userId);
-                const newUrl = url.toString();
-                console.log('🔄 [ADMIN-DASH] Redirecionando para:', newUrl.substring(0, 200));
-                // Usar replace para evitar histórico desnecessário e garantir execução imediata
-                window.location.replace(newUrl);
-            } else {
-                console.log('❌ [ADMIN-DASH] User ID não encontrado no localStorage ou está vazio');
-            }
-        }
-    })();
-    </script>
-""", unsafe_allow_html=True)
+# -----------------------------
+# Gate de autenticação (sem logs na UI)
+# -----------------------------
 
-# Verificar autenticação e tokens
-
-# Função para carregar tokens do localStorage (similar ao login.py)
-def load_tokens_from_localstorage():
-    """Carrega tokens do localStorage e coloca no session_state"""
-    # Verificar se já temos tokens
-    if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
-        return True
-
-    # Processar tokens da query string primeiro (se vieram do JavaScript)
+def _load_tokens_from_query_params() -> bool:
+    """Se auto_login estiver presente nos query params, decodifica tokens e coloca no session_state."""
     query_params = st.query_params
-    if query_params.get('auto_login') == 'true':
-        access_token_b64 = query_params.get('access_token', [''])[0]
-        refresh_token_b64 = query_params.get('refresh_token', [''])[0]
-        is_encoded = query_params.get('encoded') == 'true'
+    if query_params.get('auto_login') != 'true':
+        return False
 
-        if access_token_b64 and refresh_token_b64:
-            # Decodificar se vieram codificados em base64
-            if is_encoded:
-                import base64
-                try:
-                    access_token = base64.b64decode(access_token_b64).decode()
-                    refresh_token = base64.b64decode(refresh_token_b64).decode()
-                except Exception:
-                    access_token = access_token_b64
-                    refresh_token = refresh_token_b64
-            else:
-                access_token = access_token_b64
-                refresh_token = refresh_token_b64
+    access_token_b64 = query_params.get('access_token', [''])[0]
+    refresh_token_b64 = query_params.get('refresh_token', [''])[0]
+    is_encoded = query_params.get('encoded') == 'true'
 
-            st.session_state['access_token'] = access_token
-            st.session_state['refresh_token'] = refresh_token
-            # NÃO limpar query params aqui - deixar para depois da verificação
-            # st.query_params.clear()
-            return True
+    if not access_token_b64 or not refresh_token_b64:
+        return False
 
-    # Se não temos tokens e não há query params, tentar carregar do localStorage via JavaScript
-    # IMPORTANTE: Este script deve executar ANTES de qualquer verificação de autenticação
-    st.markdown("""
-        <script>
-        (function() {
-            // Verificar se já estamos processando auto_login para evitar loop
-            const url = new URL(window.location);
-            if (url.searchParams.has('auto_login')) {
-                console.log('⏭️ [ADMIN-DASH] Já processando auto_login, ignorando...');
-                return; // Já estamos processando
-            }
-            
-            console.log('🔍 [ADMIN-DASH] Verificando localStorage para tokens...');
-            const accessToken = localStorage.getItem('paics_access_token');
-            const refreshToken = localStorage.getItem('paics_refresh_token');
-            
-            console.log('   Access token encontrado:', !!accessToken);
-            console.log('   Refresh token encontrado:', !!refreshToken);
-            
-            if (accessToken && refreshToken) {
-                console.log('✅ [ADMIN-DASH] Tokens encontrados! Redirecionando com tokens...');
-                // Codificar tokens em base64 para evitar problemas com caracteres especiais na URL
-                const accessTokenB64 = btoa(accessToken);
-                const refreshTokenB64 = btoa(refreshToken);
-                
-                url.searchParams.set('auto_login', 'true');
-                url.searchParams.set('access_token', accessTokenB64);
-                url.searchParams.set('refresh_token', refreshTokenB64);
-                url.searchParams.set('encoded', 'true');
-                
-                console.log('🔄 [ADMIN-DASH] Redirecionando para:', url.toString().substring(0, 200));
-                // Usar replace para evitar histórico desnecessário
-                window.location.replace(url.toString());
-            } else {
-                console.log('❌ [ADMIN-DASH] Tokens não encontrados no localStorage');
-            }
-        })();
-        </script>
-    """, unsafe_allow_html=True)
-    return False
+    if is_encoded:
+        try:
+            access_token = base64.b64decode(access_token_b64).decode()
+            refresh_token = base64.b64decode(refresh_token_b64).decode()
+        except Exception:
+            access_token = access_token_b64
+            refresh_token = refresh_token_b64
+    else:
+        access_token = access_token_b64
+        refresh_token = refresh_token_b64
 
-# PRIMEIRO: Tentar carregar tokens do localStorage
-# Isso garante que ao atualizar a página, os tokens sejam carregados automaticamente
-tokens_loaded = load_tokens_from_localstorage()
-
-# Debug: verificar estado atual
-query_params = st.query_params
-has_auto_login = query_params.get('auto_login') == 'true'
-has_tokens_in_state = bool(st.session_state.get('access_token') and st.session_state.get('refresh_token'))
-is_authenticated = st.session_state.get('authenticated', False)
-
-# Se tokens foram carregados dos query params, verificar sessão imediatamente
-if tokens_loaded:
-    # Tokens foram carregados dos query params
-    # Limpar query params agora que já carregamos os tokens
+    st.session_state['access_token'] = access_token
+    st.session_state['refresh_token'] = refresh_token
     st.query_params.clear()
-    
-    # Verificar sessão
-    session_valid = verify_and_refresh_session()
-    
-    if session_valid:
-        # Sessão válida, continuar para renderizar a página
-        pass
-    else:
-        # Tokens inválidos, redirecionar para login
-        st.markdown("""
-            <script>
-            console.log('❌ [ADMIN-DASH] Sessão inválida, limpando localStorage e redirecionando...');
-            localStorage.removeItem('paics_user_id');
-            localStorage.removeItem('paics_access_token');
-            localStorage.removeItem('paics_refresh_token');
-            </script>
-        """, unsafe_allow_html=True)
-        st.switch_page("pages/login.py")
-elif has_auto_login and not tokens_loaded:
-    # Query params têm auto_login mas tokens não foram carregados
-    # Tentar carregar novamente (pode ser que o clear() tenha sido chamado antes)
-    tokens_loaded = load_tokens_from_localstorage()
-    if tokens_loaded:
-        # Limpar query params agora que já carregamos os tokens
-        st.query_params.clear()
-        
-        # Verificar sessão
-        session_valid = verify_and_refresh_session()
-        
-        if session_valid:
-            # Sessão válida, continuar para renderizar a página
-            pass
-        else:
-            # Tokens inválidos, redirecionar para login
-            st.markdown("""
-                <script>
-                console.log('❌ [ADMIN-DASH] Sessão inválida após recarregar tokens, limpando localStorage...');
-                localStorage.removeItem('paics_user_id');
-                localStorage.removeItem('paics_access_token');
-                localStorage.removeItem('paics_refresh_token');
-                </script>
-            """, unsafe_allow_html=True)
+    return True
+
+
+def _ensure_authenticated_admin():
+    # Se vier tokens via query params (auto_login), carregar
+    _load_tokens_from_query_params()
+
+    # Se temos tokens no session_state, validar/renovar
+    if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
+        if not verify_and_refresh_session():
             st.switch_page("pages/login.py")
-    else:
-        # Ainda não conseguiu carregar, pode ser que o JavaScript ainda não executou
-        # Não fazer nada aqui, deixar o JavaScript redirecionar
-        pass
-elif not tokens_loaded and not has_auto_login:
-    # Não há tokens e não há auto_login nos query params
-    # O JavaScript vai tentar redirecionar se encontrar tokens no localStorage
-    # Não fazer nada aqui, deixar o JavaScript executar
-    pass
+        if st.session_state.get('role') != 'admin':
+            st.switch_page("pages/user_dashboard.py")
+        return
 
-# Aguardar um pouco para o JavaScript executar e adicionar restore_user_id aos query params
-# O JavaScript executa no navegador, então precisamos dar tempo para ele executar
-time.sleep(0.2)  # Delay adicional para JavaScript executar
-
-# Verificar query params para restaurar sessão do banco (fallback se tokens não funcionarem)
-query_params = st.query_params
-restore_user_id = query_params.get('restore_user_id', [''])[0]
-
-# Se há user_id nos query params e ainda não está autenticado, tentar restaurar sessão do banco
-if restore_user_id and not st.session_state.get('authenticated'):
-    from auth.auth_utils import restore_session_from_db
-    if restore_session_from_db(restore_user_id):
-        # Sessão restaurada com sucesso, limpar query params
-        st.query_params.clear()
-        st.rerun()
-    else:
-        # Não conseguiu restaurar, limpar localStorage e redirecionar
-        st.markdown("""
-            <script>
-            localStorage.removeItem('paics_user_id');
-            localStorage.removeItem('paics_access_token');
-            localStorage.removeItem('paics_refresh_token');
-            </script>
-        """, unsafe_allow_html=True)
-        st.query_params.clear()
-        st.switch_page("pages/login.py")
-
-# Se não há user_id nos query params e não está autenticado,
-# tentar restaurar sessão diretamente do banco (sem depender do JavaScript)
-if not restore_user_id and not st.session_state.get('authenticated') and not st.session_state.get('access_token'):
+    # Sem tokens: tentar restaurar do banco (fallback)
     from auth.auth_utils import try_restore_session_from_db
     if try_restore_session_from_db():
-        # Sessão restaurada com sucesso
         st.rerun()
-    else:
-        # Não conseguiu restaurar, aguardar um pouco para o JavaScript tentar
-        time.sleep(1.0)
-        # Verificar novamente os query params (caso o JavaScript tenha adicionado)
-        query_params = st.query_params
-        restore_user_id = query_params.get('restore_user_id', [''])[0]
 
-        if restore_user_id:
-            from auth.auth_utils import restore_session_from_db
-            if restore_session_from_db(restore_user_id):
-                st.query_params.clear()
-                st.rerun()
-            else:
-                st.switch_page("pages/login.py")
-        else:
-            # Não conseguiu restaurar de nenhuma forma
-            st.switch_page("pages/login.py")
+    st.switch_page("pages/login.py")
 
-# Verificar tokens existentes ou sessão autenticada
-# PRIORIDADE: Verificar tokens primeiro (mais confiável que restore_user_id)
-if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
-    # Limpar contador de tentativas se tiver tokens
-    if 'auto_login_attempts' in st.session_state:
-        del st.session_state['auto_login_attempts']
-    
-    if verify_and_refresh_session():
-        # Tokens válidos, sessão restaurada
-        pass  # Continuar para renderizar a página
-    else:
-        # Tokens inválidos, limpar e redirecionar
-        st.markdown("""
-            <script>
-            localStorage.removeItem('paics_user_id');
-            localStorage.removeItem('paics_access_token');
-            localStorage.removeItem('paics_refresh_token');
-            </script>
-        """, unsafe_allow_html=True)
-        st.switch_page("pages/login.py")
-elif not st.session_state.get('authenticated'):
-    # Se não está autenticado e não há tokens, tentar restaurar via user_id
-    if restore_user_id:
-        # Já tentou restaurar acima, não fazer nada aqui
-        pass
-    else:
-        # Não há tokens e não há user_id, verificar se há tokens no localStorage
-        # (pode ter sido carregado pelo JavaScript mas ainda não processado)
-        query_params = st.query_params
-        if query_params.get('auto_login') != 'true':
-            # Não há auto_login em andamento, redirecionar para login
-            st.switch_page("pages/login.py")
 
-if st.session_state.get('role') != 'admin':
-    st.error("Acesso negado. Esta página é apenas para administradores.")
-    st.stop()
+_ensure_authenticated_admin()
 
 # Inicializar componentes (necessário para verificação de primeiro acesso)
 db = get_db()
@@ -419,7 +155,7 @@ with st.sidebar:
     from utils.theme import theme_toggle_button
     theme_toggle_button()
     st.divider()
-    
+
     st.title("👨‍⚕️ Admin Dashboard")
     user = get_current_user()
     if user:

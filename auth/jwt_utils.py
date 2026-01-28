@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
-from utils.timezone import now
+from utils.timezone import now, BRASILIA_TZ
 
 load_dotenv()
 
@@ -65,9 +65,15 @@ def verify_token(token: str, token_type: str = "access") -> Optional[Dict[str, A
             return None
 
         # Verificar se não expirou (jwt.decode já faz isso, mas garantimos)
+        # Nota: jwt.decode já verifica expiração automaticamente, mas fazemos verificação adicional
+        # para garantir compatibilidade com timezone
         exp = payload.get("exp")
-        if exp and now() > datetime.fromtimestamp(exp):
-            return None
+        if exp:
+            # Converter timestamp para datetime com timezone (mesmo formato que now())
+            exp_datetime = datetime.fromtimestamp(exp, tz=BRASILIA_TZ)
+            current_time = now()
+            if current_time > exp_datetime:
+                return None
 
         return payload
     except jwt.ExpiredSignatureError:
@@ -120,10 +126,12 @@ def refresh_access_token(refresh_token: str) -> Optional[tuple[str, str]]:
 def get_token_expiry(token: str) -> Optional[datetime]:
     """Retorna a data de expiração de um token"""
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[
+                             JWT_ALGORITHM], options={"verify_exp": False})
         exp = payload.get("exp")
         if exp:
-            return datetime.fromtimestamp(exp)
+            # Converter timestamp para datetime com timezone (mesmo formato que now())
+            return datetime.fromtimestamp(exp, tz=BRASILIA_TZ)
     except Exception:
         pass
     return None
@@ -134,6 +142,7 @@ def is_token_expiring_soon(token: str, threshold_hours: int = 2) -> bool:
     expiry = get_token_expiry(token)
     if not expiry:
         return True
-    
+
+    # Garantir que ambos tenham timezone para comparação
     threshold = now() + timedelta(hours=threshold_hours)
     return expiry <= threshold

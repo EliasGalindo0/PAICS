@@ -14,6 +14,14 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 # PIL.Image será importado lazy quando necessário (evita problemas com Python 3.13)
 
+# IMPORTANTE: st.set_page_config deve vir PRIMEIRO
+st.set_page_config(
+    page_title="Dashboard Usuário - PAICS",
+    page_icon="👤",
+    layout="wide",
+    menu_items=None
+)
+
 # IMPORTANTE: Script deve executar ANTES de qualquer verificação Python
 # Usar st.markdown para garantir execução na página principal (não em iframe)
 # Colocar no início para executar o mais cedo possível
@@ -52,16 +60,6 @@ st.markdown("""
     })();
     </script>
 """, unsafe_allow_html=True)
-
-# IMPORTANTE: st.set_page_config deve vir ANTES do script JavaScript
-# Mas o script JavaScript precisa executar o mais cedo possível
-st.set_page_config(
-    page_title="Dashboard Usuário - PAICS",
-    page_icon="👤",
-    layout="wide",
-    menu_items=None
-)
-
 
 # Aplicar tema customizado
 from utils.theme import apply_custom_theme

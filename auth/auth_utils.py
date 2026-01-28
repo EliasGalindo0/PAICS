@@ -3,6 +3,8 @@ Utilitários de autenticação
 """
 import hashlib
 import secrets
+import logging
+from datetime import datetime, timezone
 from typing import Optional, Dict
 import streamlit as st
 from database.connection import get_db
@@ -14,7 +16,22 @@ from auth.jwt_utils import (
     refresh_access_token,
     is_token_expiring_soon
 )
-from utils.timezone import now
+from utils.timezone import now, BRASILIA_TZ
+
+logger = logging.getLogger(__name__)
+
+
+def _mongo_dt_to_local(dt: Optional[datetime]) -> Optional[datetime]:
+    """
+    Normaliza datetimes vindos do MongoDB para timezone local.
+
+    Observação: datetimes do MongoDB geralmente vêm como "naive" em UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(BRASILIA_TZ)
 
 
 def hash_password(password: str) -> str:
@@ -122,8 +139,7 @@ def login_user(email_or_username: str, password: str, remember_me: bool = False)
         device_id = secrets.token_urlsafe(16)
         device_info = st.session_state.get('device_info', 'Unknown Device')
         ip_address = st.session_state.get('ip_address', '')
-
-        session_model.create(
+        session_id = session_model.create(
             user_id=user['id'],
             refresh_token=refresh_token,
             device_id=device_id,
@@ -151,6 +167,7 @@ def login_user(email_or_username: str, password: str, remember_me: bool = False)
         return True, "Login realizado com sucesso", tokens
 
     except Exception as e:
+        logger.exception("Erro ao fazer login")
         return False, f"Erro ao fazer login: {str(e)}", {}
 
 
@@ -178,7 +195,8 @@ def restore_session_from_db(user_id: str) -> bool:
         active_session = sessions[0]  # Já ordenado por last_used_at desc
 
         # Verificar se a sessão não expirou
-        if active_session.get('expires_at') and active_session['expires_at'] < now():
+        expires_at = _mongo_dt_to_local(active_session.get('expires_at'))
+        if expires_at and expires_at < now():
             return False
 
         # Tentar renovar tokens usando o refresh_token da sessão
@@ -211,6 +229,7 @@ def restore_session_from_db(user_id: str) -> bool:
         return False
 
     except Exception:
+        logger.exception("Erro ao restaurar sessão do banco (user_id=%s)", user_id)
         return False
 
 
@@ -238,12 +257,14 @@ def find_active_session_by_user_id(user_id: str) -> Optional[Dict]:
         active_session = sessions[0]  # Já ordenado por last_used_at desc
 
         # Verificar se a sessão não expirou
-        if active_session.get('expires_at') and active_session['expires_at'] < now():
+        expires_at = _mongo_dt_to_local(active_session.get('expires_at'))
+        if expires_at and expires_at < now():
             return None
 
         return active_session
 
     except Exception:
+        logger.exception("Erro ao buscar sessão ativa (user_id=%s)", user_id)
         return None
 
 
@@ -262,12 +283,24 @@ def try_restore_session_from_db() -> bool:
         from datetime import timedelta
         recent_cutoff = now() - timedelta(hours=24)
 
-        # Buscar sessões ativas que foram usadas recentemente
+        # Buscar sessões ativas que foram criadas ou usadas recentemente
+        # Primeiro tentar por last_used_at, depois por created_at
         sessions = list(session_model.collection.find({
             "active": True,
-            "last_used_at": {"$gte": recent_cutoff},
+            "$or": [
+                {"last_used_at": {"$gte": recent_cutoff}},
+                {"created_at": {"$gte": recent_cutoff}}
+            ],
             "expires_at": {"$gt": now()}
         }).sort("last_used_at", -1).limit(10))
+        
+        # Se não encontrou por last_used_at, tentar apenas por created_at
+        if not sessions:
+            sessions = list(session_model.collection.find({
+                "active": True,
+                "created_at": {"$gte": recent_cutoff},
+                "expires_at": {"$gt": now()}
+            }).sort("created_at", -1).limit(10))
 
         if not sessions:
             return False
@@ -282,16 +315,19 @@ def try_restore_session_from_db() -> bool:
 
             # Verificar se o usuário existe e está ativo
             user = user_model.find_by_id(user_id)
-            if not user or not user.get('ativo'):
+            if not user:
+                continue
+            
+            if not user.get('ativo'):
                 continue
 
             # Tentar restaurar usando a função existente
             if restore_session_from_db(user_id):
                 return True
-
         return False
 
-    except Exception:
+    except Exception as e:
+        logger.exception("Exceção ao tentar auto-restaurar sessão")
         return False
 
 
@@ -334,9 +370,10 @@ def verify_and_refresh_session() -> bool:
                         if session:
                             session_model.update_last_used(session['id'])
                             # Atualizar refresh token na sessão
+                            from bson import ObjectId
                             session_model.collection.update_one(
-                                {"_id": session['_id']},
-                                {"$set": {"refresh_token": new_refresh}}
+                                {"_id": ObjectId(session['id'])},
+                                {"$set": {"refresh_token": new_refresh, "last_used_at": now()}}
                             )
 
                 return True
@@ -364,7 +401,8 @@ def verify_and_refresh_session() -> bool:
         clear_session()
         return False
 
-    except Exception:
+    except Exception as e:
+        logger.exception("Exceção ao verificar/renovar sessão")
         clear_session()
         return False
 
