@@ -453,7 +453,12 @@ class Fatura(BaseModel):
         fatura_data = {
             "user_id": user_id,
             "periodo": periodo,  # "YYYY-MM" ou "YYYY-MM-DD a YYYY-MM-DD"
-            "exames": exames,  # Lista de dicts com {requisicao_id, valor, data}
+            # Lista de dicts com breakdown por exame:
+            # {
+            #   requisicao_id, valor_base, plantao (bool),
+            #   acrescimo_plantao, valor, data, observacao
+            # }
+            "exames": exames,
             "valor_total": valor_total,
             "status": status,  # "pendente", "paga", "cancelada"
             "created_at": now(),
@@ -498,6 +503,54 @@ class Fatura(BaseModel):
             {"$set": updates}
         )
         return result.modified_count > 0
+
+
+class SystemConfig(BaseModel):
+    """Configurações do sistema (ex.: financeiro, temas, etc.).
+
+    Cada documento é armazenado com uma chave única (key) e pode manter
+    histórico de alterações em um array "history".
+    """
+
+    def get_config(self, key: str) -> Optional[Dict]:
+        doc = self.collection.find_one({"key": key})
+        return self.to_dict(doc) if doc else None
+
+    def get_value(self, key: str, default=None):
+        cfg = self.get_config(key)
+        if not cfg:
+            return default
+        return cfg.get("value", default)
+
+    def set_value(self, key: str, value, changed_by: Optional[str] = None) -> bool:
+        """Define um valor de configuração e registra histórico de alterações."""
+        doc = self.collection.find_one({"key": key})
+        history_entry = {
+            "value": value,
+            "changed_at": now(),
+        }
+        if changed_by:
+            history_entry["changed_by"] = changed_by
+
+        if doc:
+            history = doc.get("history", [])
+            history.append(history_entry)
+            result = self.collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"value": value, "updated_at": now(), "history": history}}
+            )
+            return result.modified_count > 0
+
+        # Novo documento de configuração
+        cfg_data = {
+            "key": key,
+            "value": value,
+            "created_at": now(),
+            "updated_at": now(),
+            "history": [history_entry],
+        }
+        self.collection.insert_one(cfg_data)
+        return True
 
 
 class KnowledgeBase(BaseModel):

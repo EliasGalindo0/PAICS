@@ -953,7 +953,19 @@ elif page == "Minhas Faturas":
                         for idx, exame in enumerate(fatura.get('exames', [])[:10], 1):
                             req = requisicao_model.find_by_id(exame.get('requisicao_id', ''))
                             paciente = req.get('paciente', 'N/A') if req else 'N/A'
-                            st.write(f"{idx}. {paciente} - R$ {exame.get('valor', 0):.2f}")
+                            valor_base = exame.get('valor_base', exame.get('valor', 0))
+                            acrescimo_plantao = exame.get('acrescimo_plantao', 0.0)
+                            valor_total_exame = exame.get('valor', valor_base + acrescimo_plantao)
+                            plantao_flag = exame.get('plantao', False)
+                            obs = exame.get('observacao', '')
+                            linha = f"{idx}. {paciente}"
+                            linha += f" · Base: R$ {valor_base:.2f}"
+                            if plantao_flag and acrescimo_plantao:
+                                linha += f" · Plantão: +R$ {acrescimo_plantao:.2f}"
+                            linha += f" · Total: R$ {valor_total_exame:.2f}"
+                            if obs:
+                                linha += f" · Obs: {obs}"
+                            st.write(linha)
                         if len(fatura.get('exames', [])) > 10:
                             st.write(f"... e mais {len(fatura.get('exames', [])) - 10} exame(s)")
 

@@ -1650,18 +1650,37 @@ elif page == "Financeiro":
         with col3:
             valor_exame = st.number_input("Valor por Exame (R$)",
                                           min_value=0.0, value=50.0, step=1.0)
+            valor_plantao = st.number_input(
+                "Acréscimo Plantão (R$)",
+                min_value=0.0,
+                value=60.0,
+                step=1.0,
+                help="Valor adicional cobrado para exames em regime de plantão.",
+            )
 
         col_btn1, col_btn2 = st.columns(2)
 
         with col_btn1:
             if st.button("📊 Gerar Fechamento (Todos Usuários)", use_container_width=True):
-                from utils.financeiro import gerar_fechamento_todos_usuarios, criar_fatura
+                from utils.financeiro import (
+                    gerar_fechamento_todos_usuarios,
+                    criar_fatura,
+                    set_valor_base_exame,
+                    set_acrescimo_plantao,
+                )
 
                 try:
+                    # Atualizar configurações padrões (com histórico)
+                    current_admin = get_current_user()
+                    admin_name = current_admin.get("username") if current_admin else None
+                    set_valor_base_exame(valor_exame, changed_by=admin_name)
+                    set_acrescimo_plantao(valor_plantao, changed_by=admin_name)
+
                     fechamentos = gerar_fechamento_todos_usuarios(
                         get_date_start(combine_date_local(data_inicio)),
                         get_date_end(combine_date_local(data_fim)),
-                        valor_exame
+                        valor_por_exame=valor_exame,
+                        valor_plantao=valor_plantao,
                     )
 
                     if fechamentos:
@@ -1711,7 +1730,12 @@ elif page == "Financeiro":
             )
 
             if usuario_selecionado and st.button("📊 Gerar Fechamento (Usuário)", use_container_width=True):
-                from utils.financeiro import gerar_fechamento, criar_fatura
+                from utils.financeiro import (
+                    gerar_fechamento,
+                    criar_fatura,
+                    set_valor_base_exame,
+                    set_acrescimo_plantao,
+                )
 
                 # Extrair user_id do selecionado
                 user_idx = usuarios.index(
@@ -1719,11 +1743,18 @@ elif page == "Financeiro":
                 user_selected = usuarios[user_idx]
 
                 try:
+                    # Atualizar configurações padrões (com histórico)
+                    current_admin = get_current_user()
+                    admin_name = current_admin.get("username") if current_admin else None
+                    set_valor_base_exame(valor_exame, changed_by=admin_name)
+                    set_acrescimo_plantao(valor_plantao, changed_by=admin_name)
+
                     fechamento = gerar_fechamento(
                         user_selected['id'],
                         get_date_start(combine_date_local(data_inicio)),
                         get_date_end(combine_date_local(data_fim)),
-                        valor_exame
+                        valor_por_exame=valor_exame,
+                        valor_plantao=valor_plantao,
                     )
 
                     if fechamento['quantidade_exames'] > 0:
@@ -1745,13 +1776,19 @@ elif page == "Financeiro":
         st.subheader("📋 Faturas")
 
         # Filtros
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             periodo_filter = st.text_input("🔍 Filtrar por Período (opcional)")
         with col2:
             status_filter = st.selectbox(
                 "Filtrar por Status",
                 ["Todos", "pendente", "paga", "cancelada"]
+            )
+        with col3:
+            tipo_atendimento_filter = st.selectbox(
+                "Tipo de atendimento",
+                ["Todos", "Normal", "Plantão"],
+                help="Filtra faturas que possuem apenas exames normais ou em plantão.",
             )
 
         # Buscar faturas
@@ -1760,6 +1797,21 @@ elif page == "Financeiro":
 
         if periodo_filter:
             faturas = [f for f in faturas if periodo_filter in f.get('periodo', '')]
+
+        # Filtrar por tipo de atendimento (normal/plantão)
+        if tipo_atendimento_filter != "Todos":
+            so_plantao = (tipo_atendimento_filter == "Plantão")
+            filtradas = []
+            for f in faturas:
+                exames = f.get("exames", [])
+                if not exames:
+                    continue
+                has_plantao = any(e.get("plantao") for e in exames)
+                if so_plantao and has_plantao:
+                    filtradas.append(f)
+                if not so_plantao and not has_plantao:
+                    filtradas.append(f)
+            faturas = filtradas
 
         st.metric("Total de Faturas", len(faturas))
         total_pendente = sum(f.get('valor_total', 0)
@@ -1790,12 +1842,23 @@ elif page == "Financeiro":
                 with col2:
                     st.write(f"**Quantidade de Exames:** {len(fatura.get('exames', []))}")
 
-                    # Lista de exames
+                    # Lista de exames com breakdown de valores
                     if fatura.get('exames'):
                         st.write("**Exames:**")
                         for exame in fatura.get('exames', [])[:10]:  # Mostrar até 10
-                            st.write(
-                                f"- {exame.get('paciente', 'N/A')} ({exame.get('tipo_exame', 'N/A')}) - R$ {exame.get('valor', 0):.2f}")
+                            valor_base = exame.get('valor_base', exame.get('valor', 0))
+                            acrescimo_plantao = exame.get('acrescimo_plantao', 0.0)
+                            valor_total_exame = exame.get('valor', valor_base + acrescimo_plantao)
+                            plantao_flag = exame.get('plantao', False)
+                            obs = exame.get('observacao', '')
+                            linha = f"- {exame.get('paciente', 'N/A')} ({exame.get('tipo_exame', 'N/A')})"
+                            linha += f" · Base: R$ {valor_base:.2f}"
+                            if plantao_flag and acrescimo_plantao:
+                                linha += f" · Plantão: +R$ {acrescimo_plantao:.2f}"
+                            linha += f" · Total: R$ {valor_total_exame:.2f}"
+                            if obs:
+                                linha += f" · Obs: {obs}"
+                            st.write(linha)
                         if len(fatura.get('exames', [])) > 10:
                             st.write(f"... e mais {len(fatura.get('exames', [])) - 10} exame(s)")
 
