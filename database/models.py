@@ -246,7 +246,8 @@ class Laudo(BaseModel):
                admin_id: Optional[str] = None,
                modelo_usado: Optional[str] = None,
                usado_api_externa: bool = False,
-               similaridade_casos: Optional[float] = None) -> str:
+               similaridade_casos: Optional[float] = None,
+               imagens_usadas: Optional[List[str]] = None) -> str:
         """Cria um novo laudo"""
         laudo_data = {
             "requisicao_id": requisicao_id,
@@ -265,7 +266,9 @@ class Laudo(BaseModel):
             "rating": None,  # Será calculado quando liberado/editado
             "num_edicoes": 0,
             "texto_original_gerado": texto_original or texto,  # Versão original da IA
-            "historico_edicoes": []  # Lista de edições com timestamps
+            "historico_edicoes": [],  # Lista de edições com timestamps
+            "imagens_usadas": imagens_usadas or [],  # Caminhos das imagens enviadas à LLM
+            "regenerado_com_correcoes": False,  # True se foi regenerado com correções do admin
         }
         result = self.collection.insert_one(laudo_data)
         return str(result.inserted_id)
@@ -364,11 +367,17 @@ class Laudo(BaseModel):
 
     def _calcular_rating(self, laudo: Dict) -> Optional[int]:
         """
-        Calcula rating automático baseado em edições:
-        - Rating 5: Laudo aprovado sem edições (texto == texto_original_gerado)
-        - Rating 3: Laudo editado parcialmente (pequenas mudanças)
-        - Rating 1: Laudo muito editado ou regenerado
+        Calcula rating automático baseado em edições e correções:
+        - Rating 5: Aprovado sem edição (referência gold)
+        - Rating 4: Pequenas edições de formatação
+        - Rating 3: Editado manualmente sem sistema de correções
+        - Rating 2: Corrigido com regeneração e aprovado
+        - Rating 1: Múltiplas tentativas ou reescrito
         """
+        # Se foi regenerado com correções do especialista → rating 2
+        if laudo.get("regenerado_com_correcoes"):
+            return 2
+
         texto_atual = laudo.get("texto", "")
         texto_original = laudo.get("texto_original_gerado", "")
         num_edicoes = laudo.get("num_edicoes", 0)
@@ -380,14 +389,16 @@ class Laudo(BaseModel):
         if num_edicoes == 0 and texto_atual.strip() == texto_original.strip():
             return 5
 
-        # Calcular similaridade de texto (Levenshtein simplificado)
+        # Calcular similaridade de texto
         similarity = self._calcular_similaridade_texto(texto_atual, texto_original)
 
         # Rating baseado em similaridade e número de edições
         if similarity >= 0.95 and num_edicoes <= 1:
             return 5  # Aprovado sem edições significativas
+        elif similarity >= 0.90 and num_edicoes <= 2:
+            return 4  # Pequenas edições de formatação
         elif similarity >= 0.70 and num_edicoes <= 3:
-            return 3  # Editado parcialmente
+            return 3  # Editado manualmente
         else:
             return 1  # Muito editado ou regenerado
 
@@ -666,3 +677,59 @@ class LearningHistory(BaseModel):
             "taxa_aprovacao": (rating_5 / total * 100) if total > 0 else 0,
             "economia_api": (local_only / total * 100) if total > 0 else 0
         }
+
+
+class CorrecaoLaudo(BaseModel):
+    """Modelo para correções de laudo (sistema de aprendizado com correções do especialista)"""
+
+    def create(
+        self,
+        requisicao_id: str,
+        laudo_id: str,
+        texto_correcao: str,
+        categoria: str,
+        contexto: Dict,
+        laudo_original: str,
+        laudo_corrigido: str,
+        rating: int,
+        aprovado: bool = True,
+    ) -> str:
+        """Registra uma correção feita pelo admin (para aprendizado)"""
+        data = {
+            "requisicao_id": requisicao_id,
+            "laudo_id": laudo_id,
+            "texto_correcao": texto_correcao,
+            "categoria": categoria,
+            "contexto": contexto,
+            "laudo_original": laudo_original,
+            "laudo_corrigido": laudo_corrigido,
+            "rating": rating,
+            "aprovado": aprovado,
+            "created_at": now(),
+            "updated_at": now(),
+        }
+        result = self.collection.insert_one(data)
+        return str(result.inserted_id)
+
+    def find_by_laudo(self, laudo_id: str) -> List[Dict]:
+        """Busca correções associadas a um laudo"""
+        docs = self.collection.find({"laudo_id": laudo_id}).sort("created_at", -1)
+        return [self.to_dict(doc) for doc in docs]
+
+    def find_by_contexto(self, contexto: Dict, limit: int = 10) -> List[Dict]:
+        """
+        Busca correções em casos similares (mesma espécie/raça/região) para injetar alertas no prompt.
+        contexto: dict com especie, raca, regiao_estudo (ou regiao).
+        """
+        query = {}
+        if contexto.get("especie"):
+            query["contexto.especie"] = contexto["especie"]
+        if contexto.get("raca"):
+            query["contexto.raca"] = contexto["raca"]
+        regiao = contexto.get("regiao_estudo") or contexto.get("regiao")
+        if regiao:
+            query["contexto.regiao_estudo"] = regiao
+        if not query:
+            return []
+        docs = self.collection.find(query).sort("created_at", -1).limit(limit)
+        return [self.to_dict(doc) for doc in docs]

@@ -119,13 +119,13 @@ class VetAIAnalyzer:
         self.model = genai.GenerativeModel(MODEL_NAME)
 
     def generate_diagnosis(
-        self, 
+        self,
         images: List[Image.Image],
         paciente_info: Optional[Dict[str, str]] = None
     ) -> str:  # noqa: C901
         """
         Envia imagens para o Gemini e retorna o laudo técnico em português.
-        
+
         Args:
             images: Lista de imagens PIL para análise
             paciente_info: Dicionário com informações do paciente (especie, raca, idade, sexo, 
@@ -136,10 +136,11 @@ class VetAIAnalyzer:
         raca = (paciente_info or {}).get("raca", "Não informado")
         idade = (paciente_info or {}).get("idade", "Não informado")
         sexo = (paciente_info or {}).get("sexo", "Não informado")
-        historico = (paciente_info or {}).get("historico_clinico", "") or (paciente_info or {}).get("observacoes", "") or "Não informado"
+        historico = (paciente_info or {}).get("historico_clinico", "") or (
+            paciente_info or {}).get("observacoes", "") or "Não informado"
         suspeita_clinica = (paciente_info or {}).get("suspeita_clinica", "Não informado")
         regiao_estudo = (paciente_info or {}).get("regiao_estudo", "Não informado")
-        
+
         prompt = f"""
 You are a specialist veterinary radiologist analyzing diagnostic images. Generate a comprehensive technical report in Portuguese (Brazil).
 
@@ -266,5 +267,60 @@ PROFESSIONAL STANDARDS:
         except Exception as e:
             return (
                 "[ERRO NA IA: Não foi possível gerar o laudo automático. "
+                f"Detalhe: {str(e)}]"
+            )
+
+    def generate_diagnosis_with_corrections(
+        self,
+        images: List[Image.Image],
+        paciente_info: Optional[Dict[str, str]],
+        correcoes_texto: str,
+        laudo_anterior: str,
+    ) -> str:
+        """
+        Gera novo laudo considerando correções do especialista e o laudo anterior.
+        Usado no fluxo 'Gerar Laudo c/ Correções'.
+        """
+        especie = (paciente_info or {}).get("especie", "Não informado")
+        raca = (paciente_info or {}).get("raca", "Não informado")
+        idade = (paciente_info or {}).get("idade", "Não informado")
+        sexo = (paciente_info or {}).get("sexo", "Não informado")
+        historico = (paciente_info or {}).get("historico_clinico", "") or (
+            paciente_info or {}).get("observacoes", "") or "Não informado"
+        suspeita = (paciente_info or {}).get("suspeita_clinica", "Não informado")
+        regiao = (paciente_info or {}).get("regiao_estudo", "Não informado")
+
+        prompt = f"""You are a specialist veterinary radiologist. The specialist has reviewed a previous report and provided corrections. Generate a NEW corrected report in Portuguese (Brazil) that incorporates these corrections.
+
+🚨 CORREÇÕES DO ESPECIALISTA:
+{correcoes_texto}
+
+LAUDO ANTERIOR (tinha erros):
+{laudo_anterior}
+
+DADOS DO PACIENTE:
+- Espécie: {especie}
+- Raça: {raca}
+- Idade: {idade}
+- Sexo: {sexo}
+- Histórico clínico: {historico}
+- Suspeita clínica: {suspeita}
+- Região de estudo: {regiao}
+
+Generate a complete new report that fixes the errors indicated by the specialist. Your response MUST start immediately with "**Descrição dos Achados:**". Use professional veterinary terminology in Portuguese (Brazil).
+"""
+        _safe_print("Gerando laudo com correções do especialista...")
+        try:
+            content: list = [prompt] + images
+            response = self.model.generate_content(content)
+            text = response.text.strip()
+            pattern = r"\*\*Descri[çc][ãa]o dos Achados:?\*\*"
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                text = text[match.start():]
+            return re.sub(r"\n{3,}", "\n\n", text).strip() or text
+        except Exception as e:
+            return (
+                "[ERRO NA IA: Não foi possível gerar o laudo. "
                 f"Detalhe: {str(e)}]"
             )

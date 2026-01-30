@@ -85,4 +85,11 @@ def init_db():
     db.learning_history.create_index([("contexto.especie", 1), ("contexto.raca", 1)])
     db.learning_history.create_index([("rating", -1), ("created_at", -1)])
 
+    # Índices para correções de laudo (aprendizado com correções do especialista)
+    db.correcoes_laudo.create_index("laudo_id")
+    db.correcoes_laudo.create_index("requisicao_id")
+    db.correcoes_laudo.create_index("categoria")
+    db.correcoes_laudo.create_index("created_at")
+    db.correcoes_laudo.create_index([("contexto.especie", 1), ("contexto.raca", 1), ("contexto.regiao_estudo", 1)])
+
     return db

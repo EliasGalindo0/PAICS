@@ -40,6 +40,7 @@ st.markdown("""
 # Gate de autenticação (sem logs na UI)
 # -----------------------------
 
+
 def _load_tokens_from_query_params() -> bool:
     """Se auto_login estiver presente nos query params, decodifica tokens e coloca no session_state."""
     query_params = st.query_params
@@ -438,8 +439,57 @@ if page == "Requisições":
             editing_key = f"editing_{req['id']}"
             is_editing = st.session_state.get(editing_key, False)
 
+            # Seleção de imagens para laudo (quando ainda não há laudo)
+            imagens_paths = req.get("imagens") or []
+            sel_key = f"img_sel_{req['id']}"
+            if not laudo and imagens_paths:
+                if sel_key not in st.session_state:
+                    st.session_state[sel_key] = [True] * len(imagens_paths)
+                st.divider()
+                with st.expander("🖼️ Imagens para o laudo (desmarque as que NÃO devem ir para a IA)", expanded=True):
+                    from ai.analyzer import load_images_for_analysis
+                    n_cols = 3
+                    for start in range(0, len(imagens_paths), n_cols):
+                        row = st.columns(n_cols)
+                        for k, idx in enumerate(range(start, min(start + n_cols, len(imagens_paths)))):
+                            path = imagens_paths[idx]
+                            with row[k]:
+                                nome = os.path.basename(path)
+                                st.checkbox(
+                                    nome[:40] + ("..." if len(nome) > 40 else ""),
+                                    value=st.session_state[sel_key][idx],
+                                    key=f"{sel_key}_{idx}",
+                                )
+                                try:
+                                    loaded = load_images_for_analysis([path])
+                                    prev = loaded[0] if loaded else None
+                                except Exception:
+                                    prev = None
+                                if prev is not None:
+                                    st.image(prev, use_container_width=True)
+                    # Sincronizar lista com valores atuais dos checkboxes
+                    st.session_state[sel_key] = [st.session_state.get(
+                        f"{sel_key}_{i}", True) for i in range(len(imagens_paths))]
+                    n_sel = sum(st.session_state[sel_key])
+                    st.caption(
+                        f"**{n_sel} de {len(imagens_paths)}** imagens selecionadas. Mínimo 1 para gerar laudo.")
+                    col_a, col_b, _ = st.columns(3)
+                    with col_a:
+                        if st.button("✅ Selecionar Todas", key=f"sel_all_{req['id']}"):
+                            for i in range(len(imagens_paths)):
+                                st.session_state[f"{sel_key}_{i}"] = True
+                                st.session_state[sel_key][i] = True
+                            st.rerun()
+                    with col_b:
+                        if st.button("⬜ Desselecionar Todas", key=f"desel_all_{req['id']}"):
+                            for i in range(len(imagens_paths)):
+                                st.session_state[f"{sel_key}_{i}"] = False
+                                st.session_state[sel_key][i] = False
+                            st.rerun()
+            else:
+                st.divider()
+
             # Botão para iniciar/parar edição
-            st.divider()
             col_btn_toggle, col_btn2, col_btn3, col_btn4 = st.columns(4)
             with col_btn_toggle:
                 if is_editing:
@@ -448,78 +498,68 @@ if page == "Requisições":
                         st.rerun()
                 else:
                     if st.button("📝 Gerar/Editar Laudo", key=f"edit_{req['id']}", use_container_width=True):
-                        # Se não há laudo, gerar com IA primeiro
+                        # Se não há laudo, gerar com IA primeiro (usar apenas imagens selecionadas)
                         if not laudo:
                             try:
+                                selected_paths = []
+                                if imagens_paths and sel_key in st.session_state:
+                                    selected_paths = [imagens_paths[i] for i in range(
+                                        len(imagens_paths)) if st.session_state[sel_key][i]]
+                                else:
+                                    selected_paths = list(imagens_paths)
+                                if not selected_paths:
+                                    st.error("Selecione ao menos 1 imagem para gerar o laudo.")
+                                    st.stop()
                                 with st.spinner("🤖 Gerando laudo com IA..."):
-                                    imagens_paths = req.get("imagens", [])
-                                    if imagens_paths:
-                                        from ai.analyzer import load_images_for_analysis
-                                        from ai.learning_system import LearningSystem
-                                        images = load_images_for_analysis(imagens_paths)
-                                        if images:
-                                            learning_system = LearningSystem()
-                                            # Preparar informações do paciente para a IA
-                                            paciente_info = {
-                                                "especie": req.get("especie", ""),
-                                                "raca": req.get("raca", ""),
-                                                "idade": req.get("idade", ""),
-                                                "sexo": req.get("sexo", ""),
-                                                "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
-                                                "suspeita_clinica": req.get("suspeita_clinica", ""),
-                                                "regiao_estudo": req.get("regiao_estudo", ""),
-                                            }
-                                            # Usar sistema de aprendizado para gerar laudo
-                                            texto_gerado, metadata = learning_system.generate_laudo(
-                                                images, paciente_info, req["id"]
-                                            )
-
-                                            # Mostrar informações sobre o modelo usado
-                                            modelo_info = metadata.get(
-                                                "modelo_usado", "api_externa")
-                                            if metadata.get("similaridade_casos", 0) > 0:
-                                                st.info(
-                                                    f"🤖 Modelo: {modelo_info} | Similaridade: {metadata['similaridade_casos']:.2%}")
-
-                                            laudo_id = laudo_model.create(
-                                                requisicao_id=req["id"],
-                                                texto=texto_gerado,
-                                                texto_original=texto_gerado,
-                                                status="pendente",
-                                                modelo_usado=modelo_info,
-                                                usado_api_externa=metadata.get(
-                                                    "usado_api_externa", True),
-                                                similaridade_casos=metadata.get(
-                                                    "similaridade_casos")
-                                            )
-                                            # Salvar metadata no session_state para uso posterior
-                                            st.session_state[f"laudo_metadata_{req['id']}"] = metadata
-                                            st.session_state[f"laudo_paciente_info_{req['id']}"] = paciente_info
-                                            st.success("✅ Laudo gerado com IA!")
-                                            laudo = laudo_model.find_by_id(laudo_id)
-                                        else:
-                                            st.warning(
-                                                "Nenhuma imagem válida. Criando laudo vazio para edição manual.")
-                                            laudo_id = laudo_model.create(
-                                                requisicao_id=req["id"],
-                                                texto="",
-                                                texto_original="",
-                                                status="pendente",
-                                            )
-                                            laudo = laudo_model.find_by_id(laudo_id)
+                                    from ai.analyzer import load_images_for_analysis
+                                    from ai.learning_system import LearningSystem
+                                    images = load_images_for_analysis(selected_paths)
+                                    if images:
+                                        learning_system = LearningSystem()
+                                        paciente_info = {
+                                            "especie": req.get("especie", ""),
+                                            "raca": req.get("raca", ""),
+                                            "idade": req.get("idade", ""),
+                                            "sexo": req.get("sexo", ""),
+                                            "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
+                                            "suspeita_clinica": req.get("suspeita_clinica", ""),
+                                            "regiao_estudo": req.get("regiao_estudo", ""),
+                                        }
+                                        texto_gerado, metadata = learning_system.generate_laudo(
+                                            images, paciente_info, req["id"]
+                                        )
+                                        modelo_info = metadata.get("modelo_usado", "api_externa")
+                                        if metadata.get("similaridade_casos", 0) > 0:
+                                            st.info(
+                                                f"🤖 Modelo: {modelo_info} | Similaridade: {metadata['similaridade_casos']:.2%}")
+                                        laudo_id = laudo_model.create(
+                                            requisicao_id=req["id"],
+                                            texto=texto_gerado,
+                                            texto_original=texto_gerado,
+                                            status="pendente",
+                                            modelo_usado=modelo_info,
+                                            usado_api_externa=metadata.get(
+                                                "usado_api_externa", True),
+                                            similaridade_casos=metadata.get("similaridade_casos"),
+                                            imagens_usadas=selected_paths,
+                                        )
+                                        st.session_state[f"laudo_metadata_{req['id']}"] = metadata
+                                        st.session_state[f"laudo_paciente_info_{req['id']}"] = paciente_info
+                                        st.success("✅ Laudo gerado com IA!")
+                                        laudo = laudo_model.find_by_id(laudo_id)
                                     else:
                                         st.warning(
-                                            "Nenhuma imagem. Criando laudo vazio para edição manual.")
+                                            "Nenhuma imagem válida. Criando laudo vazio para edição manual.")
                                         laudo_id = laudo_model.create(
                                             requisicao_id=req["id"],
                                             texto="",
                                             texto_original="",
                                             status="pendente",
+                                            imagens_usadas=selected_paths,
                                         )
                                         laudo = laudo_model.find_by_id(laudo_id)
                             except Exception as e:
                                 st.warning(f"⚠️ Erro ao gerar laudo: {str(e)}")
-                                # Criar laudo vazio mesmo assim
                                 laudo_id = laudo_model.create(
                                     requisicao_id=req["id"],
                                     texto="",
@@ -987,18 +1027,31 @@ if page == "Requisições":
                     with col_edit:
                         editor_key = f"laudo_edit_inline_{laudo['id']}"
                         st.subheader("✏️ Editar Laudo")
-                        # Aumentar altura do editor para ocupar mais espaço disponível
+
+                        # CORREÇÕES PARA IA (opcional) - para gerar laudo com correções do especialista
+                        correcoes_key = f"correcoes_ia_{laudo['id']}"
+                        correcoes_texto = st.text_area(
+                            "🔧 CORREÇÕES PARA IA (opcional)",
+                            value=st.session_state.get(correcoes_key, ""),
+                            height=80,
+                            max_chars=500,
+                            placeholder='Ex: "A lesão está no membro ESQUERDO, não direito"',
+                            key=correcoes_key,
+                            help="Descreva as correções para a IA gerar o laudo. Máx. 500 caracteres.",
+                        )
+                        st.caption(f"{len(correcoes_texto)}/500 caracteres")
+
+                        # Editor do laudo
                         texto_editado = st.text_area(
-                            "Conteúdo do laudo",
+                            "📝 Conteúdo do laudo",
                             value=laudo.get("texto", ""),
-                            height=600,
+                            height=500,
                             key=editor_key,
                         )
 
-                        col1, col2, col3, col4 = st.columns(4)
+                        col1, col2, col3, col4, col5 = st.columns(5)
                         with col1:
-                            if st.button("💾 Salvar", use_container_width=True, key=f"save_inline_{laudo['id']}"):
-                                # Registrar edição se o texto mudou
+                            if st.button("💾 Salvar Edições", use_container_width=True, key=f"save_inline_{laudo['id']}"):
                                 if texto_editado != laudo.get("texto", ""):
                                     user = get_current_user()
                                     laudo_model.registrar_edicao(
@@ -1008,9 +1061,36 @@ if page == "Requisições":
                                     )
                                 else:
                                     laudo_model.update(laudo["id"], {"texto": texto_editado})
-                                st.success("Laudo salvo!")
+                                st.success("Laudo salvo! (edição manual → rating 3/5)")
                                 st.rerun()
                         with col2:
+                            if st.button("🔄 Gerar Laudo c/ Correções", use_container_width=True, key=f"gen_inline_{laudo['id']}"):
+                                if not correcoes_texto or not correcoes_texto.strip():
+                                    st.warning(
+                                        "Digite as correções no campo acima antes de regenerar.")
+                                else:
+                                    try:
+                                        with st.spinner("Gerando laudo com correções..."):
+                                            from ai.learning_system import LearningSystem
+                                            ls = LearningSystem()
+                                            imagens_usadas = laudo.get(
+                                                "imagens_usadas") or req.get("imagens") or []
+                                            novo_texto, _ = ls.regenerate_with_corrections(
+                                                laudo["id"], req["id"], correcoes_texto.strip(
+                                                ), imagens_usadas
+                                            )
+                                            laudo_model.update(laudo["id"], {
+                                                "texto": novo_texto,
+                                                "regenerado_com_correcoes": True,
+                                                "rating": 2,
+                                            })
+                                            st.session_state[correcoes_key] = ""
+                                        st.success(
+                                            "Laudo gerado com correções! (rating 2/5 – precisou correção)")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro ao gerar: {str(e)}")
+                        with col3:
                             if st.button("✅ Validar", use_container_width=True, key=f"val_inline_{laudo['id']}"):
                                 user = get_current_user()
                                 laudo_model.validate(laudo["id"], user["id"])
@@ -1036,16 +1116,16 @@ if page == "Requisições":
                                         "Execute `just fix-rpds` ou use Python 3.11/3.12."
                                     )
                                 st.rerun()
-                        with col3:
+                        with col4:
                             if st.button("📤 Liberar", use_container_width=True, key=f"lib_inline_{laudo['id']}"):
-                                laudo_model.release(laudo["id"])
+                                laudo_model.release(laudo["id"], calcular_rating=True)
                                 requisicao_model.update_status(req["id"], "liberado")
                                 st.success(
                                     "✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
                                 st.balloons()
                                 del st.session_state[editing_key]
                                 st.rerun()
-                        with col4:
+                        with col5:
                             if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_inline_{laudo['id']}"):
                                 del st.session_state[editing_key]
                                 st.rerun()
