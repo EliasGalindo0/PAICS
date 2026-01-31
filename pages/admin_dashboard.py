@@ -1030,9 +1030,12 @@ if page == "Requisições":
 
                         # CORREÇÕES PARA IA (opcional) - para gerar laudo com correções do especialista
                         correcoes_key = f"correcoes_ia_{laudo['id']}"
+                        clear_flag_key = f"_clear_{correcoes_key}"
+                        # Não modificar correcoes_key após o widget existir; usar flag para limpar no rerun
+                        correcoes_initial = "" if st.session_state.pop(clear_flag_key, False) else st.session_state.get(correcoes_key, "")
                         correcoes_texto = st.text_area(
                             "🔧 CORREÇÕES PARA IA (opcional)",
-                            value=st.session_state.get(correcoes_key, ""),
+                            value=correcoes_initial,
                             height=80,
                             max_chars=500,
                             placeholder='Ex: "A lesão está no membro ESQUERDO, não direito"',
@@ -1084,7 +1087,7 @@ if page == "Requisições":
                                                 "regenerado_com_correcoes": True,
                                                 "rating": 2,
                                             })
-                                            st.session_state[correcoes_key] = ""
+                                            st.session_state[clear_flag_key] = True
                                         st.success(
                                             "Laudo gerado com correções! (rating 2/5 – precisou correção)")
                                         st.rerun()
