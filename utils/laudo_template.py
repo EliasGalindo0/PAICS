@@ -2,7 +2,7 @@
 Template e formatação do laudo veterinário para pré-visualização e exportação.
 """
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 
 def _fmt(s: Any) -> str:
@@ -77,8 +77,16 @@ def build_laudo_text(data: Dict[str, Any], incluir_cabecalho: bool = True) -> st
     return "\n".join(lines)
 
 
-def dados_from_requisicao(req: Dict[str, Any]) -> Dict[str, Any]:
-    """Extrai dicionário de dados do formulário a partir de uma requisição."""
+def dados_from_requisicao(
+    req: Dict[str, Any],
+    clinica_nome: Optional[str] = None,
+    vet_nome: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Extrai dicionário de dados do formulário a partir de uma requisição.
+    Se clinica_nome ou vet_nome forem passados, usam-se no lugar de req (útil quando
+    a requisição tem apenas clinica_id/veterinario_id).
+    """
     return {
         "paciente": req.get("paciente", ""),
         "especie": req.get("especie", ""),
@@ -86,8 +94,8 @@ def dados_from_requisicao(req: Dict[str, Any]) -> Dict[str, Any]:
         "raca": req.get("raca", ""),
         "sexo": req.get("sexo", ""),
         "tutor": req.get("tutor", ""),
-        "clinica": req.get("clinica", ""),
-        "medico_veterinario_solicitante": req.get("medico_veterinario_solicitante", ""),
+        "clinica": clinica_nome if clinica_nome is not None else req.get("clinica", ""),
+        "medico_veterinario_solicitante": vet_nome if vet_nome is not None else req.get("medico_veterinario_solicitante", ""),
         "regiao_estudo": req.get("regiao_estudo", ""),
         "suspeita_clinica": req.get("suspeita_clinica", ""),
         "plantao": req.get("plantao", ""),

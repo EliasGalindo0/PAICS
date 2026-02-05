@@ -298,6 +298,13 @@ CONTEXTO DO PACIENTE:
 - Suspeita Clínica: {paciente_info.get("suspeita_clinica", "Não informado")}
 - Região de Estudo: {paciente_info.get("regiao_estudo", "Não informado")}
 """
+        obs_adic = (paciente_info.get("observacoes_adicionais_usuario") or "").strip()
+        if obs_adic:
+            base_prompt += f"""
+OBSERVAÇÕES ADICIONAIS DO SOLICITANTE (considerar para melhorar a assertividade do laudo):
+{obs_adic}
+
+"""
         # Alertas de correções em casos similares
         alertas = self.get_alertas_correcoes(paciente_info)
         if alertas:
@@ -311,22 +318,26 @@ CONTEXTO DO PACIENTE:
                 base_prompt += f"{case.get('texto', '')[:500]}...\n"
 
         base_prompt += """
-ESTRUTURA DO LAUDO (OBRIGATÓRIA):
+ESTRUTURA DO LAUDO (OBRIGATÓRIA – todas as seções em tópicos, um item por linha):
 
 **Descrição dos Achados:**
-[Descrição detalhada e sistemática das estruturas visíveis]
+- Inicie pelas alterações mais relevantes ou importantes (achados anormais ou que impactem o diagnóstico); em seguida descreva o restante, incluindo estruturas dentro da normalidade.
+- Apenas em tópicos (bullets), um achado por linha.
+- Achados normais: uma linha curta (ex.: "- Sistema esquelético: dentro da normalidade").
+- Achados alterados ou relevantes: um tópico cada com o essencial.
+- NÃO escreva parágrafos longos; seja direto e resumido.
 
 **Impressão Diagnóstica:**
-[Impressão diagnóstica baseada nos achados]
+- Apenas em tópicos (diagnósticos diferenciais ou impressão principal).
 
 **Conclusão:**
-[Resumo conciso dos principais achados]
+- Apenas em tópicos (conclusões principais).
 
 **Recomendações:**
-[Sugestões de exames adicionais ou acompanhamento se necessário]
+- Em tópicos, se houver; omita se não houver.
 
-IMPORTANTE: Sua resposta DEVE começar imediatamente com "**Descrição dos Achados:**"
-Use terminologia médica veterinária profissional em português.
+Estilo: objetivo e breve. Não descreva em detalhe estruturas normais; para o que estiver dentro da normalidade, indique em uma linha. Detalhe apenas achados relevantes ou alterados.
+Sua resposta DEVE começar imediatamente com "**Descrição dos Achados:**". Terminologia veterinária em português (Brasil).
 """
 
         return base_prompt
@@ -363,8 +374,7 @@ CONTEXTO DO PACIENTE:
 - Suspeita: {paciente_info.get("suspeita_clinica", "Não informado")}
 - Região: {paciente_info.get("regiao_estudo", "Não informado")}
 
-TAREFA: Revise o laudo acima analisando as imagens. Mantenha a estrutura se estiver correta, 
-mas corrija erros, adicione detalhes importantes que possam estar faltando, e melhore a precisão diagnóstica.
+TAREFA: Revise o laudo acima analisando as imagens. Mantenha o formato em tópicos (Descrição dos Achados, Impressão Diagnóstica e Conclusão em bullets). Na Descrição dos Achados, inicie pelas alterações mais relevantes/importantes; depois o restante. Seja direto e resumido; não alongue descrições de achados normais. Corrija erros e melhore a precisão diagnóstica.
 
 Sua resposta DEVE começar imediatamente com "**Descrição dos Achados:**"
 """

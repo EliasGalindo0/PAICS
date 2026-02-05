@@ -34,7 +34,8 @@ class User(BaseModel):
 
     def create(self, username: str, email: str, password_hash: str,
                role: str = "user", nome: str = "", ativo: bool = True,
-               primeiro_acesso: bool = True, senha_temporaria: str = None) -> str:
+               primeiro_acesso: bool = True, senha_temporaria: str = None,
+               clinica_id: Optional[str] = None) -> str:
         """Cria um novo usuário"""
         user_data = {
             "username": username,
@@ -45,6 +46,7 @@ class User(BaseModel):
             "ativo": ativo,
             "primeiro_acesso": primeiro_acesso,  # Flag para obrigar alteração de senha
             "senha_temporaria": senha_temporaria,  # Senha temporária gerada pelo admin
+            "clinica_id": clinica_id,
             "created_at": now(),
             "updated_at": now()
         }
@@ -85,6 +87,87 @@ class User(BaseModel):
         """Exclui um usuário"""
         result = self.collection.delete_one({"_id": ObjectId(user_id)})
         return result.deleted_count > 0
+
+
+class Clinica(BaseModel):
+    """Modelo de clínica veterinária"""
+
+    def create(self, nome: str, cnpj: str = "", endereco: str = "",
+               telefone: str = "", email: str = "", ativa: bool = True) -> str:
+        """Cria uma nova clínica"""
+        data = {
+            "nome": nome,
+            "cnpj": cnpj,
+            "endereco": endereco,
+            "telefone": telefone,
+            "email": email,
+            "ativa": ativa,
+            "criado_em": now(),
+        }
+        result = self.collection.insert_one(data)
+        return str(result.inserted_id)
+
+    def find_by_id(self, clinica_id: str) -> Optional[Dict]:
+        """Busca clínica por ID"""
+        doc = self.collection.find_one({"_id": ObjectId(clinica_id)})
+        return self.to_dict(doc) if doc else None
+
+    def get_all(self, apenas_ativas: bool = True) -> List[Dict]:
+        """Lista todas as clínicas"""
+        query = {"ativa": True} if apenas_ativas else {}
+        docs = self.collection.find(query).sort("nome", 1)
+        return [self.to_dict(doc) for doc in docs]
+
+    def update(self, clinica_id: str, updates: Dict) -> bool:
+        """Atualiza uma clínica"""
+        result = self.collection.update_one(
+            {"_id": ObjectId(clinica_id)},
+            {"$set": updates}
+        )
+        return result.modified_count > 0
+
+
+class Veterinario(BaseModel):
+    """Modelo de médico veterinário (vinculado a uma clínica)"""
+
+    def create(self, nome: str, crmv: str, clinica_id: str,
+               email: str = "", ativo: bool = True) -> str:
+        """Cria um novo veterinário"""
+        data = {
+            "nome": nome,
+            "crmv": crmv,
+            "clinica_id": clinica_id,
+            "email": email,
+            "ativo": ativo,
+            "criado_em": now(),
+        }
+        result = self.collection.insert_one(data)
+        return str(result.inserted_id)
+
+    def find_by_id(self, vet_id: str) -> Optional[Dict]:
+        """Busca veterinário por ID"""
+        doc = self.collection.find_one({"_id": ObjectId(vet_id)})
+        return self.to_dict(doc) if doc else None
+
+    def find_by_clinica(self, clinica_id: str, apenas_ativos: bool = True) -> List[Dict]:
+        """Lista veterinários de uma clínica"""
+        query = {"clinica_id": clinica_id}
+        if apenas_ativos:
+            query["ativo"] = True
+        docs = self.collection.find(query).sort("nome", 1)
+        return [self.to_dict(doc) for doc in docs]
+
+    def update(self, vet_id: str, updates: Dict) -> bool:
+        """Atualiza um veterinário"""
+        result = self.collection.update_one(
+            {"_id": ObjectId(vet_id)},
+            {"$set": updates}
+        )
+        return result.modified_count > 0
+
+    def delete(self, vet_id: str) -> bool:
+        """Remove um veterinário (soft: desativa)"""
+        return self.update(vet_id, {"ativo": False})
 
 
 class Session(BaseModel):
@@ -164,7 +247,8 @@ class Requisicao(BaseModel):
                especie: str = "", idade: str = "", raca: str = "", sexo: str = "",
                medico_veterinario_solicitante: str = "", regiao_estudo: str = "",
                suspeita_clinica: str = "", plantao: str = "", historico_clinico: str = "",
-               data_exame: Optional[datetime] = None, status: str = "pendente") -> str:
+               data_exame: Optional[datetime] = None, status: str = "pendente",
+               clinica_id: Optional[str] = None, veterinario_id: Optional[str] = None) -> str:
         """Cria uma nova requisição"""
         req_data = {
             "user_id": user_id,
@@ -185,6 +269,8 @@ class Requisicao(BaseModel):
             "historico_clinico": historico_clinico,
             "data_exame": data_exame or now(),
             "status": status,
+            "clinica_id": clinica_id,
+            "veterinario_id": veterinario_id,
             "created_at": now(),
             "updated_at": now()
         }
@@ -229,11 +315,61 @@ class Requisicao(BaseModel):
         return result.modified_count > 0
 
     def update(self, req_id: str, updates: Dict) -> bool:
-        """Atualiza uma requisição (ex.: rascunho)"""
+        """Atualiza uma requisição (ex.: rascunho). Para edição pelo admin com histórico, use update_with_history."""
         updates["updated_at"] = now()
         result = self.collection.update_one(
             {"_id": ObjectId(req_id)},
             {"$set": updates}
+        )
+        return result.modified_count > 0
+
+    def add_observacao_usuario(self, req_id: str, texto: str, user_id: str) -> bool:
+        """Adiciona uma observação enviada pelo usuário (sem editar a requisição). Mantém histórico."""
+        if not texto or not texto.strip():
+            return False
+        entry = {
+            "texto": texto.strip(),
+            "created_at": now(),
+            "user_id": user_id,
+        }
+        result = self.collection.update_one(
+            {"_id": ObjectId(req_id)},
+            {
+                "$push": {"observacoes_usuario": entry},
+                "$set": {"updated_at": now()},
+            },
+        )
+        return result.modified_count > 0
+
+    def update_with_history(
+        self, req_id: str, updates: Dict, admin_id: str
+    ) -> bool:
+        """Atualiza a requisição e registra no histórico de edições (para auditoria)."""
+        doc = self.collection.find_one({"_id": ObjectId(req_id)})
+        if not doc:
+            return False
+        doc = self.to_dict(doc)
+        alteracoes = {}
+        for key, novo_val in updates.items():
+            if key in ("updated_at",):
+                continue
+            antigo = doc.get(key)
+            if antigo != novo_val:
+                alteracoes[key] = {"de": antigo, "para": novo_val}
+        if not alteracoes:
+            return False
+        updates["updated_at"] = now()
+        historico_entry = {
+            "alteracoes": alteracoes,
+            "admin_id": admin_id,
+            "created_at": now(),
+        }
+        result = self.collection.update_one(
+            {"_id": ObjectId(req_id)},
+            {
+                "$set": updates,
+                "$push": {"historico_edicoes": historico_entry},
+            },
         )
         return result.modified_count > 0
 

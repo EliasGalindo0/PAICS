@@ -37,8 +37,8 @@ def create_admin():
         # Coletar dados
         print("\nPreencha os dados do administrador:")
         nome = input("Nome completo: ").strip()
-        username = input("Username: ").strip()
-        email = input("Email: ").strip()
+        username = input("Usuário (login): ").strip()
+        email = input("E-mail: ").strip()
         password = input("Senha: ").strip()
         password_confirm = input("Confirmar senha: ").strip()
 
@@ -53,11 +53,11 @@ def create_admin():
 
         # Verificar se email ou username já existem
         if user_model.find_by_email(email):
-            print(f"❌ Erro: Email {email} já está cadastrado!")
+            print(f"❌ Erro: E-mail {email} já está cadastrado!")
             return
 
         if user_model.find_by_username(username):
-            print(f"❌ Erro: Username {username} já está em uso!")
+            print(f"❌ Erro: Usuário {username} já está em uso!")
             return
 
         # Criar usuário
@@ -73,8 +73,8 @@ def create_admin():
 
         print(f"\n✅ Administrador criado com sucesso!")
         print(f"   ID: {user_id}")
-        print(f"   Username: {username}")
-        print(f"   Email: {email}")
+        print(f"   Usuário (login): {username}")
+        print(f"   E-mail: {email}")
         print("\nVocê pode fazer login agora no sistema.")
 
     except Exception as e:

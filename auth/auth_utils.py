@@ -103,7 +103,7 @@ def login_user(email_or_username: str, password: str, remember_me: bool = False)
     Tenta fazer login do usuário com suporte a sessão persistente
 
     Args:
-        email_or_username: Email ou username do usuário
+        email_or_username: E-mail ou usuário (login) do usuário
         password: Senha do usuário
         remember_me: Se True, cria tokens de longa duração (30 dias)
 
@@ -122,13 +122,13 @@ def login_user(email_or_username: str, password: str, remember_me: bool = False)
             user = user_model.find_by_username(email_or_username)
 
         if not user:
-            return False, "Email/usuário ou senha incorretos", {}
+            return False, "E-mail/usuário ou senha incorretos", {}
 
         if not user.get('ativo', True):
             return False, "Usuário inativo. Entre em contato com o administrador.", {}
 
         if not verify_password(password, user['password_hash']):
-            return False, "Email/usuário ou senha incorretos", {}
+            return False, "E-mail/usuário ou senha incorretos", {}
 
         # Gerar tokens JWT
         access_token = generate_access_token(user['id'], user['username'], user['role'])
