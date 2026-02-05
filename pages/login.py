@@ -149,7 +149,7 @@ st.subheader("Entrar")
 
 with st.form("login_form"):
     email_or_username = st.text_input(
-        "Email ou Username", placeholder="seu@email.com ou seu_username")
+        "E-mail ou Usuário", placeholder="seu@email.com ou usuário")
     password = st.text_input("Senha", type="password")
     remember_me = st.checkbox("Lembrar-me (manter conectado por 30 dias)", value=False)
     submit = st.form_submit_button("Entrar", type="primary", use_container_width=True)
@@ -172,11 +172,11 @@ with st.form("login_form"):
                     # Usar uma abordagem que funcione na página principal do Streamlit
                     import base64
                     import streamlit.components.v1 as components
-                    
+
                     access_token_b64 = base64.b64encode(tokens['access_token'].encode()).decode()
                     refresh_token_b64 = base64.b64encode(tokens['refresh_token'].encode()).decode()
                     user_id_b64 = base64.b64encode(user_id.encode()).decode() if user_id else ''
-                    
+
                     # Adicionar listener na página principal para receber mensagem
                     st.markdown("""
                         <script>
@@ -200,7 +200,7 @@ with st.form("login_form"):
                         }
                         </script>
                     """, unsafe_allow_html=True)
-                    
+
                     # Componente que envia tokens via postMessage para a página principal
                     components.html(f"""
                         <script>
@@ -241,7 +241,7 @@ with st.form("login_form"):
                 st.session_state['login_just_completed'] = True
 
                 st.success(message)
-                
+
                 # Dar um pequeno delay para garantir que o JavaScript execute antes do rerun
                 import time
                 time.sleep(0.1)

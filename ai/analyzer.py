@@ -140,11 +140,12 @@ class VetAIAnalyzer:
             paciente_info or {}).get("observacoes", "") or "Não informado"
         suspeita_clinica = (paciente_info or {}).get("suspeita_clinica", "Não informado")
         regiao_estudo = (paciente_info or {}).get("regiao_estudo", "Não informado")
+        obs_adicionais = (paciente_info or {}).get("observacoes_adicionais_usuario", "").strip()
 
         prompt = f"""
-You are a specialist veterinary radiologist analyzing diagnostic images. Generate a comprehensive technical report in Portuguese (Brazil).
+You are a specialist veterinary radiologist. Generate a direct, concise technical report in Portuguese (Brazil).
 
-PATIENT CONTEXT (USE THIS INFORMATION TO INFORM YOUR ANALYSIS):
+PATIENT CONTEXT:
 - Species: {especie}
 - Breed: {raca}
 - Age: {idade}
@@ -152,70 +153,42 @@ PATIENT CONTEXT (USE THIS INFORMATION TO INFORM YOUR ANALYSIS):
 - Clinical History: {historico}
 - Clinical Suspicion: {suspeita_clinica}
 - Study Region: {regiao_estudo}
+"""
+        if obs_adicionais:
+            prompt += f"""
+ADDITIONAL NOTES FROM THE REFERRING CLIENT (consider these to improve report accuracy; the client may have sent corrections or remembered important details):
+{obs_adicionais}
 
-IMPORTANT: Consider the patient's species, breed, age, and clinical history when analyzing the images. Correlate your findings with the clinical suspicion and study region requested. Use breed-specific anatomical knowledge and age-appropriate normal variations in your interpretation.
+"""
+        prompt += """
+STYLE: Be objective and brief. Do NOT write long paragraphs describing normal anatomy or normal findings in detail. For structures within normal limits, state briefly (e.g. "Dentro dos limites da normalidade" or one short line). Focus detail only on relevant or abnormal findings. Use veterinary radiological terminology in Portuguese (Brazil).
 
-IMAGE ANALYSIS GUIDELINES:
-
-1. TECHNICAL QUALITY ASSESSMENT:
-   - Evaluate positioning accuracy (anatomical landmarks, symmetry, centering)
-   - Identify motion artifacts (blur, double contours, loss of detail)
-   - Assess exposure parameters (penetration, contrast, sharpness)
-   - Note any technical limitations affecting interpretation
-
-2. SYSTEMATIC EVALUATION:
-   - Analyze the requested anatomical region systematically
-   - Compare with normal anatomical patterns for the species, breed, and age
-   - Identify any deviations from expected anatomy
-   - Correlate findings with clinical history and suspicion
-
-3. DIAGNOSTIC INTEGRITY:
-   - Only report findings that are clearly visible and reproducible
-   - Use appropriate veterinary radiological terminology
-   - Distinguish between definitive findings and tentative observations
-   - Acknowledge when findings are equivocal or require additional views
-
-4. ARTIFACT RECOGNITION:
-   - Positioning artifacts: rotation, obliquity, insufficient coverage
-   - Motion artifacts: respiratory motion, patient movement
-   - Equipment artifacts: grid lines, markers, foreign objects
-   - Labeling errors: incorrect side markers, mislabeled projections
-
-5. CONTEXTUAL INTERPRETATION:
-   - Consider breed-specific anatomical variations
-   - Account for age-related changes (pediatric vs. geriatric)
-   - Integrate clinical history into differential diagnoses
-   - Recognize incidental findings vs. clinically significant pathology
-
-REPORT STRUCTURE (MANDATORY):
+REPORT STRUCTURE (MANDATORY – all sections in BULLET/TOPIC format, one item per line):
 
 **Descrição dos Achados:**
-[Provide detailed, systematic description of visible structures. Start with technical quality assessment if relevant. Describe normal anatomy first, then any abnormalities. Mention specific measurements when applicable. Note any artifacts or limitations.]
+- START with the most relevant or important findings (abnormal or clinically significant findings); then describe the rest, including structures within normal limits.
+- Write ONLY in bullet points (topics), one finding per line.
+- Normal findings: one short line (e.g. "- Sistema esquelético: dentro da normalidade").
+- Abnormal or relevant findings: one bullet each with the essential detail.
+- Do NOT write long descriptive paragraphs.
 
 **Impressão Diagnóstica:**
-[Based on the findings, provide your diagnostic impression. List differential diagnoses in order of likelihood. Correlate with clinical suspicion. If findings are non-specific, state this clearly.]
+- Bullet points only (differential diagnoses or main impression, one per line).
 
 **Conclusão:**
-[Concise summary of the main findings and their clinical significance. State if the study is limited or inconclusive due to technical factors.]
+- Bullet points only (main conclusions, one per line).
 
 **Recomendações:**
-[Suggest additional imaging views if positioning was suboptimal. Recommend complementary imaging modalities if needed (additional projections, ultrasound, CT, MRI). Suggest follow-up imaging timeframe if applicable. Recommend clinical correlation or additional diagnostics.]
+- Bullet points only, if applicable (additional exams, follow-up). Omit if none.
 
 **Referências:**
-[Include only if citing specific criteria, classifications, or measurement standards used in the interpretation.]
+- Only if citing specific criteria or standards; otherwise omit.
 
-CRITICAL FORMATTING RULES:
+CRITICAL:
 - Your response MUST start IMMEDIATELY with "**Descrição dos Achados:**"
-- No preamble, greeting, or introduction
-- Use professional veterinary medical terminology in Portuguese (Brazil)
-- Be concise but thorough
-- Maintain objectivity and acknowledge uncertainty when appropriate
-
-PROFESSIONAL STANDARDS:
-- Adopt the tone of a board-certified veterinary radiologist
-- Balance detail with clinical relevance
-- Prioritize patient safety by recommending additional studies when diagnosis is uncertain
-- Consider the referring veterinarian's clinical question and provide actionable insights
+- No preamble or introduction.
+- Descrição dos Achados, Impressão Diagnóstica and Conclusão MUST be in topic/bullet format (lines starting with "-" or similar), not long paragraphs.
+- Keep the report short: avoid lengthy descriptions of normal findings.
 
 """
         _safe_print("Enviando imagens para análise da IA (isso pode levar alguns segundos)...")
@@ -307,7 +280,7 @@ DADOS DO PACIENTE:
 - Suspeita clínica: {suspeita}
 - Região de estudo: {regiao}
 
-Generate a complete new report that fixes the errors indicated by the specialist. Your response MUST start immediately with "**Descrição dos Achados:**". Use professional veterinary terminology in Portuguese (Brazil).
+Generate a new report that fixes the errors indicated by the specialist. Keep the report direct and in bullet/topic format: Descrição dos Achados, Impressão Diagnóstica and Conclusão in topics (one per line). In Descrição dos Achados, start with the most relevant or important findings (abnormal or significant), then the rest. Do not write long paragraphs. Your response MUST start immediately with "**Descrição dos Achados:**". Use professional veterinary terminology in Portuguese (Brazil).
 """
         _safe_print("Gerando laudo com correções do especialista...")
         try:

@@ -1,12 +1,14 @@
 """
 Dashboard do Usuário
 """
+import time
+from utils.theme import apply_custom_theme
 import streamlit as st
 from datetime import datetime
 from auth.auth_utils import get_current_user, clear_session, logout_user, verify_and_refresh_session
 from utils.timezone import now, utc_to_local
 from database.connection import get_db
-from database.models import Requisicao, Laudo, User
+from database.models import Requisicao, Laudo, User, Clinica, Veterinario
 import os
 import tempfile
 import io
@@ -62,7 +64,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Aplicar tema customizado
-from utils.theme import apply_custom_theme
 apply_custom_theme()
 
 # Ocultar menu de navegação de páginas e reduzir margem superior
@@ -95,19 +96,21 @@ st.markdown("""
 # Script já foi movido para o início do arquivo para garantir execução antes do Python
 
 # Função para carregar tokens do localStorage
+
+
 def load_tokens_from_localstorage():
     """Carrega tokens do localStorage e coloca no session_state"""
     # Verificar se já temos tokens
     if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
         return
-    
+
     # Processar tokens da query string primeiro (se vieram do JavaScript)
     query_params = st.query_params
     if query_params.get('auto_login') == 'true':
         access_token_b64 = query_params.get('access_token', [''])[0]
         refresh_token_b64 = query_params.get('refresh_token', [''])[0]
         is_encoded = query_params.get('encoded') == 'true'
-        
+
         if access_token_b64 and refresh_token_b64:
             # Decodificar se vieram codificados em base64
             if is_encoded:
@@ -121,13 +124,13 @@ def load_tokens_from_localstorage():
             else:
                 access_token = access_token_b64
                 refresh_token = refresh_token_b64
-            
+
             st.session_state['access_token'] = access_token
             st.session_state['refresh_token'] = refresh_token
             st.query_params.clear()
             # Não fazer rerun aqui - deixar o fluxo continuar para verificar a sessão
             return
-    
+
     # Se não temos tokens e não há query params, tentar carregar do localStorage via JavaScript
     st.markdown("""
         <script>
@@ -154,9 +157,9 @@ def load_tokens_from_localstorage():
         </script>
     """, unsafe_allow_html=True)
 
+
 # PRIMEIRO: Aguardar um pouco para o JavaScript executar e adicionar restore_user_id aos query params
 # O JavaScript executa no navegador, então precisamos dar tempo para ele executar
-import time
 time.sleep(0.3)  # Pequeno delay para JavaScript executar
 
 # Verificar query params para restaurar sessão do banco
@@ -182,7 +185,7 @@ if restore_user_id and not st.session_state.get('authenticated'):
         st.query_params.clear()
         st.switch_page("pages/login.py")
 
-# Se não há user_id nos query params e não está autenticado, 
+# Se não há user_id nos query params e não está autenticado,
 # tentar restaurar sessão diretamente do banco (sem depender do JavaScript)
 if not restore_user_id and not st.session_state.get('authenticated') and not st.session_state.get('access_token'):
     from auth.auth_utils import try_restore_session_from_db
@@ -195,7 +198,7 @@ if not restore_user_id and not st.session_state.get('authenticated') and not st.
         # Verificar novamente os query params (caso o JavaScript tenha adicionado)
         query_params = st.query_params
         restore_user_id = query_params.get('restore_user_id', [''])[0]
-        
+
         if restore_user_id:
             from auth.auth_utils import restore_session_from_db
             if restore_session_from_db(restore_user_id):
@@ -229,7 +232,7 @@ if st.session_state.get('access_token') and st.session_state.get('refresh_token'
     # Limpar contador de tentativas se tiver tokens
     if 'auto_login_attempts' in st.session_state:
         del st.session_state['auto_login_attempts']
-    
+
     if not verify_and_refresh_session():
         # Tokens inválidos, limpar e redirecionar para login
         st.markdown("""
@@ -243,7 +246,7 @@ elif not st.session_state.get('authenticated'):
     # Se não está autenticado e não há auto_login, verificar novamente
     query_params = st.query_params
     has_auto_login = query_params.get('auto_login') == 'true'
-    
+
     if not has_auto_login:
         # Não há tokens e não há auto_login, redirecionar para login
         st.switch_page("pages/login.py")
@@ -256,6 +259,8 @@ db = get_db()
 requisicao_model = Requisicao(db.requisicoes)
 laudo_model = Laudo(db.laudos)
 user_model = User(db.users)
+clinica_model = Clinica(db.clinicas)
+veterinario_model = Veterinario(db.veterinarios)
 
 # Verificar se é primeiro acesso (obrigar alteração de senha)
 if st.session_state.get('requer_alteracao_senha') or st.session_state.get('primeiro_acesso'):
@@ -312,19 +317,19 @@ with st.sidebar:
     from utils.theme import theme_toggle_button
     theme_toggle_button()
     st.divider()
-    
+
     st.title("👤 Meu Dashboard")
     user = get_current_user()
     if user:
         st.write(f"**Usuário:** {user.get('nome', user.get('username'))}")
-        st.write(f"**Email:** {user.get('email')}")
+        st.write(f"**E-mail:** {user.get('email')}")
 
     st.divider()
 
     if st.button("🚪 Sair", use_container_width=True, type="primary"):
         # Fazer logout primeiro
         logout_user(logout_all_devices=False)
-        
+
         # Limpar todos os tokens do session_state também
         if 'access_token' in st.session_state:
             del st.session_state['access_token']
@@ -332,7 +337,7 @@ with st.sidebar:
             del st.session_state['refresh_token']
         if 'remember_me' in st.session_state:
             del st.session_state['remember_me']
-        
+
         # Limpar localStorage e redirecionar imediatamente via JavaScript
         st.markdown("""
             <script>
@@ -349,7 +354,7 @@ with st.sidebar:
             })();
             </script>
         """, unsafe_allow_html=True)
-        
+
         # Também fazer switch_page como fallback
         st.switch_page("pages/login.py")
         st.stop()
@@ -375,6 +380,7 @@ if page == "Meus Laudos":
     _user_id = st.session_state.get("user_id")
     _liberados = laudo_model.find_by_user(_user_id, status="liberado") if _user_id else []
     _newly = []
+
     def _parse_dt(v):
         if v is None:
             return None
@@ -411,12 +417,14 @@ if page == "Meus Laudos":
         )
     with col2:
         filter_date = st.date_input("📅 Data", value=now().date(), key="laudo_date_filter")
-        show_all_dates = st.checkbox("Mostrar todas as datas", value=False, key="laudo_show_all_dates")
+        show_all_dates = st.checkbox("Mostrar todas as datas",
+                                     value=False, key="laudo_show_all_dates")
     with col3:
         st.write("")
 
     _uid = st.session_state.get("user_id")
-    status_map = {"Todos": None, "Pendente": "pendente", "Validado": "validado", "Apenas liberados": "liberado"}
+    status_map = {"Todos": None, "Pendente": "pendente",
+                  "Validado": "validado", "Apenas liberados": "liberado"}
     status_val = status_map.get(status)
 
     # Carregamento leve: quando "Apenas liberados", busca só laudos liberados (e suas reqs)
@@ -429,7 +437,8 @@ if page == "Meus Laudos":
                 items.append((req, laudo))
         filtered = items
     else:
-        all_reqs = [r for r in (requisicao_model.find_by_user(_uid) if _uid else []) if r.get("status") != "rascunho"]
+        all_reqs = [r for r in (requisicao_model.find_by_user(
+            _uid) if _uid else []) if r.get("status") != "rascunho"]
         items = []
         for req in all_reqs:
             laudo = laudo_model.find_by_requisicao(req["id"])
@@ -474,7 +483,8 @@ if page == "Meus Laudos":
     if status == "Apenas liberados":
         st.info("📋 **Mostrando apenas laudos liberados.** Altere o filtro para ver pendentes, validados ou aguardando laudo.")
     if not show_all_dates:
-        st.caption(f"📅 Exibindo requisições de **{filter_date.strftime('%d/%m/%Y')}**. Marque «Mostrar todas as datas» para ver o histórico.")
+        st.caption(
+            f"📅 Exibindo requisições de **{filter_date.strftime('%d/%m/%Y')}**. Marque «Mostrar todas as datas» para ver o histórico.")
 
     st.metric("Total", len(filtered))
 
@@ -511,9 +521,32 @@ if page == "Meus Laudos":
                     st.divider()
                     st.subheader("📝 Aguardando laudo")
                     st.info("📤 Requisição enviada. O laudo será criado e liberado pelo veterinário administrador. Você será notificado quando estiver disponível para download.")
+                    # Observações adicionais (usuário não pode editar a requisição, apenas enviar notas)
+                    _obs_list = req.get("observacoes_usuario") or []
+                    if _obs_list:
+                        with st.expander("📌 Observações que você enviou", expanded=False):
+                            for _i, _ob in enumerate(reversed(_obs_list)):
+                                _t = _ob.get("texto", "")
+                                _d = _ob.get("created_at", "")
+                                if _d and hasattr(_d, "strftime"):
+                                    _d = _d.strftime("%d/%m/%Y %H:%M")
+                                st.text_area("", value=_t, height=60, disabled=True, key=f"obs_read_{req['id']}_{_i}")
+                                st.caption(f"Enviado em {_d}")
+                    with st.expander("➕ Adicionar observação", expanded=False):
+                        st.caption("Enviou algo errado ou lembrou de algum detalhe? Adicione aqui. O administrador verá e poderá considerar no laudo. Você não pode alterar os dados já enviados.")
+                        with st.form(f"form_obs_{req['id']}"):
+                            _novo_obs = st.text_area("Sua observação", height=100, key=f"obs_new_{req['id']}", placeholder="Ex.: A idade correta é 8 anos. O tutor informou que o animal manca da pata direita.")
+                            if st.form_submit_button("Enviar observação"):
+                                if _novo_obs and _novo_obs.strip():
+                                    if requisicao_model.add_observacao_usuario(req["id"], _novo_obs.strip(), _user_id or ""):
+                                        st.success("Observação enviada. O administrador poderá considerá-la no laudo.")
+                                        st.rerun()
+                                else:
+                                    st.warning("Digite uma observação.")
                 continue
 
-            status_badge = {"pendente": "⏳ Pendente", "validado": "✅ Validado", "liberado": "✅ Concluído"}.get(laudo.get("status"), laudo.get("status"))
+            status_badge = {"pendente": "⏳ Pendente", "validado": "✅ Validado",
+                            "liberado": "✅ Concluído"}.get(laudo.get("status"), laudo.get("status"))
             with st.expander(f"**{req.get('paciente', 'N/A')}** – {req.get('tutor', 'N/A')} – {status_badge}", expanded=True):
                 col1, col2 = st.columns(2)
                 with col1:
@@ -524,9 +557,11 @@ if page == "Meus Laudos":
                     st.write(f"**Status:** {status_badge}")
                     st.write(f"**Criado em:** {_fmt_dt_meus_laudos(laudo.get('created_at'))}")
                     if laudo.get('validado_at'):
-                        st.write(f"**Validado em:** {_fmt_dt_meus_laudos(laudo.get('validado_at'))}")
+                        st.write(
+                            f"**Validado em:** {_fmt_dt_meus_laudos(laudo.get('validado_at'))}")
                     if laudo.get('liberado_at'):
-                        st.write(f"**Liberado em:** {_fmt_dt_meus_laudos(laudo.get('liberado_at'))}")
+                        st.write(
+                            f"**Liberado em:** {_fmt_dt_meus_laudos(laudo.get('liberado_at'))}")
 
                 if laudo.get("status") == "pendente":
                     st.divider()
@@ -536,18 +571,66 @@ if page == "Meus Laudos":
                     st.divider()
                     st.subheader("📝 Laudo Validado")
                     st.warning("✅ Este laudo foi validado e está aguardando liberação.")
-                elif laudo.get("status") == "liberado":
+                if laudo.get("status") in ("pendente", "validado"):
+                    # Observações adicionais (sem editar a requisição)
+                    _obs_list = req.get("observacoes_usuario") or []
+                    if _obs_list:
+                        with st.expander("📌 Observações que você enviou", expanded=False):
+                            for _j, _ob in enumerate(reversed(_obs_list)):
+                                _t = _ob.get("texto", "")
+                                _d = _ob.get("created_at", "")
+                                if _d and hasattr(_d, "strftime"):
+                                    _d = _d.strftime("%d/%m/%Y %H:%M")
+                                st.text_area("", value=_t, height=60, disabled=True, key=f"obs_li_{req['id']}_{_j}")
+                                st.caption(f"Enviado em {_d}")
+                    with st.expander("➕ Adicionar observação", expanded=False):
+                        st.caption("Enviou algo errado ou lembrou de algum detalhe? Adicione aqui. O administrador verá e poderá considerar no laudo.")
+                        with st.form(f"form_obs_li_{req['id']}"):
+                            _novo_obs_li = st.text_area("Sua observação", height=100, key=f"obs_new_li_{req['id']}", placeholder="Ex.: Idade correta 8 anos; animal manca da pata direita.")
+                            if st.form_submit_button("Enviar observação"):
+                                if _novo_obs_li and _novo_obs_li.strip():
+                                    if requisicao_model.add_observacao_usuario(req["id"], _novo_obs_li.strip(), _user_id or ""):
+                                        st.success("Observação enviada.")
+                                        st.rerun()
+                                else:
+                                    st.warning("Digite uma observação.")
+                if laudo.get("status") == "liberado":
                     st.divider()
                     st.subheader("📝 Laudo Liberado")
                     st.success("✅ Este laudo foi liberado e está disponível para download!")
-                    st.text_area("Conteúdo do Laudo", value=laudo.get("texto", ""), height=300, disabled=True, key=f"liberado_{laudo['id']}")
+                    st.text_area("Conteúdo do Laudo", value=laudo.get("texto", ""),
+                                 height=300, disabled=True, key=f"liberado_{laudo['id']}")
                     try:
                         from ai.analyzer import load_images_for_analysis
                         imagens_paths = req.get("imagens", [])
                         images = load_images_for_analysis(imagens_paths)
+                        # Resolver clínica e veterinário (requisição → usuário da requisição)
+                        _clinica_pdf = req.get("clinica") or ""
+                        if req.get("clinica_id"):
+                            c_obj = clinica_model.find_by_id(req["clinica_id"])
+                            if c_obj:
+                                _clinica_pdf = c_obj.get("nome", "") or _clinica_pdf
+                        if not (_clinica_pdf or "").strip() and req.get("user_id"):
+                            _user_req = user_model.find_by_id(req["user_id"])
+                            if _user_req and _user_req.get("clinica_id"):
+                                c_obj = clinica_model.find_by_id(_user_req["clinica_id"])
+                                _clinica_pdf = (c_obj or {}).get("nome", "") or _clinica_pdf
+                        _vet_pdf = req.get("medico_veterinario_solicitante") or ""
+                        if req.get("veterinario_id"):
+                            v_obj = veterinario_model.find_by_id(req["veterinario_id"])
+                            if v_obj:
+                                _vet_pdf = v_obj.get("nome", "") or _vet_pdf
+                        if not (_vet_pdf or "").strip() and req.get("user_id"):
+                            _user_req = user_model.find_by_id(req["user_id"])
+                            if _user_req and _user_req.get("clinica_id"):
+                                vets = veterinario_model.find_by_clinica(
+                                    _user_req["clinica_id"], apenas_ativos=True)
+                                _vet_pdf = (vets[0].get("nome") if vets else None) or _vet_pdf
                         pdf = FPDF("P", "mm", "A4")
                         pdf.set_auto_page_break(auto=True, margin=15)
+
                         def _clean(t):
+                            t = str(t) if t is not None else ""
                             for a, b in [("'", "'"), ("'", "'"), (""", '"'), (""", '"'), ("—", "-"), ("–", "-"), ("…", "..."), ("°", " graus")]:
                                 t = t.replace(a, b)
                             t = t.replace("**", "")
@@ -555,19 +638,25 @@ if page == "Meus Laudos":
                                 t.encode("latin-1")
                             except UnicodeEncodeError:
                                 import unicodedata
-                                t = unicodedata.normalize("NFKD", t).encode("latin-1", "ignore").decode("latin-1")
+                                t = unicodedata.normalize("NFKD", t).encode(
+                                    "latin-1", "ignore").decode("latin-1")
                             return t
                         pdf.add_page()
                         pdf.set_font("Arial", "B", 14)
-                        pdf.cell(0, 10, "LAUDO VETERINARIO DE IMAGEM", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
                         pdf.ln(5)
                         pdf.set_font("Arial", "", 10)
-                        pdf.cell(0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.cell(
+                            0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}",
+                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.cell(
+                            0, 6, f"Clinica Solicitante: {_clean(_clinica_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.cell(
+                            0, 6, f"Medico(a) Veterinario(a): {_clean(_vet_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}",
+                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                         pdf.ln(4)
                         pdf.set_font("Arial", "B", 12)
-                        pdf.cell(0, 10, "Laudo", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                         pdf.ln(2)
                         pdf.set_font("Arial", "", 11)
                         pdf.multi_cell(0, 5, _clean(laudo.get("texto", "")))
@@ -584,41 +673,49 @@ if page == "Meus Laudos":
                                 buf.seek(0)
                                 pdf.image(buf, w=w_mm, h=h_mm)
                                 pdf.set_font("Arial", "I", 9)
-                                pdf.cell(0, 6, f"Imagem {i+1}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+                                pdf.cell(0, 6, f"Imagem {i + 1}",
+                                         new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
                                 pdf.ln(4)
                         pdf.set_y(-35)
                         pdf.set_font("Arial", "", 10)
                         pdf.cell(0, 10, "_" * 60, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
                         pdf.ln(2)
                         pdf.set_font("Arial", "B", 10)
-                        pdf.cell(0, 5, "Dra. Laís Costa Muchiutti", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+                        pdf.cell(0, 5, "Dra. Laís Costa Muchiutti",
+                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
                         pdf.ln(2)
                         pdf.set_font("Arial", "", 9)
-                        pdf.cell(0, 5, "Medica Veterinaria - CRMV-XX XXXXX", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.cell(0, 5, "Medica Veterinaria-CRMV SP32247",
+                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                         out = pdf.output(dest="S")
                         out = bytes(out) if isinstance(out, bytearray) else out
-                        st.download_button("📥 Baixar como PDF", data=out, file_name=f"laudo_{req.get('paciente', 'exame').replace(' ', '_')}.pdf", mime="application/pdf", use_container_width=True, key=f"dl_pdf_{laudo['id']}")
+                        st.download_button(
+                            "📥 Baixar como PDF", data=out, file_name=f"laudo_{req.get('paciente', 'exame').replace(' ', '_')}.pdf", mime="application/pdf", use_container_width=True, key=f"dl_pdf_{laudo['id']}")
                     except Exception as e:
                         st.error(f"Erro ao gerar PDF: {e}")
                         import traceback
                         traceback.print_exc()
-                        st.download_button("📥 Baixar como PDF", data="", file_name="laudo.pdf", mime="application/pdf", disabled=True, use_container_width=True, key=f"dl_pdf_err_{laudo['id']}")
+                        st.download_button("📥 Baixar como PDF", data="", file_name="laudo.pdf", mime="application/pdf",
+                                           disabled=True, use_container_width=True, key=f"dl_pdf_err_{laudo['id']}")
 
 elif page == "Nova Requisição":
     st.header("📤 Nova Requisição de Laudo")
 
-    # Estilo visual: layout limpo e profissional para ambiente veterinário
+    # Estilo visual: layout limpo, profissional e inputs em MAIÚSCULAS
     st.markdown("""
         <style>
         .nr-block { background: #f8faf8; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; border-left: 4px solid #2e7d32; }
         .nr-preview { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem; font-family: 'Segoe UI', sans-serif; font-size: 0.9rem; line-height: 1.5; }
+        /* Inputs de texto da requisição: exibição em maiúsculas */
+        .main .block-container input[type="text"],
+        .main .block-container textarea { text-transform: uppercase; }
         </style>
     """, unsafe_allow_html=True)
 
     # Mostrar feedback de requisição enviada (no topo, sempre visível)
     if st.session_state.get('requisicao_enviada') and st.session_state.get('requisicao_info'):
         info = st.session_state['requisicao_info']
-        
+
         # Container destacado para a mensagem de sucesso
         st.success(f"✅ **Requisição enviada com sucesso!** ID: {info['req_id'][:8]}")
         st.info("📝 O veterinário administrador irá analisar e liberar o laudo. Você será notificado quando estiver disponível para download.")
@@ -629,7 +726,7 @@ elif page == "Nova Requisição":
             st.rerun()
 
         st.markdown("---")
-        
+
         # Script para rolar para o topo quando a mensagem aparecer (executa após rerun)
         st.markdown("""
             <script>
@@ -653,7 +750,7 @@ elif page == "Nova Requisição":
     # Inicializar chaves do formulário (evitar KeyError)
     for k in ["nr_paciente", "nr_tutor", "nr_clinica", "nr_especie", "nr_idade", "nr_raca",
               "nr_sexo", "nr_medico_vet", "nr_regiao", "nr_suspeita", "nr_plantao", "nr_historico",
-              "nr_tipo_exame"]:
+              "nr_tipo_exame", "nr_veterinario_id"]:
         if k not in st.session_state:
             st.session_state[k] = ""
     if "nr_plantao" not in st.session_state or st.session_state["nr_plantao"] == "":
@@ -676,7 +773,8 @@ elif page == "Nova Requisição":
 
     user_id = st.session_state.get("user_id")
     rascunhos = requisicao_model.find_by_user(user_id, status="rascunho") if user_id else []
-    rascunho_opcoes = ["(nenhum)"] + [f"#{r['id'][:8]} – {r.get('paciente', 'Sem nome')} – {_fmt_dt(r.get('created_at'))}" for r in rascunhos]
+    rascunho_opcoes = [
+        "(nenhum)"] + [f"#{r['id'][:8]} – {r.get('paciente', 'Sem nome')} – {_fmt_dt(r.get('created_at'))}" for r in rascunhos]
     rascunho_ids = [None] + [r["id"] for r in rascunhos]
     if "nr_data" not in st.session_state:
         # Usar data local (GMT-3)
@@ -700,10 +798,13 @@ elif page == "Nova Requisição":
                 for k, v in [("nr_paciente", r.get("paciente", "")), ("nr_tutor", r.get("tutor", "")),
                              ("nr_clinica", r.get("clinica", "")), ("nr_especie", r.get("especie", "")),
                              ("nr_idade", r.get("idade", "")), ("nr_raca", r.get("raca", "")),
-                             ("nr_sexo", r.get("sexo", "") or "Macho"), ("nr_medico_vet", r.get("medico_veterinario_solicitante", "")),
-                             ("nr_regiao", r.get("regiao_estudo", "")), ("nr_suspeita", r.get("suspeita_clinica", "")),
-                             ("nr_plantao", r.get("plantao", "") or "Não"), ("nr_historico", r.get("historico_clinico", "") or r.get("observacoes", "")),
-                             ("nr_tipo_exame", r.get("tipo_exame", "raio-x"))]:
+                             ("nr_sexo", r.get("sexo", "") or "Macho"), ("nr_medico_vet",
+                                                                         r.get("medico_veterinario_solicitante", "")),
+                             ("nr_regiao", r.get("regiao_estudo", "")
+                              ), ("nr_suspeita", r.get("suspeita_clinica", "")),
+                             ("nr_plantao", r.get("plantao", "") or "Não"), ("nr_historico",
+                                                                             r.get("historico_clinico", "") or r.get("observacoes", "")),
+                             ("nr_tipo_exame", r.get("tipo_exame", "raio-x")), ("nr_veterinario_id", r.get("veterinario_id") or "")]:
                     st.session_state[k] = v or ""
                 de = r.get("data_exame") or r.get("created_at")
                 if de and hasattr(de, "date"):
@@ -713,20 +814,96 @@ elif page == "Nova Requisição":
                 st.session_state["nr_draft_id"] = r["id"]
                 st.rerun()
 
-        paciente = st.text_input("🐾 Nome do Paciente *", value=st.session_state.get("nr_paciente", ""), key="nr_paciente")
-        especie = st.text_input("🐕 Espécie", value=st.session_state.get("nr_especie", ""), key="nr_especie")
+        paciente = st.text_input("🐾 Nome do Paciente *",
+                                 value=st.session_state.get("nr_paciente", ""), key="nr_paciente")
+        ESPECIES_OPCOES = ["", "Canino", "Felino", "Ave", "Silvestre"]
+        idx_especie = 0
+        nr_especie_val = st.session_state.get("nr_especie", "")
+        if nr_especie_val in ESPECIES_OPCOES:
+            idx_especie = ESPECIES_OPCOES.index(nr_especie_val)
+        especie = st.selectbox(
+            "🐕 Espécie",
+            options=ESPECIES_OPCOES,
+            index=idx_especie,
+            key="nr_especie",
+            format_func=lambda x: "Selecione a espécie" if x == "" else x,
+        )
         idade = st.text_input("📅 Idade", value=st.session_state.get("nr_idade", ""), key="nr_idade")
         raca = st.text_input("🏷️ Raça", value=st.session_state.get("nr_raca", ""), key="nr_raca")
-        sexo = st.radio("Sexo", ["Macho", "Fêmea"], index=0 if st.session_state.get("nr_sexo") == "Macho" else 1, key="nr_sexo", horizontal=True)
-        tutor = st.text_input("👤 Nome do Tutor(a) *", value=st.session_state.get("nr_tutor", ""), key="nr_tutor")
-        clinica = st.text_input("🏥 Clínica Veterinária Solicitante", value=st.session_state.get("nr_clinica", ""), key="nr_clinica")
-        medico_vet = st.text_input("👨‍⚕️ Médico(a) Veterinário(a) Solicitante", value=st.session_state.get("nr_medico_vet", ""), key="nr_medico_vet")
-        regiao = st.text_input("📍 Região de estudo", value=st.session_state.get("nr_regiao", ""), key="nr_regiao")
-        suspeita = st.text_input("🔬 Suspeita clínica", value=st.session_state.get("nr_suspeita", ""), key="nr_suspeita")
+        sexo = st.radio("Sexo", ["Macho", "Fêmea"], index=0 if st.session_state.get(
+            "nr_sexo") == "Macho" else 1, key="nr_sexo", horizontal=True)
+        tutor = st.text_input("👤 Nome do Tutor(a) *",
+                              value=st.session_state.get("nr_tutor", ""), key="nr_tutor")
+
+        # Veterinário requisitante: sempre exibir. Se usuário tem clínica, dropdown com veterinários da clínica.
+        st.markdown("**👨‍⚕️ Veterinário requisitante**")
+        current_user = get_current_user()
+        user_clinica_id = (current_user or {}).get("clinica_id")
+        clinica = ""
+        medico_vet = ""
+        veterinario_id_selecionado = ""
+        if user_clinica_id:
+            clinica_obj = clinica_model.find_by_id(user_clinica_id)
+            veterinarios_list = veterinario_model.find_by_clinica(
+                user_clinica_id, apenas_ativos=True) if user_clinica_id else []
+            clinica = (clinica_obj or {}).get("nome", "")
+            nr_vet_id = st.session_state.get("nr_veterinario_id", "")
+            vet_escolhido = None
+            if nr_vet_id and veterinarios_list:
+                vet_escolhido = next(
+                    (v for v in veterinarios_list if v.get("id") == nr_vet_id), None)
+            if not vet_escolhido and veterinarios_list:
+                vet_escolhido = veterinarios_list[0]
+            if len(veterinarios_list) == 0:
+                medico_vet = "Equipe " + clinica if clinica else ""
+                st.caption(f"**Solicitante:** {clinica}. Nenhum veterinário cadastrado nesta clínica; adicione na administração.")
+            elif len(veterinarios_list) == 1:
+                medico_vet = (vet_escolhido or {}).get("nome", "") or ("Equipe " + clinica)
+                veterinario_id_selecionado = (vet_escolhido or {}).get("id", "")
+                st.session_state["nr_veterinario_id"] = veterinario_id_selecionado or ""
+                st.text_input("Veterinário requisitante", value=medico_vet, disabled=True, key="nr_vet_display_1", label_visibility="collapsed")
+                st.caption(f"**Solicitante:** {clinica} – único veterinário cadastrado (preenchido automaticamente).")
+            else:
+                options_nomes = [v.get("nome", "") or f"Veterinário {i+1}" for i, v in enumerate(veterinarios_list)]
+                idx_sel = 0
+                if vet_escolhido:
+                    try:
+                        idx_sel = next(i for i, v in enumerate(veterinarios_list) if v.get("id") == vet_escolhido.get("id"))
+                    except StopIteration:
+                        idx_sel = 0
+                sel_idx = st.selectbox(
+                    "Escolha o veterinário responsável por esta requisição",
+                    range(len(veterinarios_list)),
+                    index=idx_sel,
+                    format_func=lambda i: options_nomes[i] if i < len(options_nomes) else "",
+                    key="nr_vet_select",
+                    label_visibility="visible",
+                )
+                vet_escolhido = veterinarios_list[sel_idx]
+                medico_vet = (vet_escolhido or {}).get("nome", "")
+                veterinario_id_selecionado = (vet_escolhido or {}).get("id", "")
+                st.session_state["nr_veterinario_id"] = veterinario_id_selecionado or ""
+                st.caption(f"**Solicitante:** {clinica} · {len(veterinarios_list)} veterinário(s) cadastrado(s).")
+        else:
+            st.caption("Seu usuário não está vinculado a uma clínica; informe o nome do veterinário abaixo.")
+            medico_vet = st.text_input(
+                "Nome do veterinário requisitante",
+                value=st.session_state.get("nr_medico_vet", ""),
+                key="nr_medico_vet",
+                label_visibility="collapsed",
+            )
+
+        regiao = st.text_input("📍 Região de estudo", value=st.session_state.get(
+            "nr_regiao", ""), key="nr_regiao")
+        suspeita = st.text_input("🔬 Suspeita clínica", value=st.session_state.get(
+            "nr_suspeita", ""), key="nr_suspeita")
         plantao = st.radio("Plantão", ["Sim", "Não"], index=1, key="nr_plantao", horizontal=True)
-        tipo_exame = st.selectbox("📋 Tipo de exame *", ["raio-x", "ultrassom"], index=0, key="nr_tipo_exame")
-        data_exame = st.date_input("📆 Data", value=st.session_state.get("nr_data", now().date()), key="nr_data")
-        historico = st.text_area("📝 Histórico Clínico", value=st.session_state.get("nr_historico", ""), height=120, key="nr_historico")
+        tipo_exame = st.selectbox(
+            "📋 Tipo de exame *", ["raio-x", "ultrassom"], index=0, key="nr_tipo_exame")
+        data_exame = st.date_input("📆 Data", value=st.session_state.get(
+            "nr_data", now().date()), key="nr_data")
+        historico = st.text_area("📝 Histórico Clínico", value=st.session_state.get(
+            "nr_historico", ""), height=120, key="nr_historico")
 
         st.subheader("📷 Imagens do Exame")
         # Usar chave dinâmica para permitir reset do uploader
@@ -740,16 +917,22 @@ elif page == "Nova Requisição":
         if uploaded_files:
             st.caption(f"✅ {len(uploaded_files)} arquivo(s) anexado(s) ao laudo.")
 
+        # Campos de texto salvos em UPPERCASE (usado nos payloads abaixo)
+        def _upper(s):
+            return (s or "").strip().upper() if isinstance(s, str) else s
+
         # Botões: Limpar, Salvar rascunho, Exportar PDF, Enviar
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             limpar = st.button("🗑️ Limpar formulário", key="nr_limpar", use_container_width=True)
         with c2:
-            salvar_rascunho = st.button("💾 Salvar rascunho", key="nr_rascunho", use_container_width=True)
+            salvar_rascunho = st.button(
+                "💾 Salvar rascunho", key="nr_rascunho", use_container_width=True)
         with c3:
             exportar_pdf = st.button("📄 Exportar PDF", key="nr_exportar", use_container_width=True)
         with c4:
-            enviar = st.button("📤 Enviar Requisição", type="primary", key="nr_enviar", use_container_width=True)
+            enviar = st.button("📤 Enviar Requisição", type="primary",
+                               key="nr_enviar", use_container_width=True)
 
         if limpar:
             for k in list(st.session_state.keys()):
@@ -772,12 +955,15 @@ elif page == "Nova Requisição":
                 draft_id = st.session_state.get("nr_draft_id")
                 data_exame_dt = combine_date_local(data_exame) if data_exame else now()
                 payload = {
-                    "paciente": paciente, "tutor": tutor, "clinica": clinica, "tipo_exame": tipo_exame,
-                    "especie": especie, "idade": idade, "raca": raca, "sexo": sexo,
-                    "medico_veterinario_solicitante": medico_vet, "regiao_estudo": regiao,
-                    "suspeita_clinica": suspeita, "plantao": plantao, "historico_clinico": historico,
-                    "observacoes": historico, "data_exame": data_exame_dt,
+                    "paciente": _upper(paciente), "tutor": _upper(tutor), "clinica": clinica, "tipo_exame": tipo_exame,
+                    "especie": especie, "idade": idade, "raca": _upper(raca), "sexo": sexo,
+                    "medico_veterinario_solicitante": medico_vet, "regiao_estudo": _upper(regiao),
+                    "suspeita_clinica": _upper(suspeita), "plantao": plantao, "historico_clinico": _upper(historico),
+                    "observacoes": _upper(historico), "data_exame": data_exame_dt,
                 }
+                if user_clinica_id:
+                    payload["clinica_id"] = user_clinica_id
+                    payload["veterinario_id"] = veterinario_id_selecionado or None
                 if draft_id:
                     requisicao_model.update(draft_id, {**payload, "imagens": []})
                     st.success("Rascunho atualizado.")
@@ -791,6 +977,7 @@ elif page == "Nova Requisição":
                         regiao_estudo=payload["regiao_estudo"], suspeita_clinica=payload["suspeita_clinica"],
                         plantao=payload["plantao"], historico_clinico=payload["historico_clinico"],
                         data_exame=payload["data_exame"],
+                        clinica_id=payload.get("clinica_id"), veterinario_id=payload.get("veterinario_id"),
                     )
                     st.session_state["nr_draft_id"] = rid
                     st.success("Rascunho salvo.")
@@ -818,7 +1005,8 @@ elif page == "Nova Requisição":
             try:
                 from utils.laudo_pdf import gerar_pdf_preview
                 pdf_bytes = gerar_pdf_preview(form_data, paths)
-                st.download_button("📥 Baixar PDF", data=pdf_bytes, file_name=f"laudo_preview_{paciente or 'exame'}.pdf".replace(" ", "_"), mime="application/pdf", key="nr_dl_pdf")
+                st.download_button("📥 Baixar PDF", data=pdf_bytes, file_name=f"laudo_preview_{paciente or 'exame'}.pdf".replace(
+                    " ", "_"), mime="application/pdf", key="nr_dl_pdf")
             except Exception as e:
                 st.error(f"Erro ao gerar PDF: {e}")
 
@@ -845,31 +1033,33 @@ elif page == "Nova Requisição":
                 try:
                     req_id = requisicao_model.create(
                         user_id=user_id, imagens=imagens_paths,
-                        paciente=paciente, tutor=tutor, clinica=clinica, tipo_exame=tipo_exame,
-                        observacoes=historico, especie=especie, idade=idade, raca=raca, sexo=sexo,
-                        medico_veterinario_solicitante=medico_vet, regiao_estudo=regiao,
-                        suspeita_clinica=suspeita, plantao=plantao, historico_clinico=historico,
+                        paciente=_upper(paciente), tutor=_upper(tutor), clinica=clinica, tipo_exame=tipo_exame,
+                        observacoes=_upper(historico), especie=especie, idade=idade, raca=_upper(raca), sexo=sexo,
+                        medico_veterinario_solicitante=medico_vet, regiao_estudo=_upper(regiao),
+                        suspeita_clinica=_upper(suspeita), plantao=plantao, historico_clinico=_upper(historico),
                         data_exame=data_exame_dt, status="pendente",
+                        clinica_id=user_clinica_id or None, veterinario_id=veterinario_id_selecionado or None,
                     )
                     # Imagens apenas armazenadas. Laudo é gerado pela IA quando o admin
                     # acessar "Criar/Editar Laudo" (Requisições) ou "Gerar Laudo com IA" (Laudos).
                     st.session_state["requisicao_enviada"] = True
                     st.session_state["requisicao_info"] = {"req_id": req_id, "paciente": paciente}
-                    
+
                     # Limpar formulário completamente
                     for k in list(st.session_state.keys()):
                         if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_exportar", "nr_enviar"):
                             del st.session_state[k]
-                    
+
                     # Resetar valores padrão
                     st.session_state["nr_data"] = now().date()
                     st.session_state["nr_plantao"] = "Não"
                     st.session_state["nr_sexo"] = "Macho"
                     st.session_state["nr_tipo_exame"] = "raio-x"
-                    
+
                     # Incrementar contador do uploader para forçar reset
-                    st.session_state["upload_counter"] = st.session_state.get("upload_counter", 0) + 1
-                    
+                    st.session_state["upload_counter"] = st.session_state.get(
+                        "upload_counter", 0) + 1
+
                     # Rolar para o topo após rerun
                     st.markdown("""
                         <script>
