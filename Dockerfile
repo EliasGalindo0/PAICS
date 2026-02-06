@@ -1,5 +1,5 @@
-# Usa uma imagem Python leve
-FROM python:3.9-slim
+# Usa uma imagem Python leve (3.10+ necessário para pydicom>=2.6.1)
+FROM python:3.10-slim
 
 # Instala dependências de sistema (build-essential para compilar libs; curl para healthcheck)
 RUN apt-get update && apt-get install -y \
