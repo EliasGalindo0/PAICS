@@ -1,11 +1,10 @@
 # Usa uma imagem Python leve
 FROM python:3.9-slim
 
-# Instala dependências de sistema (necessárias para algumas libs de imagem)
+# Instala dependências de sistema (build-essential para compilar libs; curl para healthcheck)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
-    software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
 # Define o diretório de trabalho
