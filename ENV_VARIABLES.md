@@ -12,6 +12,23 @@ Este documento lista todas as variáveis de ambiente suportadas pelo projeto PAI
 
 **⚠️ Sem esta variável, o projeto não conseguirá gerar laudos automaticamente.**
 
+### `MONGO_URI`
+- **Descrição**: URI de conexão do MongoDB
+- **Tipo**: String
+- **Padrão**: `mongodb://localhost:27017/` (MongoDB local ou Docker)
+- **MongoDB Atlas (gratuito)**:
+  1. Crie uma conta em [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+  2. Crie um cluster **M0 (Free)** e um usuário de banco
+  3. Em **Database** → **Connect** → **Drivers** copie a connection string
+  4. Substitua `<password>` pela senha do usuário e opcionalmente adicione o nome do banco: `mongodb+srv://usuario:senha@cluster0.xxxxx.mongodb.net/paics_db?retryWrites=true&w=majority`
+- **Exemplo (Atlas)**: `MONGO_URI=mongodb+srv://paics:minhasenha@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
+
+### `MONGO_DB_NAME`
+- **Descrição**: Nome do banco de dados
+- **Tipo**: String
+- **Padrão**: `paics_db`
+- **Exemplo**: `MONGO_DB_NAME=paics_db`
+
 ## 🟢 Variáveis Opcionais
 
 ### Configuração da IA
@@ -83,6 +100,10 @@ Este documento lista todas as variáveis de ambiente suportadas pelo projeto PAI
 
 # REQUERIDA
 GOOGLE_API_KEY=sua_chave_api_aqui
+
+# MongoDB (em produção use Atlas; local/Docker use o padrão)
+MONGO_URI=mongodb://localhost:27017/
+MONGO_DB_NAME=paics_db
 
 # Configuração da IA
 GEMINI_MODEL_NAME=gemini-1.5-pro-latest
