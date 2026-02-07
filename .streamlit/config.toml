@@ -6,7 +6,8 @@ secondaryBackgroundColor = "#f5f9fc"
 textColor = "#1a237e"
 
 [server]
-enableCORS = false
+# CORS deve ser true quando XSRF está ativo (Streamlit exige origins para o cookie CSRF)
+enableCORS = true
 enableXsrfProtection = true
 headless = true
 port = 8501

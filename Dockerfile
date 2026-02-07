@@ -27,4 +27,5 @@ HEALTHCHECK CMD ["sh", "-c", "curl -f http://localhost:${PORT:-8501}/_stcore/hea
 
 # Comando com porta dinâmica: Railway define PORT (ex.: 8080) em runtime
 # Shell form necessário para expandir $PORT
-CMD ["sh", "-c", "streamlit run main.py --server.port=$PORT --server.address=0.0.0.0"]
+# streamlit_app.py é o entry point da aplicação web (redireciona para login se não autenticado)
+CMD ["sh", "-c", "streamlit run streamlit_app.py --server.port=$PORT --server.address=0.0.0.0"]
