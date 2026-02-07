@@ -1,10 +1,11 @@
-# Usa uma imagem Python leve (3.10+ necessário para pydicom>=2.6.1)
-FROM python:3.10-slim
+# Python 3.11+ traz OpenSSL mais novo, evitando SSL handshake com MongoDB Atlas em containers
+FROM python:3.11-slim
 
-# Instala dependências de sistema (build-essential para compilar libs; curl para healthcheck)
+# build-essential para compilar libs; curl para healthcheck; ca-certificates para TLS (Atlas)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Define o diretório de trabalho

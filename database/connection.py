@@ -17,15 +17,20 @@ _client = None
 _db = None
 
 
+def _is_atlas_uri(uri: str) -> bool:
+    """True se a URI for do MongoDB Atlas (host mongodb.net)."""
+    return "mongodb.net" in (uri or "")
+
+
 def get_client():
     """Retorna o cliente MongoDB (singleton)"""
     global _client
     if _client is None:
         try:
-            # Atlas (mongodb+srv) em containers (ex.: Railway) pode falhar no SSL
-            # por CA bundle limitado; certifi fornece CAs atualizados
-            kwargs = {"serverSelectionTimeoutMS": 5000}
-            if "mongodb+srv://" in MONGO_URI:
+            # Atlas em containers (Railway, etc.) falha no SSL com CA do sistema;
+            # certifi garante bundle de CAs atualizado (Let's Encrypt, etc.)
+            kwargs = {"serverSelectionTimeoutMS": 10000}
+            if _is_atlas_uri(MONGO_URI):
                 kwargs["tlsCAFile"] = certifi.where()
             _client = MongoClient(MONGO_URI, **kwargs)
             # Testar conexão
