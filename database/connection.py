@@ -39,11 +39,12 @@ def get_client():
             _client = MongoClient(MONGO_URI, **kwargs)
             # Testar conexão
             _client.server_info()
-        except ConnectionFailure:
+        except ConnectionFailure as e:
             raise ConnectionError(
                 "Não foi possível conectar ao MongoDB. "
-                "Verifique se o MongoDB está rodando e se a URI está correta."
-            )
+                "Verifique se o MongoDB está rodando e se a URI está correta. "
+                f"Detalhe: {e}"
+            ) from e
     return _client
 
 
