@@ -2,7 +2,6 @@
 Conexão com MongoDB
 """
 import os
-from urllib.parse import quote_plus
 
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
@@ -12,39 +11,27 @@ import certifi
 load_dotenv()
 
 
-# Host da app no Railway; se a URI apontar para ele, é erro de config (deve apontar para o MongoDB)
-_RAILWAY_APP_HOST = "paics.railway.internal"
-
-
 def _get_mongo_uri() -> str:
-    """Monta MONGO_URI a partir de variáveis de ambiente.
-    No Railway: se MONGO_URL/MONGO_URI apontarem para paics.railway.internal (host da app),
-    ignora e monta a URI a partir de MONGOHOST/MONGOUSER/MONGOPASSWORD (referências ao serviço MongoDB).
+    """Obtém a URI do MongoDB a partir de variáveis de ambiente.
+
+    Usa apenas MONGO_URI ou MONGO_URL (connection string completa).
+    Exemplos:
+      - Local: mongodb://localhost:27017/
+      - Railway: mongodb://user:pass@mongodb.railway.internal:27017/
+      - Atlas: mongodb+srv://user:pass@cluster.xxx.mongodb.net/?retryWrites=true&w=majority
+
+    No Railway: adicione MONGO_URI como Referência ao serviço MongoDB → MONGO_URL.
     """
-    url_from_mongo = os.getenv("MONGO_URL") or ""
-    uri_from_app = os.getenv("MONGO_URI") or ""
-    # Rejeitar URI que aponta para o host da aplicação (Connection refused)
-    def _uri_ok(uri: str) -> bool:
-        if not uri or "${{" in uri:
-            return False
-        if _RAILWAY_APP_HOST in uri:
-            return False
-        return True
-    if _uri_ok(url_from_mongo):
-        return url_from_mongo.rstrip("/") + "/"
-    if _uri_ok(uri_from_app):
-        return uri_from_app.rstrip("/") + "/"
-    # Montar a partir de MONGOHOST etc. (cada um como referência ao serviço MongoDB no Railway)
-    host = os.getenv("MONGOHOST")
-    if host and "${{" not in host and _RAILWAY_APP_HOST not in host:
-        user = os.getenv("MONGOUSER", "")
-        password = os.getenv("MONGOPASSWORD", "")
-        port = os.getenv("MONGOPORT", "27017")
-        if user and password:
-            auth = f"{quote_plus(user)}:{quote_plus(password)}@"
-        else:
-            auth = ""
-        return f"mongodb://{auth}{host}:{port}/"
+    uri = (
+        os.getenv("MONGO_URI") or
+        os.getenv("MONGO_URL") or
+        ""
+    ).strip()
+
+    # Rejeitar se vazio ou contiver template não resolvido
+    if uri and "${{" not in uri:
+        return uri.rstrip("/") + "/"
+
     return "mongodb://localhost:27017/"
 
 
