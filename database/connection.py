@@ -14,14 +14,19 @@ load_dotenv()
 
 def _get_mongo_uri() -> str:
     """Monta MONGO_URI a partir de variáveis de ambiente.
-    No Railway: use Referência ao serviço MongoDB para MONGO_URL (recomendado)
-    ou para MONGOHOST/MONGOUSER/MONGOPASSWORD/MONGOPORT (cada um referenciando o serviço MongoDB).
-    Evita usar MONGO_URI com ${{RAILWAY_PRIVATE_DOMAIN}} no serviço da app (esse valor é do app, não do banco).
+    No Railway: defina MONGO_URL como Referência ao serviço MongoDB (MONGO_URL do MongoDB).
+    MONGO_URL tem prioridade sobre MONGO_URI para evitar usar URI do serviço da app (paics.railway.internal).
     """
-    uri = os.getenv("MONGO_URI") or os.getenv("MONGO_URL") or ""
-    # Se a URI contém template não resolvido (ex.: ${{...}}), ignorar e montar de MONGOHOST etc.
-    if uri and "${{" not in uri:
-        return uri.rstrip("/") + "/"
+    # Prioridade: MONGO_URL (referência ao MongoDB no Railway) > MONGO_URI > montar de MONGOHOST
+    url_from_mongo = os.getenv("MONGO_URL") or ""
+    uri_from_app = os.getenv("MONGO_URI") or ""
+    # Se MONGO_URL está definida e não é template, usar (veio do serviço MongoDB por referência)
+    if url_from_mongo and "${{" not in url_from_mongo:
+        return url_from_mongo.rstrip("/") + "/"
+    # Se MONGO_URI está definida e não é template, usar (cuidado: no Railway pode ser do app)
+    if uri_from_app and "${{" not in uri_from_app:
+        return uri_from_app.rstrip("/") + "/"
+    # Montar a partir de MONGOHOST etc. (cada um como referência ao serviço MongoDB)
     host = os.getenv("MONGOHOST")
     if host and "${{" not in host:
         user = os.getenv("MONGOUSER", "")

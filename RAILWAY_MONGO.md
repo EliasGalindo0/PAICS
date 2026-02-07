@@ -11,7 +11,9 @@ No serviço da **aplicação PAICS**, a variável `${{RAILWAY_PRIVATE_DOMAIN}}` 
    - **Valor:** clique em **Reference** (ou “Add Reference”) → escolha o **serviço do MongoDB** → selecione a variável **MONGO_URL**.
 4. Salve e faça **redeploy** do PAICS.
 
-O código usa `MONGO_URL` quando `MONGO_URI` não está definida ou contém `${{`.
+O código usa **MONGO_URL com prioridade** sobre MONGO_URI. Se MONGO_URL for referência ao MongoDB, a conexão usará o host correto.
+
+**Importante:** Remova também do serviço PAICS as variáveis **MONGO_INITDB_ROOT_USERNAME**, **MONGO_INITDB_ROOT_PASSWORD** e **MONGOHOST** se estiverem como valor fixo (não referência). Elas fazem a app resolver o host para o próprio PAICS.
 
 ---
 
