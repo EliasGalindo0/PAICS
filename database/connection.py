@@ -2,7 +2,6 @@
 Conexão com MongoDB
 """
 import os
-import ssl
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
@@ -10,8 +9,8 @@ import certifi
 
 load_dotenv()
 
-# Configurações do MongoDB
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+# Configurações do MongoDB (MONGO_URL = variável injetada pelo Railway ao vincular serviço MongoDB)
+MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017/"
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "paics_db")
 
 _client = None
