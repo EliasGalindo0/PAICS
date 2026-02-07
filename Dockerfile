@@ -1,5 +1,5 @@
-# Python 3.11+ traz OpenSSL mais novo, evitando SSL handshake com MongoDB Atlas em containers
-FROM python:3.11-slim
+# Python 3.12 + slim: OpenSSL mais recente para handshake TLS com MongoDB Atlas (Railway, etc.)
+FROM python:3.12-slim
 
 # build-essential para compilar libs; curl para healthcheck; ca-certificates para TLS (Atlas)
 RUN apt-get update && apt-get install -y \
