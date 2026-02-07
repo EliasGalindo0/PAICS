@@ -1,11 +1,9 @@
-# Python 3.12 + slim: OpenSSL mais recente para handshake TLS com MongoDB Atlas (Railway, etc.)
-FROM python:3.12-slim
+# Imagem completa (não slim): OpenSSL do Debian full costuma resolver TLSV1_ALERT_INTERNAL_ERROR com Atlas no Railway
+FROM python:3.12
 
-# build-essential para compilar libs; curl para healthcheck; ca-certificates para TLS (Atlas)
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    ca-certificates \
+# build-essential para compilar deps; curl para healthcheck (ca-certificates já na imagem full)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Define o diretório de trabalho
