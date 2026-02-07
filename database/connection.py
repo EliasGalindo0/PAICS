@@ -2,6 +2,7 @@
 Conexão com MongoDB
 """
 import os
+import ssl
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
@@ -30,12 +31,14 @@ def get_client():
             kwargs = {"serverSelectionTimeoutMS": 10000}
             if _is_atlas_uri(MONGO_URI):
                 kwargs["tls"] = True
-                kwargs["tlsCAFile"] = certifi.where()
-                # Railway e outros PaaS falham no handshake TLS com Atlas (TLSV1_ALERT_INTERNAL_ERROR).
-                # tlsInsecure relaxa verificação e usa outro fluxo SSL que costuma funcionar.
-                # Para forçar verificação estrita (ex.: local): MONGO_TLS_STRICT=1
-                if os.getenv("MONGO_TLS_STRICT", "").strip().lower() not in ("1", "true", "yes"):
-                    kwargs["tlsInsecure"] = True
+                strict = os.getenv("MONGO_TLS_STRICT", "").strip().lower() in ("1", "true", "yes")
+                if strict:
+                    kwargs["tlsCAFile"] = certifi.where()
+                else:
+                    # Railway/containers: TLSV1_ALERT_INTERNAL_ERROR com CA/certifi.
+                    # SSL sem verificação de certificado usa fluxo que costuma funcionar.
+                    kwargs["tlsAllowInvalidCertificates"] = True
+                    kwargs["tlsAllowInvalidHostnames"] = True
             _client = MongoClient(MONGO_URI, **kwargs)
             # Testar conexão
             _client.server_info()
