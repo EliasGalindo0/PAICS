@@ -5,6 +5,7 @@ import os
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
+import certifi
 
 load_dotenv()
 
@@ -21,7 +22,12 @@ def get_client():
     global _client
     if _client is None:
         try:
-            _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+            # Atlas (mongodb+srv) em containers (ex.: Railway) pode falhar no SSL
+            # por CA bundle limitado; certifi fornece CAs atualizados
+            kwargs = {"serverSelectionTimeoutMS": 5000}
+            if "mongodb+srv://" in MONGO_URI:
+                kwargs["tlsCAFile"] = certifi.where()
+            _client = MongoClient(MONGO_URI, **kwargs)
             # Testar conexão
             _client.server_info()
         except ConnectionFailure:
