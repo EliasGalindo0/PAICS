@@ -17,20 +17,20 @@ O código usa **MONGO_URL com prioridade** sobre MONGO_URI. Se MONGO_URL for ref
 
 ---
 
-## Opção 2 – Referências a MONGOHOST, MONGOUSER, MONGOPASSWORD
+## Opção 2 – Referências a MONGOHOST, MONGOUSER, MONGOPASSWORD (use se Opção 1 ainda der paics.railway.internal)
 
-Se a Opção 1 não estiver disponível, use referências para cada parte da conexão:
+O Railway pode re-resolver variáveis ao injetar MONGO_URL no PAICS, fazendo o host virar `paics.railway.internal`. Nesse caso, use **só** as variáveis abaixo (referências ao MongoDB):
 
-1. No **serviço PAICS**, remova a variável **MONGO_URI** com o template `${{...}}`.
-2. Adicione estas variáveis como **Reference** ao **serviço MongoDB**:
-   - **MONGOHOST** → referência a **MONGOHOST** do MongoDB (domínio interno do banco).
-   - **MONGOUSER** → referência a **MONGOUSER** do MongoDB.
-   - **MONGOPASSWORD** → referência a **MONGOPASSWORD** do MongoDB.
-3. **MONGOPORT** pode ficar como `27017` (valor fixo) no PAICS, ou como referência a **MONGOPORT** do MongoDB.
-4. Mantenha **MONGO_DB_NAME** = `paics_db` no serviço PAICS.
+1. No **serviço PAICS**, **remova** **MONGO_URI** e **MONGO_URL** (para não usar URI errada).
+2. Adicione **apenas** estas variáveis como **Reference** ao **serviço MongoDB**:
+   - **MONGOHOST** → Referência → MongoDB → **MONGOHOST**
+   - **MONGOUSER** → Referência → MongoDB → **MONGOUSER**
+   - **MONGOPASSWORD** → Referência → MongoDB → **MONGOPASSWORD**
+3. No PAICS, defina **MONGOPORT** = `27017` (valor fixo).
+4. Mantenha **MONGO_DB_NAME** = `paics_db`.
 5. Salve e faça **redeploy**.
 
-O código monta a URI com `MONGOHOST`, `MONGOUSER`, `MONGOPASSWORD` e `MONGOPORT` quando não há `MONGO_URI`/`MONGO_URL` válida (sem `${{`).
+O código ignora qualquer URI que contenha `paics.railway.internal` e monta a conexão com **MONGOHOST** (que, por referência, será o domínio interno do MongoDB).
 
 ---
 

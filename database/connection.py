@@ -12,23 +12,31 @@ import certifi
 load_dotenv()
 
 
+# Host da app no Railway; se a URI apontar para ele, é erro de config (deve apontar para o MongoDB)
+_RAILWAY_APP_HOST = "paics.railway.internal"
+
+
 def _get_mongo_uri() -> str:
     """Monta MONGO_URI a partir de variáveis de ambiente.
-    No Railway: defina MONGO_URL como Referência ao serviço MongoDB (MONGO_URL do MongoDB).
-    MONGO_URL tem prioridade sobre MONGO_URI para evitar usar URI do serviço da app (paics.railway.internal).
+    No Railway: se MONGO_URL/MONGO_URI apontarem para paics.railway.internal (host da app),
+    ignora e monta a URI a partir de MONGOHOST/MONGOUSER/MONGOPASSWORD (referências ao serviço MongoDB).
     """
-    # Prioridade: MONGO_URL (referência ao MongoDB no Railway) > MONGO_URI > montar de MONGOHOST
     url_from_mongo = os.getenv("MONGO_URL") or ""
     uri_from_app = os.getenv("MONGO_URI") or ""
-    # Se MONGO_URL está definida e não é template, usar (veio do serviço MongoDB por referência)
-    if url_from_mongo and "${{" not in url_from_mongo:
+    # Rejeitar URI que aponta para o host da aplicação (Connection refused)
+    def _uri_ok(uri: str) -> bool:
+        if not uri or "${{" in uri:
+            return False
+        if _RAILWAY_APP_HOST in uri:
+            return False
+        return True
+    if _uri_ok(url_from_mongo):
         return url_from_mongo.rstrip("/") + "/"
-    # Se MONGO_URI está definida e não é template, usar (cuidado: no Railway pode ser do app)
-    if uri_from_app and "${{" not in uri_from_app:
+    if _uri_ok(uri_from_app):
         return uri_from_app.rstrip("/") + "/"
-    # Montar a partir de MONGOHOST etc. (cada um como referência ao serviço MongoDB)
+    # Montar a partir de MONGOHOST etc. (cada um como referência ao serviço MongoDB no Railway)
     host = os.getenv("MONGOHOST")
-    if host and "${{" not in host:
+    if host and "${{" not in host and _RAILWAY_APP_HOST not in host:
         user = os.getenv("MONGOUSER", "")
         password = os.getenv("MONGOPASSWORD", "")
         port = os.getenv("MONGOPORT", "27017")
