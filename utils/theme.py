@@ -25,8 +25,8 @@ def apply_custom_theme():
     theme_mode = get_theme_mode()
 
     if theme_mode == 'dark':
-        # Tema escuro
-        css = """
+        # Tema escuro (r""" para que \s etc. no JS sejam literais, sem SyntaxWarning)
+        css = r"""
     <style>
     /* Cores principais do tema escuro */
     :root {

@@ -29,14 +29,13 @@ def get_client():
         try:
             kwargs = {"serverSelectionTimeoutMS": 10000}
             if _is_atlas_uri(MONGO_URI):
-                # CA bundle atualizado (certifi) para handshake TLS com Atlas em containers
-                kwargs["tlsCAFile"] = certifi.where()
                 kwargs["tls"] = True
-                # Fallback: em alguns ambientes (ex.: Railway) o handshake falha com
-                # TLSV1_ALERT_INTERNAL_ERROR; relaxar verificação de certificado pode resolver.
-                # Use apenas se necessário e entenda o risco: MONGO_TLS_INSECURE=1
-                if os.getenv("MONGO_TLS_INSECURE", "").strip().lower() in ("1", "true", "yes"):
-                    kwargs["tlsAllowInvalidCertificates"] = True
+                kwargs["tlsCAFile"] = certifi.where()
+                # Railway e outros PaaS falham no handshake TLS com Atlas (TLSV1_ALERT_INTERNAL_ERROR).
+                # tlsInsecure relaxa verificação e usa outro fluxo SSL que costuma funcionar.
+                # Para forçar verificação estrita (ex.: local): MONGO_TLS_STRICT=1
+                if os.getenv("MONGO_TLS_STRICT", "").strip().lower() not in ("1", "true", "yes"):
+                    kwargs["tlsInsecure"] = True
             _client = MongoClient(MONGO_URI, **kwargs)
             # Testar conexão
             _client.server_info()
