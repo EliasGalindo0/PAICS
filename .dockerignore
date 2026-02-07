@@ -7,34 +7,50 @@ __pycache__/
 venv/
 env/
 ENV/
+*.egg-info/
+.eggs/
 
-# IDEs
+# IDEs / editor
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 
 # Git
 .git/
 .gitignore
+.github/
 
-# Documentation
+# Build / deploy (não precisam dentro da imagem)
+Dockerfile
+dockerfile
+docker-compose.yml
+*.spec
+justfile
+
+# Documentation (README pode ser mantido se quiser)
 *.md
 !README.md
 
-# Environment
+# Environment (nunca enviar secrets)
 .env
-.env.local
+.env.*
+!.env.example
 
-# Logs
+# Logs e cache
 *.log
+.pytest_cache/
+.coverage
+htmlcov/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
+# Projeto
 laudos_com_ia/
 temp_laudos/
+uploads/
 *.pdf
 *.docx
