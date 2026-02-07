@@ -2,6 +2,8 @@
 Conexão com MongoDB
 """
 import os
+from urllib.parse import quote_plus
+
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
@@ -9,8 +11,31 @@ import certifi
 
 load_dotenv()
 
-# Configurações do MongoDB (MONGO_URL = variável injetada pelo Railway ao vincular serviço MongoDB)
-MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017/"
+
+def _get_mongo_uri() -> str:
+    """Monta MONGO_URI a partir de variáveis de ambiente.
+    No Railway: use Referência ao serviço MongoDB para MONGO_URL (recomendado)
+    ou para MONGOHOST/MONGOUSER/MONGOPASSWORD/MONGOPORT (cada um referenciando o serviço MongoDB).
+    Evita usar MONGO_URI com ${{RAILWAY_PRIVATE_DOMAIN}} no serviço da app (esse valor é do app, não do banco).
+    """
+    uri = os.getenv("MONGO_URI") or os.getenv("MONGO_URL") or ""
+    # Se a URI contém template não resolvido (ex.: ${{...}}), ignorar e montar de MONGOHOST etc.
+    if uri and "${{" not in uri:
+        return uri.rstrip("/") + "/"
+    host = os.getenv("MONGOHOST")
+    if host and "${{" not in host:
+        user = os.getenv("MONGOUSER", "")
+        password = os.getenv("MONGOPASSWORD", "")
+        port = os.getenv("MONGOPORT", "27017")
+        if user and password:
+            auth = f"{quote_plus(user)}:{quote_plus(password)}@"
+        else:
+            auth = ""
+        return f"mongodb://{auth}{host}:{port}/"
+    return "mongodb://localhost:27017/"
+
+
+MONGO_URI = _get_mongo_uri()
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "paics_db")
 
 _client = None
