@@ -126,6 +126,16 @@ class Clinica(BaseModel):
         )
         return result.modified_count > 0
 
+    def delete(self, clinica_id: str) -> bool:
+        """Exclui uma clínica, desvinculando usuários e requisições, e removendo veterinários."""
+        from database.connection import get_db
+        db = get_db()
+        db.users.update_many({"clinica_id": clinica_id}, {"$set": {"clinica_id": None}})
+        db.veterinarios.delete_many({"clinica_id": clinica_id})
+        db.requisicoes.update_many({"clinica_id": clinica_id}, {"$set": {"clinica_id": None}})
+        result = self.collection.delete_one({"_id": ObjectId(clinica_id)})
+        return result.deleted_count > 0
+
 
 class Veterinario(BaseModel):
     """Modelo de médico veterinário (vinculado a uma clínica)"""

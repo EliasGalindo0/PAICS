@@ -1835,6 +1835,8 @@ elif page == "Usuários":
                 with st.form("nova_clinica_inline"):
                     nome_clinica = st.text_input("Nome da clínica *", key="nova_clinica_nome")
                     cnpj_clinica = st.text_input("CNPJ", key="nova_clinica_cnpj")
+                    endereco_clinica = st.text_input("Endereço", key="nova_clinica_endereco")
+                    telefone_clinica = st.text_input("Telefone", key="nova_clinica_telefone")
                     email_clinica = st.text_input("E-mail da clínica", key="nova_clinica_email")
                     username_clinica = st.text_input(
                         "Usuário para login *", key="nova_clinica_username")
@@ -1859,6 +1861,8 @@ elif page == "Usuários":
                                 clinica_id_inline = clinica_model.create(
                                     nome=nome_clinica.strip(),
                                     cnpj=cnpj_clinica or "",
+                                    endereco=endereco_clinica or "",
+                                    telefone=telefone_clinica or "",
                                     email=email_clinica or "",
                                     ativa=True,
                                 )
@@ -2050,37 +2054,30 @@ elif page == "Usuários":
                         is_dummy = user.get('username') == 'admin' and user.get(
                             'email') == 'admin@paics.local'
 
-                        # Verificar se tem dados associados
                         has_data = len(reqs) > 0 or len(laudos) > 0
-
-                        if has_data and not is_dummy:
-                            st.button("🗑️ Excluir", key=f"delete_{user['id']}", disabled=True, use_container_width=True,
-                                      help=f"Usuário possui {len(reqs)} requisição(ões) e {len(laudos)} laudo(s). Desative em vez de excluir.")
-                        else:
-                            delete_key = f"delete_{user['id']}"
-                            if st.button("🗑️ Excluir", key=delete_key, use_container_width=True):
-                                # Verificar confirmação
-                                if not st.session_state.get(f"confirm_{delete_key}", False):
-                                    st.session_state[f"confirm_{delete_key}"] = True
-                                    st.warning(
-                                        f"⚠️ Clique novamente em 'Excluir' para confirmar a exclusão de '{user.get('username')}'")
+                        delete_key = f"delete_{user['id']}"
+                        if st.button("🗑️ Excluir", key=delete_key, use_container_width=True):
+                            if not st.session_state.get(f"confirm_{delete_key}", False):
+                                st.session_state[f"confirm_{delete_key}"] = True
+                                st.warning(
+                                    f"⚠️ Clique novamente em 'Excluir' para confirmar a exclusão de '{user.get('username')}'")
+                                if has_data:
+                                    st.info("💡 O usuário possui requisições/laudos. Eles permanecerão no sistema com referência ao usuário excluído. Considere desativar em vez de excluir.")
+                                if is_dummy:
+                                    st.info(
+                                        "💡 Certifique-se de ter criado seu próprio usuário administrador antes de excluir o dummy.")
+                                st.rerun()
+                            else:
+                                if user_model.delete(user['id']):
+                                    del st.session_state[f"confirm_{delete_key}"]
                                     if is_dummy:
-                                        st.info(
-                                            "💡 Certifique-se de ter criado seu próprio usuário administrador antes de excluir o dummy.")
+                                        st.success("✅ Usuário dummy excluído com sucesso!")
+                                    else:
+                                        st.success("✅ Usuário excluído com sucesso!")
                                     st.rerun()
                                 else:
-                                    # Confirmar exclusão
-                                    if user_model.delete(user['id']):
-                                        del st.session_state[f"confirm_{delete_key}"]
-                                        if is_dummy:
-                                            st.success(
-                                                "✅ Usuário dummy excluído com sucesso!")
-                                        else:
-                                            st.success("✅ Usuário excluído com sucesso!")
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Erro ao excluir usuário")
-                                        del st.session_state[f"confirm_{delete_key}"]
+                                    st.error("❌ Erro ao excluir usuário")
+                                    del st.session_state[f"confirm_{delete_key}"]
 
 elif page == "Clínicas":
     st.header("🏥 Clínicas e Veterinários")
@@ -2184,7 +2181,7 @@ elif page == "Clínicas":
                     del st.session_state["clinica_edit_id"]
                     st.rerun()
             else:
-                row_edit, row_del, row_info = st.columns([1, 1, 12])
+                row_edit, row_del, row_excluir, row_info = st.columns([1, 1, 1, 11])
                 with row_edit:
                     if st.button("✏️", key=f"edit_clin_{clin['id']}", help="Editar clínica"):
                         st.session_state["clinica_edit_id"] = clin["id"]
@@ -2194,6 +2191,25 @@ elif page == "Clínicas":
                         if st.button("🚫", key=f"desativar_clin_{clin['id']}", help="Desativar clínica"):
                             clinica_model.update(clin["id"], {"ativa": False})
                             st.rerun()
+                    else:
+                        if st.button("✅", key=f"ativar_clin_{clin['id']}", help="Ativar clínica"):
+                            clinica_model.update(clin["id"], {"ativa": True})
+                            st.rerun()
+                with row_excluir:
+                    delete_clin_key = f"excluir_clin_{clin['id']}"
+                    if st.button("🗑️", key=delete_clin_key, help="Excluir clínica"):
+                        if not st.session_state.get(f"confirm_{delete_clin_key}", False):
+                            st.session_state[f"confirm_{delete_clin_key}"] = True
+                            st.warning(f"⚠️ Clique novamente em 🗑️ para confirmar a exclusão de '{clin.get('nome', '—')}'")
+                            st.rerun()
+                        else:
+                            if clinica_model.delete(clin["id"]):
+                                del st.session_state[f"confirm_{delete_clin_key}"]
+                                st.success("Clínica excluída.")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao excluir clínica")
+                                del st.session_state[f"confirm_{delete_clin_key}"]
                 with row_info:
                     st.write(
                         f"**{clin.get('nome', '—')}** {' _(inativa)_' if not clin.get('ativa', True) else ''}")
