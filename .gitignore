@@ -48,8 +48,10 @@ laudos_com_ia/
 output/
 temp_laudos/
 
-# Banco de dados vetorial (ChromaDB)
-vector_db/
+# Banco de dados vetorial (ChromaDB) - apenas dados, não o código
+vector_db/chroma_data/
+vector_db/*.db
+vector_db/*.sqlite3
 
 # Streamlit
 .streamlit/secrets.toml
