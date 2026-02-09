@@ -1,0 +1,11 @@
+# Dependências para testes (dev/CI)
+-r requirements.txt
+
+# Testes
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.2.0
+
+# E2E com Playwright
+pytest-playwright>=0.4.0
+playwright>=1.40.0

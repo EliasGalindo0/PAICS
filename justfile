@@ -433,6 +433,43 @@ test-env:
         $PYTHON_CMD -c "from dotenv import load_dotenv; import os; load_dotenv(); key = os.getenv('GOOGLE_API_KEY', 'NÃO_ENCONTRADA'); print('✅ .env carregado!' if key != 'NÃO_ENCONTRADA' else '❌ GOOGLE_API_KEY não encontrada no .env')"
     fi
 
+# Rodar todos os testes (unit + E2E). Requer MongoDB e playwright install chromium
+test:
+    #!/usr/bin/env bash
+    echo "🧪 Rodando testes..."
+    export MONGO_DB_NAME=paics_db_test
+    if [ -f "{{venv_dir}}/bin/python" ]; then
+        {{python_venv}} -m pytest tests/ -v --tb=short
+    elif [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        {{python_venv_win}} -m pytest tests/ -v --tb=short
+    else
+        pytest tests/ -v --tb=short
+    fi
+
+# Rodar apenas testes unitários
+test-unit:
+    #!/usr/bin/env bash
+    export MONGO_DB_NAME=paics_db_test
+    if [ -f "{{venv_dir}}/bin/python" ]; then
+        {{python_venv}} -m pytest tests/unit -v --tb=short
+    elif [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        {{python_venv_win}} -m pytest tests/unit -v --tb=short
+    else
+        pytest tests/unit -v --tb=short
+    fi
+
+# Rodar apenas testes E2E (inicia Streamlit em background). Requer playwright install chromium
+test-e2e:
+    #!/usr/bin/env bash
+    export MONGO_DB_NAME=paics_db_test
+    if [ -f "{{venv_dir}}/bin/python" ]; then
+        {{python_venv}} -m pytest tests/e2e -v --tb=short --timeout=180
+    elif [ -f "{{venv_dir}}/Scripts/python.exe" ]; then
+        {{python_venv_win}} -m pytest tests/e2e -v --tb=short --timeout=180
+    else
+        pytest tests/e2e -v --tb=short --timeout=180
+    fi
+
 # --- Utilitários ---
 
 # Lista arquivos PDF na pasta atual
