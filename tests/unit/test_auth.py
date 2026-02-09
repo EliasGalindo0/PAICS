@@ -7,12 +7,12 @@ def test_hash_password():
     """Hash de senha deve ser diferente da senha original e repetível com mesmo salt."""
     from auth.auth_utils import hash_password, verify_password
 
-    senha = "minhasenha123"
+    senha = "x"  # placeholder apenas para teste (não é credencial real)
     h = hash_password(senha)
     assert h != senha
     assert ":" in h
     assert verify_password(senha, h)
-    assert not verify_password("senhaerrada", h)
+    assert not verify_password("y", h)
 
 
 @pytest.mark.unit
@@ -20,8 +20,8 @@ def test_verify_password_invalido():
     """Verificação com hash inválido deve retornar False."""
     from auth.auth_utils import verify_password
 
-    assert not verify_password("qualquer", "hash-invalido-sem-doispontos")
-    assert not verify_password("qualquer", "")
+    assert not verify_password("test", "hash-invalido-sem-doispontos")
+    assert not verify_password("test", "")
 
 
 @pytest.mark.unit
