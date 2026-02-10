@@ -1,231 +1,228 @@
 # PAICS - Sistema de Análise de Imagens Veterinárias
 
-Sistema automatizado para análise de imagens veterinárias (raio-x e ultrassom) usando Inteligência Artificial (Google Gemini) para geração de laudos técnicos.
+Sistema completo de gestão de laudos veterinários com autenticação, dashboards, IA (Google Gemini), MongoDB e ChromaDB.
 
-## 📋 Requisitos
+## Visão Geral
 
-- Python 3.8 ou superior
-- Chave da API do Google Gemini
-- Just (opcional, mas recomendado para facilitar os comandos) - [Instalar Just](https://github.com/casey/just)
+- **Usuários**: Enviar requisições com imagens (JPG, PNG, DICOM), acompanhar status e baixar laudos em PDF quando liberados.
+- **Administradores**: Criar usuários e clínicas, revisar requisições, gerar/editar/validar/liberar laudos com IA, gerenciar financeiro e Knowledge Base.
 
-## 🚀 Instalação
+**Stack**: Python, Streamlit, MongoDB, ChromaDB, Google Gemini, fpdf2.
 
-### Método Rápido (com Just)
+---
 
-Se você tem o Just instalado, pode configurar o ambiente com um único comando:
+## Requisitos
+
+- Python 3.11 ou 3.12
+- MongoDB (Docker ou local)
+- Chave da API Google Gemini
+- Just (opcional, recomendado) – [Instalar Just](https://github.com/casey/just)
+
+---
+
+## Instalação Rápida
+
+### 1. Clone e ambiente
 
 ```bash
+cd PAICS
 just init
 ```
 
-Isso criará o ambiente virtual e instalará todas as dependências automaticamente.
+### 2. Variáveis de ambiente
 
-Para ver todos os comandos disponíveis:
+Copie `.env.example` para `.env` e configure:
+
 ```bash
-just --list
-# ou apenas
-just
+cp .env.example .env   # Linux/Mac
+copy .env.example .env # Windows
 ```
 
-### Método Manual
-
-1. Clone o repositório ou navegue até a pasta do projeto:
-```bash
-cd PAICS
+Edite `.env`:
+```
+GOOGLE_API_KEY=sua_chave_aqui
+MONGO_URI=mongodb://localhost:27017/
+MONGO_DB_NAME=paics_db
 ```
 
-2. Crie um ambiente virtual (recomendado):
+### 3. MongoDB
+
+**Opção Docker (recomendado):**
 ```bash
-python -m venv venv
+just docker-mongodb-start
+just docker-mongodb-status
 ```
 
-3. Ative o ambiente virtual:
-- **Windows:**
+**Opção local:** Instale MongoDB e inicie o serviço, ou use `just start-mongodb`.
+
+### 4. Seed inicial
+
 ```bash
-venv\Scripts\activate
-```
-- **Linux/Mac:**
-```bash
-source venv/bin/activate
+just seed-admin
 ```
 
-4. Instale as dependências:
+Credenciais do admin dummy: **admin** / **admin**.
+
+⚠️ Faça login, crie seu próprio admin na página Usuários e exclua o dummy.
+
+### 5. Iniciar
+
 ```bash
-pip install -r requirements.txt
-```
-
-5. Configure a chave da API:
-   
-   **Método 1 - Arquivo .env (Recomendado):**
-   - Copie o arquivo `.env.example` para `.env`:
-     ```bash
-     # Linux/Mac:
-     cp .env.example .env
-     
-     # Windows (CMD):
-     copy .env.example .env
-     ```
-   - Edite o arquivo `.env` e adicione sua chave da API do Google Gemini:
-     ```
-     GOOGLE_API_KEY=sua_chave_real_aqui
-     ```
-   
-   **Método 2 - Variável de Ambiente do Sistema:**
-   - **Windows (PowerShell):**
-     ```powershell
-     $env:GOOGLE_API_KEY="sua_chave_real_aqui"
-     ```
-   - **Windows (CMD):**
-     ```cmd
-     set GOOGLE_API_KEY=sua_chave_real_aqui
-     ```
-   - **Linux/Mac:**
-     ```bash
-     export GOOGLE_API_KEY="sua_chave_real_aqui"
-     ```
-
-## 📖 Como Usar
-
-### 🌐 Interface Web Streamlit (Recomendado)
-
-O projeto inclui uma interface web moderna e intuitiva usando Streamlit:
-
-1. **Inicie a aplicação Streamlit:**
-```bash
-# Usando Just (recomendado)
 just streamlit
-
-# Ou usando o ambiente virtual
-just streamlit-venv
-
-# Ou manualmente
-streamlit run streamlit_app.py
+# ou: streamlit run streamlit_app.py
 ```
 
-2. **Acesse a aplicação:**
-   - Abra seu navegador em `http://localhost:8501`
-   - Faça upload do PDF com as imagens do exame
-   - Visualize as imagens extraídas
-   - Gere o laudo automaticamente com IA
-   - **Edite o laudo** conforme necessário
-   - **Baixe o laudo editado** em formato Word
+Acesse `http://localhost:8501`.
 
-**Funcionalidades da Interface Web:**
-- ✅ Upload de PDF diretamente no navegador
-- ✅ Visualização das imagens extraídas
-- ✅ Geração automática de laudo com IA
-- ✅ Editor de texto para editar o laudo gerado
-- ✅ Download do laudo editado em formato Word
-- ✅ Formulário para informações do paciente
-- ✅ Preview do laudo formatado
+---
 
-### 📜 Linha de Comando
+## Variáveis de Ambiente
 
-#### Usando Just (Recomendado)
+| Variável | Descrição |
+|----------|-----------|
+| `GOOGLE_API_KEY` | Chave da API Gemini (obrigatória para laudos) |
+| `MONGO_URI` | Connection string do MongoDB (ex.: `mongodb://localhost:27017/`) |
+| `MONGO_DB_NAME` | Nome do banco (padrão: `paics_db`) |
+| `JWT_SECRET_KEY` | Chave para tokens (opcional; gerada se ausente) |
+| `GEMINI_MODEL_NAME` | Modelo Gemini (ex.: `gemini-2.5-pro`) |
 
-1. Execute o script interativo:
+---
+
+## Deploy no Railway
+
+1. Adicione o serviço MongoDB no Railway.
+2. No serviço da aplicação PAICS, em **Variables**:
+   - **MONGO_URI** = Referência → serviço MongoDB → **MONGO_URL**
+3. Use `MONGO_URL` privado (não `MONGO_PUBLIC_URL`) para evitar egress fees.
+4. Faça redeploy.
+
+---
+
+## Uso
+
+### Login
+
+- **Admin**: credenciais criadas pelo seed ou `create-admin`.
+- **Usuário**: credenciais criadas pelo admin (não há “Criar Conta” para usuário).
+
+### Dashboard Admin
+
+- **Requisições**: Listar, filtrar, criar/editar laudos.
+- **Laudos**: Editar, validar, liberar; visualizar imagens.
+- **Usuários**: Criar, ativar/desativar, excluir; vincular a clínicas.
+- **Clínicas**: Cadastrar clínicas (nome, CNPJ, endereço, telefone, e-mail), veterinários; ativar/desativar ou excluir.
+- **Financeiro**: Gerar fechamentos e faturas.
+- **Knowledge Base**: PDFs, prompts, orientações.
+
+### Dashboard Usuário
+
+- **Meus Laudos**: Listar requisições/laudos, filtrar, baixar PDF quando liberado.
+- **Nova Requisição**: Formulário (paciente, tutor, espécie, tipo de exame, etc.), upload de imagens, envio.
+- **Minhas Faturas**: Consultar faturas.
+
+### Guia para Clientes (administrador pode compartilhar)
+
+1. Login com credenciais fornecidas.
+2. Primeiro acesso: alterar senha temporária.
+3. **Nova Requisição**: Preencher dados, anexar imagens, enviar.
+4. **Meus Laudos**: Acompanhar e baixar PDF quando liberado.
+5. **Minhas Faturas**: Consultar faturas.
+6. Em caso de erro: reportar ao administrador com mensagem e contexto.
+
+---
+
+## Testes
+
 ```bash
-just run-interactive
+pip install -r requirements-dev.txt
+playwright install chromium
+just test-unit   # apenas unitários
+just test-e2e    # E2E (requer MongoDB)
+just test        # todos
 ```
 
-2. Ou execute o script principal:
-```bash
-just run
-```
+Os testes usam `paics_db_test`. O CI (`.github/workflows/ci.yml`) roda em push/PR para `main` e `develop`. Para exigir aprovação antes do merge: em **Settings → Branches**, crie regra para `main` com **Require status checks** e adicione o job `test`.
 
-#### Método Manual
+---
 
-1. Coloque o arquivo PDF do exame na raiz do projeto (ou forneça o caminho completo)
+## Comandos Just
 
-2. Edite o arquivo `main.py` na linha 162 para apontar para o seu arquivo PDF:
-```python
-pdf_exame = "seu_arquivo.pdf"
-```
+| Comando | Descrição |
+|---------|-----------|
+| `just init` | Setup completo (venv, deps) |
+| `just streamlit` | Inicia a aplicação web |
+| `just seed-admin` | Cria admin e clínica dummy |
+| `just docker-mongodb-start` | Sobe MongoDB em Docker |
+| `just docker-mongodb-stop` | Para MongoDB |
+| `just check-mongodb` | Verifica conexão MongoDB |
+| `just test` | Executa todos os testes |
+| `just test-unit` | Testes unitários |
+| `just test-e2e` | Testes E2E |
+| `just fix-grpc` | Corrige erro cygrpc |
+| `just fix-numpy` | Corrige erro numpy |
+| `just fix-rpds` | Corrige ChromaDB/rpds |
+| `just fix-bson` | Reinstala pymongo |
 
-3. Execute o script:
-```bash
-python main.py
-# ou
-python run.py
-```
+Mais: `just --list`.
 
-4. O laudo será gerado na pasta `laudos_com_ia/` com o nome `Laudo_AI_[nome_do_arquivo].docx`
+---
 
-## 🛠️ Comandos Úteis (Just)
-
-O projeto inclui um `justfile` com vários comandos úteis:
-
-### Setup e Instalação
-- `just init` - Configuração completa do ambiente (cria venv e instala dependências)
-- `just setup` - Cria apenas o ambiente virtual
-- `just install` - Instala dependências
-- `just update` - Atualiza todas as dependências
-
-### Execução
-- `just streamlit` - 🌐 **Interface Web** - Inicia a aplicação Streamlit (RECOMENDADO)
-- `just streamlit-venv` - Inicia Streamlit usando o ambiente virtual
-- `just streamlit-dev` - Inicia Streamlit em modo desenvolvimento (auto-reload)
-- `just streamlit-port PORT=8501` - Inicia Streamlit em porta específica
-- `just run-interactive` - Executa o script interativo (linha de comando)
-- `just run` - Executa o script principal (linha de comando)
-- `just run-interactive-venv` - Executa usando o ambiente virtual
-- `just run-venv` - Executa o main.py usando o ambiente virtual
-
-### Desenvolvimento
-- `just check` - Verifica configuração completa (deps + API key)
-- `just check-deps` - Verifica se as dependências estão instaladas
-- `just check-api-key` - Verifica se a API key está configurada
-- `just format` - Formata o código Python (requer black)
-- `just lint` - Executa linter no código (requer flake8)
-- `just validate` - Valida sintaxe dos arquivos Python
-- `just test-import` - Testa importação dos módulos
-
-### Limpeza
-- `just clean` - Remove arquivos temporários (__pycache__, .pyc)
-- `just clean-venv` - Remove o ambiente virtual
-- `just clean-all` - Limpeza completa
-
-### Utilitários
-- `just info` - Mostra informações sobre o projeto
-- `just list-pdfs` - Lista arquivos PDF na pasta atual
-- `just show-output-size` - Mostra tamanho do diretório de saída
-
-## 📁 Estrutura do Projeto
+## Estrutura do Projeto
 
 ```
 PAICS/
-├── main.py                 # Script principal (linha de comando)
-├── run.py                  # Script auxiliar interativo (linha de comando)
-├── streamlit_app.py        # 🌐 Interface web Streamlit
-├── justfile               # Comandos Just para gerenciar o projeto
-├── requirements.txt        # Dependências do projeto
-├── setup.py               # Configuração do pacote Python
-├── .streamlit/            # Configurações do Streamlit
-│   └── config.toml        # Configuração de tema e servidor
-├── .gitignore             # Arquivos ignorados pelo Git
-├── config.example.py      # Exemplo de configuração
-├── INSTALL.md             # Guia detalhado de instalação
-├── README.md              # Esta documentação
-├── laudos_com_ia/         # Pasta de saída (gerada automaticamente)
-└── venv/                  # Ambiente virtual (não versionado)
+├── streamlit_app.py      # Entrada web
+├── pages/
+│   ├── login.py
+│   ├── admin_dashboard.py
+│   └── user_dashboard.py
+├── auth/                 # Autenticação, JWT
+├── database/             # MongoDB, modelos
+├── vector_db/            # ChromaDB (laudos validados)
+├── ai/                   # Gemini, DICOM
+├── knowledge_base/       # PDFs, prompts, orientações
+├── utils/                # Financeiro, PDF, etc.
+├── scripts/              # seed_admin, create_admin, reset_db
+├── tests/                # Unit + E2E
+├── docker-compose.yml    # MongoDB
+├── Dockerfile            # Deploy
+└── justfile
 ```
 
-## ⚠️ Importante
+---
 
-- Este sistema gera **laudos sugeridos** que devem ser **revisados e validados** por um Médico Veterinário qualificado antes de serem utilizados.
-- A IA serve como ferramenta de apoio, não substitui o julgamento clínico profissional.
-- Todos os laudos gerados contêm um aviso destacando que são gerados automaticamente.
+## Banco de Dados
 
-## 🔧 Dependências
+- **MongoDB**: `users`, `clinicas`, `veterinarios`, `requisicoes`, `laudos`, `faturas`, `sessions`, `knowledge_base`.
+- **ChromaDB**: Laudos validados (vetorial); persistido em `vector_db/`.
 
-- **PyMuPDF**: Processamento de arquivos PDF
-- **google-generativeai**: Integração com a API do Google Gemini
-- **python-docx**: Geração de documentos Word
-- **Pillow**: Processamento de imagens
-- **streamlit**: Framework web para interface de usuário
-- **python-dotenv**: Carregamento de variáveis de ambiente do arquivo .env
+---
 
-## 📝 Licença
+## Sistema de Aprendizado
 
-Este projeto é fornecido como está, para uso interno.
+Laudos validados são indexados no ChromaDB. O sistema pode buscar casos similares (espécie, raça, região, suspeita) para suportar geração futura. Variáveis opcionais: `USE_LOCAL_MODEL`, `LOCAL_MODEL_TYPE`, `OLLAMA_BASE_URL`, etc.
 
+---
+
+## Troubleshooting
+
+| Erro | Solução |
+|------|---------|
+| MongoDB não conecta | `just docker-mongodb-start` ou `just start-mongodb`; conferir `MONGO_URI` |
+| API Key não configurada | Preencher `GOOGLE_API_KEY` no `.env` |
+| `cygrpc` / grpc | `just fix-grpc` |
+| `numpy._core._multiarray_umath` | `just fix-numpy` ou usar Python 3.11/3.12 |
+| `rpds.rpds` / ChromaDB | `just fix-rpds` |
+| Não excluir dummy | Criar outro admin, fazer logout, excluir o dummy com o novo admin |
+
+---
+
+## Aviso
+
+Os laudos são **sugestões** e devem ser **revisados por Médico Veterinário** antes do uso. A IA é ferramenta de apoio, não substitui o julgamento clínico.
+
+---
+
+## Licença
+
+Projeto para uso interno.
