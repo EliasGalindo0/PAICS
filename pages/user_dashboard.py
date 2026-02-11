@@ -364,19 +364,19 @@ with st.sidebar:
     # Navegação (Meus Laudos como primeira aba ao abrir)
     page = st.radio(
         "Navegação",
-        ["Meus Laudos", "Nova Requisição", "Minhas Faturas"],
+        ["Exames", "Nova Requisição", "Minhas Faturas"],
         key="user_nav"
     )
 
 # Página principal
-if page == "Meus Laudos":
-    st.header("📋 Meus Laudos")
+if page == "Exames":
+    st.header("📋 Meus Exames")
 
     # Notificação de laudos recém liberados
     import datetime as _dt
     _now = now()
-    _last = st.session_state.get("last_meus_laudos_visit")
-    st.session_state["last_meus_laudos_visit"] = _now
+    _last = st.session_state.get("last_meus_exames_visit")
+    st.session_state["last_meus_exames_visit"] = _now
     _user_id = st.session_state.get("user_id")
     _liberados = laudo_model.find_by_user(_user_id, status="liberado") if _user_id else []
     _newly = []
@@ -410,39 +410,38 @@ if page == "Meus Laudos":
     with col1:
         status = st.selectbox(
             "Filtrar por status",
-            ["Apenas liberados", "Todos", "Pendente", "Validado"],
+            ["Todos", "Liberados", "Pendente", "Validado"],
             index=0,
-            key="laudo_status_filter",
-            help="Por padrão, apenas laudos liberados (para download). Use o filtro para ver pendentes ou aguardando laudo."
+            key="exame_status_filter"
         )
     with col2:
-        filter_date = st.date_input("📅 Data", value=now().date(), key="laudo_date_filter")
+        filter_date = st.date_input("📅 Data", value=now().date(), key="exame_date_filter")
         show_all_dates = st.checkbox("Mostrar todas as datas",
-                                     value=False, key="laudo_show_all_dates")
+                                     value=False, key="exame_show_all_dates")
     with col3:
         st.write("")
 
     _uid = st.session_state.get("user_id")
     status_map = {"Todos": None, "Pendente": "pendente",
-                  "Validado": "validado", "Apenas liberados": "liberado"}
+                  "Validado": "validado", "Liberados": "liberado"}
     status_val = status_map.get(status)
 
     # Carregamento leve: quando "Apenas liberados", busca só laudos liberados (e suas reqs)
-    if status == "Apenas liberados":
-        laudos_liberados = laudo_model.find_by_user(_uid, status="liberado") if _uid else []
+    if status == "Liberados":
+        exames_liberados = laudo_model.find_by_user(_uid, status="liberado") if _uid else []
         items = []
-        for laudo in laudos_liberados:
-            req = requisicao_model.find_by_id(laudo.get("requisicao_id"))
+        for exame in exames_liberados:
+            req = requisicao_model.find_by_id(exame.get("requisicao_id"))
             if req and req.get("status") != "rascunho":
-                items.append((req, laudo))
+                items.append((req, exame))
         filtered = items
     else:
         all_reqs = [r for r in (requisicao_model.find_by_user(
             _uid) if _uid else []) if r.get("status") != "rascunho"]
         items = []
         for req in all_reqs:
-            laudo = laudo_model.find_by_requisicao(req["id"])
-            items.append((req, laudo))
+            exame = laudo_model.find_by_requisicao(req["id"])
+            items.append((req, exame))
         if status_val == "pendente":
             filtered = [(r, l) for r, l in items if l is None or l.get("status") == "pendente"]
         elif status_val == "validado":
@@ -480,7 +479,7 @@ if page == "Meus Laudos":
 
         filtered = [(r, l) for r, l in filtered if _req_date(r) == filter_date]
 
-    if status == "Apenas liberados":
+    if status == "Liberados":
         st.info("📋 **Mostrando apenas laudos liberados.** Altere o filtro para ver pendentes, validados ou aguardando laudo.")
     if not show_all_dates:
         st.caption(
