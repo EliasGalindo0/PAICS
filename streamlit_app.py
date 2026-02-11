@@ -108,22 +108,21 @@ load_tokens_from_localstorage()
 
 # Verificar e renovar sessão se necessário
 if st.session_state.get('access_token') and st.session_state.get('refresh_token'):
-    with st.spinner("🔄 Verificando sessão..."):
-        if verify_and_refresh_session():
-            # Sessão válida, redirecionar para dashboard apropriado
-            if st.session_state.get('role') == 'admin':
-                st.switch_page("pages/admin_dashboard.py")
-            else:
-                st.switch_page("pages/user_dashboard.py")
+    if verify_and_refresh_session():
+        # Sessão válida, redirecionar para dashboard apropriado
+        if st.session_state.get('role') == 'admin':
+            st.switch_page("pages/admin_dashboard.py")
         else:
-            # Tokens inválidos, limpar localStorage e redirecionar para login
-            st.markdown("""
-            <script>
-            localStorage.removeItem('paics_access_token');
-            localStorage.removeItem('paics_refresh_token');
-            </script>
-            """, unsafe_allow_html=True)
-            st.switch_page("pages/login.py")
+            st.switch_page("pages/user_dashboard.py")
+    else:
+        # Tokens inválidos, limpar localStorage e redirecionar para login
+        st.markdown("""
+        <script>
+        localStorage.removeItem('paics_access_token');
+        localStorage.removeItem('paics_refresh_token');
+        </script>
+        """, unsafe_allow_html=True)
+        st.switch_page("pages/login.py")
 elif not st.session_state.get('authenticated'):
     # Sem tokens e não autenticado, redirecionar para login
     st.switch_page("pages/login.py")
