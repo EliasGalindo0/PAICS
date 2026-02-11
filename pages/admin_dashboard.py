@@ -1362,6 +1362,47 @@ if page == "Exames":
                                     laudo_model.update(laudo["id"], {"texto": texto_editado})
                                 laudo_model.release(laudo["id"], calcular_rating=True)
                                 requisicao_model.update_status(req["id"], "liberado")
+
+                                # Salvar dados de aprendizado (inclui laudos regenerados com correções)
+                                try:
+                                    from ai.learning_system import LearningSystem
+                                    ls = LearningSystem()
+                                    paciente_info = {
+                                        "especie": req.get("especie", ""),
+                                        "raca": req.get("raca", ""),
+                                        "idade": req.get("idade", ""),
+                                        "sexo": req.get("sexo", ""),
+                                        "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
+                                        "suspeita_clinica": req.get("suspeita_clinica", ""),
+                                        "regiao_estudo": req.get("regiao_estudo", ""),
+                                        "observacoes_adicionais_usuario": "\n".join(
+                                            o.get("texto", "").strip()
+                                            for o in (req.get("observacoes_usuario") or [])
+                                            if o.get("texto", "").strip()
+                                        ),
+                                    }
+                                    laudo_apos_release = laudo_model.find_by_id(laudo["id"])
+                                    rating = laudo_apos_release.get("rating", 3)
+                                    metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
+                                    if not metadata:
+                                        metadata = {
+                                            "modelo_usado": laudo.get("modelo_usado", "api_externa"),
+                                            "usado_api_externa": laudo.get("usado_api_externa", True),
+                                            "similaridade_casos": laudo.get("similaridade_casos"),
+                                            "casos_similares": [],
+                                        }
+                                    ls.save_learning_data(
+                                        laudo_id=laudo["id"],
+                                        requisicao_id=req["id"],
+                                        contexto=paciente_info,
+                                        texto_gerado=laudo.get("texto_original_gerado", laudo.get("texto_original", "")),
+                                        texto_final=laudo_apos_release.get("texto", ""),
+                                        rating=rating,
+                                        metadata=metadata,
+                                    )
+                                except Exception as e:
+                                    st.warning(f"⚠️ Erro ao salvar aprendizado: {str(e)}")
+
                                 st.success(
                                     "✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
                                 st.balloons()
