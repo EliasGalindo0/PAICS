@@ -374,8 +374,7 @@ if page == "Exames":
             f" {err} erro(s)." if err else "") + " A lista abaixo foi atualizada.")
 
     # Requisições sem laudo (elegíveis para geração em massa)
-    reqs_sem_laudo = [e for e in exames if not laudo_model.find_by_requisicao(
-        r["id"]) and (r.get("imagens") or [])]
+    reqs_sem_laudo = [e for e in exames if not laudo_model.find_by_requisicao(e["id"]) and (e.get("imagens") or [])]
     n_sem_laudo = len(reqs_sem_laudo)
     if n_sem_laudo > 0:
         if st.button(f"🤖 Gerar laudos em massa ({n_sem_laudo} pendente(s))", type="primary", key="bulk_gen_btn", use_container_width=False):
