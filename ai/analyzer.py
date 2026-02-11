@@ -1,9 +1,11 @@
 """
 Analisador de imagens veterinárias com Gemini (LLM).
 Usado pelo user_dashboard, admin_dashboard e main sem depender de PyMuPDF/docx.
+Suporta imagens por path (filesystem) ou por ID do GridFS (persistência no MongoDB).
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 import sys
@@ -75,23 +77,72 @@ def load_dicom_image(dicom_path: str) -> Optional[Image.Image]:
         return None
 
 
-def load_images_for_analysis(paths: List[str]) -> List[Image.Image]:
+def _load_image_from_bytes(data: bytes, filename_hint: str = "imagem") -> Optional[Image.Image]:
+    """Carrega PIL Image a partir de bytes (GridFS ou buffer)."""
+    try:
+        ext = os.path.splitext(filename_hint)[1].lower()
+        dicom_ext = {".dcm", ".dicom"}
+        raster_ext = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
+        buf = io.BytesIO(data)
+        if ext in dicom_ext:
+            try:
+                import numpy as np
+                import pydicom
+                from pydicom.pixel_data_handlers.util import apply_voi_lut
+                dcm = pydicom.dcmread(buf)
+                arr = dcm.pixel_array
+                try:
+                    data_arr = apply_voi_lut(arr, dcm)
+                except Exception:
+                    data_arr = np.asarray(arr, dtype=np.float64)
+                data_arr = data_arr - data_arr.min()
+                data_arr = data_arr / (data_arr.max() or 1)
+                data_arr = (data_arr * 255).astype("uint8")
+                img = Image.fromarray(data_arr)
+            except Exception:
+                return None
+        else:
+            img = Image.open(buf).copy()
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        return img
+    except Exception as e:
+        _safe_print(f"Erro ao carregar imagem de bytes ({filename_hint}): {e}")
+        return None
+
+
+def load_images_for_analysis(refs: List[str]) -> List[Image.Image]:
     """
-    Carrega imagens de uma lista de caminhos (JPG, PNG, DICOM, etc.)
-    para envio à IA. Retorna lista de PIL.Image em RGB.
+    Carrega imagens de uma lista de referências.
+    Cada ref pode ser: ID do GridFS (24 hex) ou path no filesystem (legado).
+    Retorna lista de PIL.Image em RGB.
     """
     images: List[Image.Image] = []
     raster_ext = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
     dicom_ext = {".dcm", ".dicom"}
 
-    for path in paths:
-        p = path
-        if not os.path.isabs(p):
-            p = os.path.join(_PROJECT_ROOT, p)
-        if not os.path.exists(p):
+    for ref in refs:
+        ref = (ref or "").strip()
+        if not ref:
             continue
-        ext = os.path.splitext(p)[1].lower()
         try:
+            # GridFS: ref é ObjectId (24 hex)
+            from database.image_storage import is_gridfs_ref, get_image_bytes_and_filename
+            if is_gridfs_ref(ref):
+                result = get_image_bytes_and_filename(ref)
+                if result:
+                    data, filename = result
+                    img = _load_image_from_bytes(data, filename)
+                    if img is not None:
+                        images.append(img)
+                continue
+            # Legacy: path no filesystem
+            p = ref
+            if not os.path.isabs(p):
+                p = os.path.join(_PROJECT_ROOT, p)
+            if not os.path.exists(p):
+                continue
+            ext = os.path.splitext(p)[1].lower()
             if ext in dicom_ext:
                 img = load_dicom_image(p)
                 if img is not None:
@@ -107,7 +158,7 @@ def load_images_for_analysis(paths: List[str]) -> List[Image.Image]:
                     img = img.convert("RGB")
                 images.append(img)
         except Exception as e:
-            _safe_print(f"Erro ao carregar {p}: {e}")
+            _safe_print(f"Erro ao carregar {ref}: {e}")
 
     return images
 

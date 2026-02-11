@@ -18,20 +18,24 @@ import zipfile
 import base64
 
 
-def _path_to_data_url(path: str) -> str | None:
-    """Carrega imagem do path e retorna data URL base64. Evita st.image() que usa
-    armazenamento efêmero e causa MediaFileStorageError em produção (reruns/load balancer)."""
+def _ref_to_data_url_and_filename(ref: str) -> tuple[str | None, str]:
+    """
+    Carrega imagem por ref (GridFS id ou path) e retorna (data_url, filename).
+    Evita st.image() que usa armazenamento efêmero em produção.
+    """
+    from database.image_storage import get_filename
     from ai.analyzer import load_images_for_analysis
     try:
-        loaded = load_images_for_analysis([path])
+        loaded = load_images_for_analysis([ref])
         if not loaded:
-            return None
+            return (None, get_filename(ref))
         buf = BytesIO()
         loaded[0].save(buf, format="PNG")
         buf.seek(0)
-        return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
+        data_url = f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
+        return (data_url, get_filename(ref))
     except Exception:
-        return None
+        return (None, get_filename(ref))
 
 # IMPORTANTE: st.set_page_config deve vir PRIMEIRO
 st.set_page_config(
@@ -514,11 +518,10 @@ if page == "Exames":
                         n_cols_img = 5
                         for start in range(0, len(imagens_paths), n_cols_img):
                             cols = st.columns(n_cols_img)
-                            for k, path in enumerate(imagens_paths[start : start + n_cols_img]):
+                            for k, ref in enumerate(imagens_paths[start : start + n_cols_img]):
                                 if k < len(cols):
                                     with cols[k]:
-                                        nome = os.path.basename(path)
-                                        data_url = _path_to_data_url(path)
+                                        data_url, nome = _ref_to_data_url_and_filename(ref)
                                         if data_url:
                                             nome_disp = nome[:40] + ("..." if len(nome) > 40 else "")
                                             st.markdown(
@@ -527,7 +530,7 @@ if page == "Exames":
                                                 unsafe_allow_html=True,
                                             )
                                         else:
-                                            st.caption(nome)
+                                            st.caption(nome or str(ref)[:20])
             else:
                 st.subheader("📋 Dados completos da requisição")
                 # Resolver nome da clínica e do veterinário (req ou usuário da requisição)
@@ -698,7 +701,7 @@ if page == "Exames":
                                     value=st.session_state[sel_key][idx],
                                     key=f"{sel_key}_{idx}",
                                 )
-                                data_url = _path_to_data_url(path)
+                                data_url, _ = _ref_to_data_url_and_filename(path)
                                 if data_url:
                                     st.markdown(
                                         f'<img src="{data_url}" style="width:100%;max-height:180px;object-fit:contain;border-radius:4px;">',
@@ -720,16 +723,15 @@ if page == "Exames":
                             st.session_state[f"_cmd_sel_none_{req['id']}"] = True
                             st.rerun()
                     with col_dl:
+                        from database.image_storage import get_image_bytes_and_filename
                         buf_zip = io.BytesIO()
                         with zipfile.ZipFile(buf_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for i, path in enumerate(imagens_paths):
-                                nome = os.path.basename(path)
-                                arcname = f"{i + 1}_{nome}"
-                                try:
-                                    with open(path, "rb") as f:
-                                        zf.writestr(arcname, f.read())
-                                except Exception:
-                                    pass
+                            for i, ref in enumerate(imagens_paths):
+                                result = get_image_bytes_and_filename(ref)
+                                if result:
+                                    data, nome = result
+                                    arcname = f"{i + 1}_{nome}"
+                                    zf.writestr(arcname, data)
                         buf_zip.seek(0)
                         zip_bytes = buf_zip.getvalue()
                         if zip_bytes:
@@ -1070,17 +1072,18 @@ if page == "Exames":
 
                             # Preparar todas as imagens para o grid
                             from ai.analyzer import load_images_for_analysis
+                            from database.image_storage import get_filename
                             import base64
                             from io import BytesIO
 
                             # Preparar dados das imagens e converter para base64
                             images_data = []
-                            for i, path in enumerate(imagens_paths):
-                                nome = os.path.basename(path)
+                            for i, ref in enumerate(imagens_paths):
+                                nome = get_filename(ref)
                                 preview = None
 
                                 try:
-                                    loaded = load_images_for_analysis([path])
+                                    loaded = load_images_for_analysis([ref])
                                     preview = loaded[0] if loaded else None
                                 except Exception:
                                     pass
@@ -1094,7 +1097,7 @@ if page == "Exames":
                                     img_data_url = f"data:image/png;base64,{img_base64}"
 
                                 images_data.append({
-                                    'path': path,
+                                    'path': ref,
                                     'nome': nome,
                                     'preview': preview,
                                     'data_url': img_data_url,
@@ -1252,18 +1255,17 @@ if page == "Exames":
                             """, unsafe_allow_html=True)
 
                             # Baixar todas as imagens em um único ZIP
+                            from database.image_storage import get_image_bytes_and_filename
                             buf = io.BytesIO()
                             added = 0
                             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                                for i, path in enumerate(imagens_paths):
-                                    nome = os.path.basename(path)
-                                    arcname = f"{i + 1}_{nome}"
-                                    try:
-                                        with open(path, "rb") as f:
-                                            zf.writestr(arcname, f.read())
+                                for i, ref in enumerate(imagens_paths):
+                                    result = get_image_bytes_and_filename(ref)
+                                    if result:
+                                        data, nome = result
+                                        arcname = f"{i + 1}_{nome}"
+                                        zf.writestr(arcname, data)
                                         added += 1
-                                    except Exception:
-                                        pass
                             buf.seek(0)
                             zip_bytes = buf.getvalue()
                             if added > 0 and zip_bytes:
@@ -1610,18 +1612,15 @@ elif page == "Nova Requisição":
                 st.error("Selecione ao menos uma imagem do exame.")
             else:
                 admin_id = st.session_state.get("user_id")
-                from config import UPLOADS_DIR
-                user_images_dir = os.path.join(UPLOADS_DIR, admin_id)
-                os.makedirs(user_images_dir, exist_ok=True)
-                imagens_paths = []
+                from database.image_storage import save_image
+                imagens_refs = []
                 for f in uploaded_files:
-                    fp = os.path.abspath(os.path.join(user_images_dir, f.name))
                     try:
-                        with open(fp, "wb") as out:
-                            out.write(f.getbuffer())
-                        imagens_paths.append(fp)
+                        data = f.getbuffer().tobytes()
+                        image_id = save_image(data, f.name, metadata={"admin_id": admin_id})
+                        imagens_refs.append(image_id)
                     except Exception as e:
-                        log.exception("Erro ao salvar arquivo admin %s em %s: %s", f.name, fp, e)
+                        log.exception("Erro ao salvar imagem admin no GridFS %s: %s", f.name, e)
                         raise
 
                 data_exame_dt = combine_date_local(data_exame) if data_exame else now()
@@ -1629,7 +1628,7 @@ elif page == "Nova Requisição":
                 try:
                     req_id = requisicao_model.create(
                         user_id=admin_id,
-                        imagens=imagens_paths,
+                        imagens=imagens_refs,
                         paciente=_upper(paciente),
                         tutor=_upper(tutor),
                         clinica=clinica_nome,

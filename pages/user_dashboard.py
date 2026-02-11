@@ -1002,18 +1002,15 @@ elif page == "Nova Requisição":
             elif not uploaded_files:
                 st.error("Selecione ao menos uma imagem do exame.")
             else:
-                from config import UPLOADS_DIR
-                user_images_dir = os.path.join(UPLOADS_DIR, user_id)
-                os.makedirs(user_images_dir, exist_ok=True)
-                imagens_paths = []
+                from database.image_storage import save_image
+                imagens_refs = []
                 for f in uploaded_files:
-                    fp = os.path.abspath(os.path.join(user_images_dir, f.name))
                     try:
-                        with open(fp, "wb") as out:
-                            out.write(f.getbuffer())
-                        imagens_paths.append(fp)
+                        data = f.getbuffer().tobytes()
+                        image_id = save_image(data, f.name, metadata={"user_id": user_id})
+                        imagens_refs.append(image_id)
                     except Exception as e:
-                        log.exception("Erro ao salvar arquivo %s em %s: %s", f.name, fp, e)
+                        log.exception("Erro ao salvar imagem no GridFS %s: %s", f.name, e)
                         raise
 
                 from utils.timezone import combine_date_local
@@ -1021,7 +1018,7 @@ elif page == "Nova Requisição":
 
                 try:
                     req_id = requisicao_model.create(
-                        user_id=user_id, imagens=imagens_paths,
+                        user_id=user_id, imagens=imagens_refs,
                         paciente=_upper(paciente), tutor=_upper(tutor), clinica=clinica, tipo_exame=tipo_exame,
                         observacoes=_upper(historico), especie=especie, idade=idade, raca=_upper(raca), sexo=sexo,
                         medico_veterinario_solicitante=medico_vet, regiao_estudo=_upper(regiao),
