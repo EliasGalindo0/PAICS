@@ -13,7 +13,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o restante do código do Paics
+# Copia o restante do código (logo explícito para garantir em produção)
+COPY logo/ logo/
 COPY . .
 
 # Entrypoint: seed do banco (admin + clínica) e depois inicia o Streamlit

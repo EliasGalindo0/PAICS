@@ -106,10 +106,10 @@ Se usar **MongoDB Atlas** (em vez do MongoDB do Railway):
 2. No serviço da aplicação PAICS, em **Variables**:
    - **MONGO_URI** = Referência → serviço MongoDB → **MONGO_URL**
 3. Use `MONGO_URL` privado (não `MONGO_PUBLIC_URL`) para evitar egress fees.
-4. **Uploads persistentes** (imagens das requisições):
-   - Em **Volumes**, crie um volume e monte em `/data`.
+4. **Uploads persistentes** (imagens das requisições) — **obrigatório** para ver imagens em produção:
+   - Em **Volumes**, crie um volume e monte em `/data` (caminho exato).
    - Em **Variables**, adicione: **UPLOADS_DIR** = `/data/uploads`
-   - Com isso, os uploads persistem entre deploys.
+   - Sem o Volume em `/data`, as imagens somem a cada redeploy e o logo pode falhar.
 5. Faça redeploy.
 
 ---

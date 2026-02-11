@@ -30,6 +30,9 @@ STREAMLIT_TEMP_DIR = os.getenv("STREAMLIT_TEMP_DIR", "temp_laudos")
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.getenv("UPLOADS_DIR") or os.path.join(_PROJECT_ROOT, "uploads")
 
+# Logo (asset estático; em Docker/Railway fica em /app/logo/)
+LOGO_PATH = os.path.join(_PROJECT_ROOT, "logo", "PAICS.jpeg")
+
 # PDF Processing
 PDF_ZOOM_FACTOR = float(os.getenv("PDF_ZOOM_FACTOR", "2.0"))
 

@@ -5,12 +5,15 @@ import os
 import streamlit as st
 from PIL import Image
 
+try:
+    from config import LOGO_PATH
+except ImportError:
+    LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logo", "PAICS.jpeg")
+
 
 def get_logo_path() -> str:
-    """Retorna o caminho do arquivo de logo"""
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    logo_path = os.path.join(project_root, "logo", "PAICS.jpeg")
-    return logo_path
+    """Retorna o caminho do arquivo de logo (usa config para consistência em produção)"""
+    return LOGO_PATH
 
 
 def display_logo(width: int = 200, use_column_width: bool = False) -> None:
