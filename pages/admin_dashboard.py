@@ -1,7 +1,10 @@
 """
 Dashboard do Administrador
 """
+import logging
 from utils.theme import apply_custom_theme
+
+log = logging.getLogger("paics.upload")
 import time
 from auth.auth_utils import verify_and_refresh_session
 import streamlit as st
@@ -1579,6 +1582,12 @@ elif page == "Nova Requisição":
         )
         if uploaded_files:
             st.caption(f"✅ {len(uploaded_files)} arquivo(s) anexado(s).")
+            try:
+                sizes = [len(f.getbuffer()) for f in uploaded_files]
+                log.info("Upload admin recebido: %d arquivo(s) | nomes=%s | tamanhos_bytes=%s",
+                         len(uploaded_files), [f.name for f in uploaded_files], sizes)
+            except Exception as e:
+                log.warning("Erro ao obter info dos arquivos (admin): %s", e)
 
         def _upper(s):
             return (s or "").strip().upper() if isinstance(s, str) else s
@@ -1611,13 +1620,23 @@ elif page == "Nova Requisição":
                 admin_id = st.session_state.get("user_id")
                 from config import UPLOADS_DIR
                 user_images_dir = os.path.join(UPLOADS_DIR, admin_id)
+                log.info("Salvando upload admin: admin_id=%s dir=%s n_arquivos=%d",
+                         admin_id, user_images_dir, len(uploaded_files))
                 os.makedirs(user_images_dir, exist_ok=True)
                 imagens_paths = []
-                for f in uploaded_files:
+                for i, f in enumerate(uploaded_files):
                     fp = os.path.abspath(os.path.join(user_images_dir, f.name))
-                    with open(fp, "wb") as out:
-                        out.write(f.getbuffer())
-                    imagens_paths.append(fp)
+                    try:
+                        data = f.getbuffer()
+                        log.info("Arquivo admin %d/%d: nome=%s tamanho=%d bytes destino=%s",
+                                 i + 1, len(uploaded_files), f.name, len(data), fp)
+                        with open(fp, "wb") as out:
+                            out.write(data)
+                        imagens_paths.append(fp)
+                        log.info("Arquivo admin salvo ok: %s", fp)
+                    except Exception as e:
+                        log.exception("Erro ao salvar arquivo admin %s em %s: %s", f.name, fp, e)
+                        raise
 
                 data_exame_dt = combine_date_local(data_exame) if data_exame else now()
 
@@ -1657,6 +1676,7 @@ elif page == "Nova Requisição":
                         "admin_upload_counter", 0) + 1
                     st.rerun()
                 except Exception as e:
+                    log.exception("Erro ao criar requisição admin após upload: %s", e)
                     st.error(f"Erro ao criar requisição: {str(e)}")
                     import traceback as _tb
                     _tb.print_exc()

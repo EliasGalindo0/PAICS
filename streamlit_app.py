@@ -2,10 +2,19 @@
 PAICS - Aplicação Streamlit para Análise de Imagens Veterinárias com IA
 Sistema completo com autenticação, dashboards e banco de dados vetorial.
 """
+import logging
 
 from auth.auth_utils import verify_and_refresh_session
 import streamlit as st
 from dotenv import load_dotenv
+
+# Configurar logging para capturar erros de upload em produção (Railway logs)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
+)
 
 # --- Carregar variáveis de ambiente do arquivo .env ---
 load_dotenv()

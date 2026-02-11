@@ -13,4 +13,8 @@ if [ -z "$SKIP_SEED" ] || [ "$SKIP_SEED" = "0" ] || [ "$SKIP_SEED" = "false" ]; 
 fi
 
 # Iniciar a aplicação (substitui o shell pelo streamlit)
-exec streamlit run streamlit_app.py --server.port="${PORT:-8501}" --server.address=0.0.0.0
+exec streamlit run streamlit_app.py \
+  --server.port="${PORT:-8501}" \
+  --server.address=0.0.0.0 \
+  --server.enableCORS=false \
+  --server.enableXsrfProtection=false

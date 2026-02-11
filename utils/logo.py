@@ -1,9 +1,12 @@
 """
-Utilitário para exibir o logo do sistema
+Utilitário para exibir o logo do sistema.
+Usa data URL (base64) para evitar st.image() → armazenamento efêmero do Streamlit,
+que falha com múltiplas réplicas / load balancer (MediaFileStorageError).
 """
+import base64
 import os
 import streamlit as st
-from PIL import Image
+from io import BytesIO
 
 try:
     from config import LOGO_PATH
@@ -16,42 +19,49 @@ def get_logo_path() -> str:
     return LOGO_PATH
 
 
+def _logo_to_data_url() -> str | None:
+    """Carrega o logo e retorna data URL base64, ou None se falhar."""
+    try:
+        from PIL import Image
+        logo_path = get_logo_path()
+        if not os.path.exists(logo_path):
+            return None
+        img = Image.open(logo_path)
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode()
+        return f"data:image/png;base64,{b64}"
+    except Exception:
+        return None
+
+
 def display_logo(width: int = 200, use_column_width: bool = False) -> None:
     """
-    Exibe o logo do sistema
-
-    Args:
-        width: Largura do logo em pixels (se use_column_width=False)
-        use_column_width: Se True, usa a largura da coluna
+    Exibe o logo do sistema (via data URL para funcionar com múltiplas réplicas).
     """
-    logo_path = get_logo_path()
-
-    if os.path.exists(logo_path):
-        try:
-            logo_image = Image.open(logo_path)
-            if use_column_width:
-                st.image(logo_image, use_container_width=True)
-            else:
-                st.image(logo_image, width=width)
-        except Exception as e:
-            st.warning(f"Erro ao carregar logo: {str(e)}")
+    data_url = _logo_to_data_url()
+    if data_url:
+        style = "width:100%;max-width:100%;" if use_column_width else f"width:{width}px;max-width:{width}px;"
+        st.markdown(
+            f'<img src="{data_url}" style="{style}height:auto;display:block;" alt="PAICS">',
+            unsafe_allow_html=True,
+        )
     else:
-        # Fallback: exibir apenas o nome se o logo não existir
         st.markdown("### 🐾 PAICS")
 
 
 def display_logo_centered(width: int = 200) -> None:
-    """Exibe o logo centralizado"""
-    logo_path = get_logo_path()
-
-    if os.path.exists(logo_path):
-        try:
-            logo_image = Image.open(logo_path)
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.image(logo_image, width=width)
-        except Exception as e:
-            st.warning(f"Erro ao carregar logo: {str(e)}")
+    """Exibe o logo centralizado (via data URL para funcionar com múltiplas réplicas)."""
+    data_url = _logo_to_data_url()
+    if data_url:
+        st.markdown(
+            f'<div style="display:flex;justify-content:center;margin-bottom:1rem;">'
+            f'<img src="{data_url}" style="width:{width}px;max-width:{width}px;height:auto;" alt="PAICS">'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
     else:
-        # Fallback
         st.markdown("### 🐾 PAICS")
