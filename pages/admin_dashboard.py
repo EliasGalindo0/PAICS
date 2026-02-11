@@ -16,6 +16,22 @@ import io
 import zipfile
 import base64
 
+
+def _path_to_data_url(path: str) -> str | None:
+    """Carrega imagem do path e retorna data URL base64. Evita st.image() que usa
+    armazenamento efêmero e causa MediaFileStorageError em produção (reruns/load balancer)."""
+    from ai.analyzer import load_images_for_analysis
+    try:
+        loaded = load_images_for_analysis([path])
+        if not loaded:
+            return None
+        buf = BytesIO()
+        loaded[0].save(buf, format="PNG")
+        buf.seek(0)
+        return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
+    except Exception:
+        return None
+
 # IMPORTANTE: st.set_page_config deve vir PRIMEIRO
 st.set_page_config(
     page_title="Dashboard Admin - PAICS",
@@ -493,7 +509,6 @@ if page == "Exames":
                 # Galeria rápida (expander)
                 if n_imgs:
                     with st.expander("🖼️ Ver imagens", expanded=False):
-                        from ai.analyzer import load_images_for_analysis
                         imagens_paths = req.get("imagens") or []
                         n_cols_img = 5
                         for start in range(0, len(imagens_paths), n_cols_img):
@@ -502,13 +517,14 @@ if page == "Exames":
                                 if k < len(cols):
                                     with cols[k]:
                                         nome = os.path.basename(path)
-                                        try:
-                                            loaded = load_images_for_analysis([path])
-                                            prev = loaded[0] if loaded else None
-                                        except Exception:
-                                            prev = None
-                                        if prev is not None:
-                                            st.image(prev, use_container_width=True, caption=nome)
+                                        data_url = _path_to_data_url(path)
+                                        if data_url:
+                                            nome_disp = nome[:40] + ("..." if len(nome) > 40 else "")
+                                            st.markdown(
+                                                f'<img src="{data_url}" style="width:100%;max-height:200px;object-fit:contain;border-radius:4px;">'
+                                                f'<div style="text-align:center;font-size:0.8rem;color:#666;">{nome_disp}</div>',
+                                                unsafe_allow_html=True,
+                                            )
                                         else:
                                             st.caption(nome)
             else:
@@ -669,7 +685,6 @@ if page == "Exames":
                     st.rerun()
                 st.divider()
                 with st.expander("🖼️ Imagens para o laudo (desmarque as que NÃO devem ir para a IA)", expanded=True):
-                    from ai.analyzer import load_images_for_analysis
                     n_cols = 5
                     for start in range(0, len(imagens_paths), n_cols):
                         row = st.columns(n_cols)
@@ -682,13 +697,12 @@ if page == "Exames":
                                     value=st.session_state[sel_key][idx],
                                     key=f"{sel_key}_{idx}",
                                 )
-                                try:
-                                    loaded = load_images_for_analysis([path])
-                                    prev = loaded[0] if loaded else None
-                                except Exception:
-                                    prev = None
-                                if prev is not None:
-                                    st.image(prev, use_container_width=True)
+                                data_url = _path_to_data_url(path)
+                                if data_url:
+                                    st.markdown(
+                                        f'<img src="{data_url}" style="width:100%;max-height:180px;object-fit:contain;border-radius:4px;">',
+                                        unsafe_allow_html=True,
+                                    )
                     # Sincronizar lista com valores atuais dos checkboxes
                     st.session_state[sel_key] = [st.session_state.get(
                         f"{sel_key}_{i}", True) for i in range(len(imagens_paths))]
