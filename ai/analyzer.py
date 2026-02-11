@@ -238,10 +238,13 @@ CRITICAL:
             return result if result else text
 
         except Exception as e:
-            return (
+            from utils.observability import log_api_error
+            log_api_error("Gemini.generate_diagnosis", e, context="laudo principal")
+            err_msg = (
                 "[ERRO NA IA: Não foi possível gerar o laudo automático. "
                 f"Detalhe: {str(e)}]"
             )
+            return err_msg
 
     def generate_diagnosis_with_corrections(
         self,
@@ -293,6 +296,8 @@ Generate a new report that fixes the errors indicated by the specialist. Keep th
                 text = text[match.start():]
             return re.sub(r"\n{3,}", "\n\n", text).strip() or text
         except Exception as e:
+            from utils.observability import log_api_error
+            log_api_error("Gemini.generate_diagnosis_with_corrections", e, context="laudo com correções")
             return (
                 "[ERRO NA IA: Não foi possível gerar o laudo. "
                 f"Detalhe: {str(e)}]"

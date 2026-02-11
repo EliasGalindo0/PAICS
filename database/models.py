@@ -362,6 +362,11 @@ class Requisicao(BaseModel):
         """Atualiza a requisição e registra no histórico de edições (para auditoria)."""
         doc = self.collection.find_one({"_id": ObjectId(req_id)})
         if not doc:
+            try:
+                from utils.observability import log_db_error
+                log_db_error("requisicao.update_with_history", Exception("documento não encontrado"), req_id)
+            except Exception:
+                pass
             return False
         doc = self.to_dict(doc)
         alteracoes = {}
@@ -373,6 +378,12 @@ class Requisicao(BaseModel):
                 alteracoes[key] = {"de": antigo, "para": novo_val}
         if not alteracoes:
             return False
+        try:
+            from utils.observability import log_state_update
+            for k, v in alteracoes.items():
+                log_state_update("requisicao", f"{k}:{req_id}", str(v.get("de", ""))[:80], str(v.get("para", ""))[:80])
+        except Exception:
+            pass
         updates["updated_at"] = now()
         historico_entry = {
             "alteracoes": alteracoes,
@@ -472,11 +483,26 @@ class Laudo(BaseModel):
 
     def update(self, laudo_id: str, updates: Dict) -> bool:
         """Atualiza um laudo"""
+        if "texto" in updates:
+            try:
+                from utils.observability import log_state_update
+                doc = self.collection.find_one({"_id": ObjectId(laudo_id)})
+                old_texto = (doc.get("texto") or "")[:200] if doc else ""
+                new_texto = (updates.get("texto") or "")[:200]
+                log_state_update("laudo", f"texto:{laudo_id}", old_texto, new_texto)
+            except Exception:
+                pass
         updates["updated_at"] = now()
         result = self.collection.update_one(
             {"_id": ObjectId(laudo_id)},
             {"$set": updates}
         )
+        if result.matched_count == 0 and "texto" in updates:
+            try:
+                from utils.observability import log_db_error
+                log_db_error("laudo.update", Exception("documento não encontrado"), laudo_id)
+            except Exception:
+                pass
         return result.modified_count > 0
 
     def validate(self, laudo_id: str, admin_id: str) -> bool:

@@ -122,12 +122,15 @@ def login_user(email_or_username: str, password: str, remember_me: bool = False)
             user = user_model.find_by_username(email_or_username)
 
         if not user:
+            logger.warning("Login falhou: usuário não encontrado | identifier=%s", email_or_username)
             return False, "E-mail/usuário ou senha incorretos", {}
 
         if not user.get('ativo', True):
+            logger.warning("Login falhou: usuário inativo | user_id=%s", user.get('id'))
             return False, "Usuário inativo. Entre em contato com o administrador.", {}
 
         if not verify_password(password, user['password_hash']):
+            logger.warning("Login falhou: senha incorreta | user_id=%s", user.get('id'))
             return False, "E-mail/usuário ou senha incorretos", {}
 
         # Gerar tokens JWT

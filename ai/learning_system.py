@@ -80,6 +80,12 @@ class LearningSystem:
             # Usar apenas API externa
             texto_gerado = self.external_analyzer.generate_diagnosis(images, paciente_info)
 
+        if texto_gerado and "[ERRO NA IA" in texto_gerado:
+            try:
+                from utils.observability import log_api_response_unexpected
+                log_api_response_unexpected("Gemini", texto_gerado[:300], context="learning_system")
+            except Exception:
+                pass
         return texto_gerado, metadata
 
     def _find_similar_cases(self, paciente_info: Dict[str, str]) -> Optional[Dict]:

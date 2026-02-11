@@ -1,9 +1,12 @@
 """
 Conexão com MongoDB
 """
+import logging
 import os
 
 from pymongo import MongoClient
+
+_log = logging.getLogger("paics.db")
 from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
 import certifi
@@ -77,6 +80,7 @@ def get_client():
             _client = MongoClient(MONGO_URI, **kwargs)
             _client.server_info()
         except ConnectionFailure as e:
+            _log.error("MongoDB conexão falhou: %s", e, exc_info=True)
             err_str = str(e).lower()
             # Se falhou com TLS e não está em modo relaxado, sugerir MONGO_TLS_RELAXED
             if _is_atlas_uri(MONGO_URI) and ("tlsv1_alert_internal_error" in err_str or "ssl handshake" in err_str):

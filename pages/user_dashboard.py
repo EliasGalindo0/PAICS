@@ -3,6 +3,7 @@ Dashboard do Usuário
 """
 import time
 from utils.theme import apply_custom_theme
+from utils.observability import log
 import streamlit as st
 from datetime import datetime
 from auth.auth_utils import get_current_user, clear_session, logout_user, verify_and_refresh_session
@@ -1007,9 +1008,13 @@ elif page == "Nova Requisição":
                 imagens_paths = []
                 for f in uploaded_files:
                     fp = os.path.abspath(os.path.join(user_images_dir, f.name))
-                    with open(fp, "wb") as out:
-                        out.write(f.getbuffer())
-                    imagens_paths.append(fp)
+                    try:
+                        with open(fp, "wb") as out:
+                            out.write(f.getbuffer())
+                        imagens_paths.append(fp)
+                    except Exception as e:
+                        log.exception("Erro ao salvar arquivo %s em %s: %s", f.name, fp, e)
+                        raise
 
                 from utils.timezone import combine_date_local
                 data_exame_dt = combine_date_local(data_exame) if data_exame else now()
@@ -1054,9 +1059,8 @@ elif page == "Nova Requisição":
                     """, unsafe_allow_html=True)
                     st.rerun()
                 except Exception as e:
+                    log.exception("Erro ao criar requisição após upload: %s", e)
                     st.error(f"Erro ao criar requisição: {str(e)}")
-                    import traceback as _tb
-                    _tb.print_exc()
 
 elif page == "Minhas Faturas":
     st.header("💰 Minhas Faturas")

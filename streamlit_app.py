@@ -8,13 +8,16 @@ from auth.auth_utils import verify_and_refresh_session
 import streamlit as st
 from dotenv import load_dotenv
 
-# Configurar logging para capturar erros de upload em produção (Railway logs)
+# Configurar logging focado em erros (Railway/produção)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     force=True,
 )
+# Habilitar WARNING+ para loggers do app (evitar INFO de libs)
+for _n in ("paics", "paics.api", "paics.db", "paics.state", "auth.auth_utils"):
+    logging.getLogger(_n).setLevel(logging.INFO)
 
 # --- Carregar variáveis de ambiente do arquivo .env ---
 load_dotenv()
