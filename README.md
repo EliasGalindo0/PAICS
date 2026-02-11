@@ -94,7 +94,11 @@ Acesse `http://localhost:8501`.
 2. No serviço da aplicação PAICS, em **Variables**:
    - **MONGO_URI** = Referência → serviço MongoDB → **MONGO_URL**
 3. Use `MONGO_URL` privado (não `MONGO_PUBLIC_URL`) para evitar egress fees.
-4. Faça redeploy.
+4. **Uploads persistentes** (imagens das requisições):
+   - Em **Volumes**, crie um volume e monte em `/data`.
+   - Em **Variables**, adicione: **UPLOADS_DIR** = `/data/uploads`
+   - Com isso, os uploads persistem entre deploys.
+5. Faça redeploy.
 
 ---
 

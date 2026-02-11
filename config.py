@@ -24,6 +24,12 @@ GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "laudos_com_ia")
 STREAMLIT_TEMP_DIR = os.getenv("STREAMLIT_TEMP_DIR", "temp_laudos")
 
+# Pasta de uploads (imagens das requisições).
+# Em produção com Railway: use um Volume montado em /data e defina UPLOADS_DIR=/data/uploads
+# para que os uploads persistam entre deploys.
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+UPLOADS_DIR = os.getenv("UPLOADS_DIR") or os.path.join(_PROJECT_ROOT, "uploads")
+
 # PDF Processing
 PDF_ZOOM_FACTOR = float(os.getenv("PDF_ZOOM_FACTOR", "2.0"))
 

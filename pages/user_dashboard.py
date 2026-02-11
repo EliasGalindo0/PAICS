@@ -530,16 +530,20 @@ if page == "Meus Laudos":
                                 _d = _ob.get("created_at", "")
                                 if _d and hasattr(_d, "strftime"):
                                     _d = _d.strftime("%d/%m/%Y %H:%M")
-                                st.text_area("", value=_t, height=60, disabled=True, key=f"obs_read_{req['id']}_{_i}")
+                                st.text_area("", value=_t, height=60, disabled=True,
+                                             key=f"obs_read_{req['id']}_{_i}")
                                 st.caption(f"Enviado em {_d}")
                     with st.expander("➕ Adicionar observação", expanded=False):
-                        st.caption("Enviou algo errado ou lembrou de algum detalhe? Adicione aqui. O administrador verá e poderá considerar no laudo. Você não pode alterar os dados já enviados.")
+                        st.caption(
+                            "Enviou algo errado ou lembrou de algum detalhe? Adicione aqui. O administrador verá e poderá considerar no laudo. Você não pode alterar os dados já enviados.")
                         with st.form(f"form_obs_{req['id']}"):
-                            _novo_obs = st.text_area("Sua observação", height=100, key=f"obs_new_{req['id']}", placeholder="Ex.: A idade correta é 8 anos. O tutor informou que o animal manca da pata direita.")
+                            _novo_obs = st.text_area(
+                                "Sua observação", height=100, key=f"obs_new_{req['id']}", placeholder="Ex.: A idade correta é 8 anos. O tutor informou que o animal manca da pata direita.")
                             if st.form_submit_button("Enviar observação"):
                                 if _novo_obs and _novo_obs.strip():
                                     if requisicao_model.add_observacao_usuario(req["id"], _novo_obs.strip(), _user_id or ""):
-                                        st.success("Observação enviada. O administrador poderá considerá-la no laudo.")
+                                        st.success(
+                                            "Observação enviada. O administrador poderá considerá-la no laudo.")
                                         st.rerun()
                                 else:
                                     st.warning("Digite uma observação.")
@@ -581,12 +585,15 @@ if page == "Meus Laudos":
                                 _d = _ob.get("created_at", "")
                                 if _d and hasattr(_d, "strftime"):
                                     _d = _d.strftime("%d/%m/%Y %H:%M")
-                                st.text_area("", value=_t, height=60, disabled=True, key=f"obs_li_{req['id']}_{_j}")
+                                st.text_area("", value=_t, height=60, disabled=True,
+                                             key=f"obs_li_{req['id']}_{_j}")
                                 st.caption(f"Enviado em {_d}")
                     with st.expander("➕ Adicionar observação", expanded=False):
-                        st.caption("Enviou algo errado ou lembrou de algum detalhe? Adicione aqui. O administrador verá e poderá considerar no laudo.")
+                        st.caption(
+                            "Enviou algo errado ou lembrou de algum detalhe? Adicione aqui. O administrador verá e poderá considerar no laudo.")
                         with st.form(f"form_obs_li_{req['id']}"):
-                            _novo_obs_li = st.text_area("Sua observação", height=100, key=f"obs_new_li_{req['id']}", placeholder="Ex.: Idade correta 8 anos; animal manca da pata direita.")
+                            _novo_obs_li = st.text_area(
+                                "Sua observação", height=100, key=f"obs_new_li_{req['id']}", placeholder="Ex.: Idade correta 8 anos; animal manca da pata direita.")
                             if st.form_submit_button("Enviar observação"):
                                 if _novo_obs_li and _novo_obs_li.strip():
                                     if requisicao_model.add_observacao_usuario(req["id"], _novo_obs_li.strip(), _user_id or ""):
@@ -856,19 +863,24 @@ elif page == "Nova Requisição":
                 vet_escolhido = veterinarios_list[0]
             if len(veterinarios_list) == 0:
                 medico_vet = "Equipe " + clinica if clinica else ""
-                st.caption(f"**Solicitante:** {clinica}. Nenhum veterinário cadastrado nesta clínica; adicione na administração.")
+                st.caption(
+                    f"**Solicitante:** {clinica}. Nenhum veterinário cadastrado nesta clínica; adicione na administração.")
             elif len(veterinarios_list) == 1:
                 medico_vet = (vet_escolhido or {}).get("nome", "") or ("Equipe " + clinica)
                 veterinario_id_selecionado = (vet_escolhido or {}).get("id", "")
                 st.session_state["nr_veterinario_id"] = veterinario_id_selecionado or ""
-                st.text_input("Veterinário requisitante", value=medico_vet, disabled=True, key="nr_vet_display_1", label_visibility="collapsed")
-                st.caption(f"**Solicitante:** {clinica} – único veterinário cadastrado (preenchido automaticamente).")
+                st.text_input("Veterinário requisitante", value=medico_vet,
+                              disabled=True, key="nr_vet_display_1", label_visibility="collapsed")
+                st.caption(
+                    f"**Solicitante:** {clinica} – único veterinário cadastrado (preenchido automaticamente).")
             else:
-                options_nomes = [v.get("nome", "") or f"Veterinário {i+1}" for i, v in enumerate(veterinarios_list)]
+                options_nomes = [
+                    v.get("nome", "") or f"Veterinário {i + 1}" for i, v in enumerate(veterinarios_list)]
                 idx_sel = 0
                 if vet_escolhido:
                     try:
-                        idx_sel = next(i for i, v in enumerate(veterinarios_list) if v.get("id") == vet_escolhido.get("id"))
+                        idx_sel = next(i for i, v in enumerate(veterinarios_list)
+                                       if v.get("id") == vet_escolhido.get("id"))
                     except StopIteration:
                         idx_sel = 0
                 sel_idx = st.selectbox(
@@ -883,9 +895,11 @@ elif page == "Nova Requisição":
                 medico_vet = (vet_escolhido or {}).get("nome", "")
                 veterinario_id_selecionado = (vet_escolhido or {}).get("id", "")
                 st.session_state["nr_veterinario_id"] = veterinario_id_selecionado or ""
-                st.caption(f"**Solicitante:** {clinica} · {len(veterinarios_list)} veterinário(s) cadastrado(s).")
+                st.caption(
+                    f"**Solicitante:** {clinica} · {len(veterinarios_list)} veterinário(s) cadastrado(s).")
         else:
-            st.caption("Seu usuário não está vinculado a uma clínica; informe o nome do veterinário abaixo.")
+            st.caption(
+                "Seu usuário não está vinculado a uma clínica; informe o nome do veterinário abaixo.")
             medico_vet = st.text_input(
                 "Nome do veterinário requisitante",
                 value=st.session_state.get("nr_medico_vet", ""),
@@ -921,22 +935,21 @@ elif page == "Nova Requisição":
         def _upper(s):
             return (s or "").strip().upper() if isinstance(s, str) else s
 
-        # Botões: Limpar, Salvar rascunho, Exportar PDF, Enviar
-        c1, c2, c3, c4 = st.columns(4)
+        # Botão enviar requisição
+        enviar = st.button("📤 Enviar Requisição", type="primary",
+                           key="nr_enviar", use_container_width=True)
+
+        # Botões: Limpar, Salvar rascunho, Enviar
+        c1, c2 = st.columns(2)
         with c1:
-            limpar = st.button("🗑️ Limpar formulário", key="nr_limpar", use_container_width=True)
-        with c2:
             salvar_rascunho = st.button(
                 "💾 Salvar rascunho", key="nr_rascunho", use_container_width=True)
-        with c3:
-            exportar_pdf = st.button("📄 Exportar PDF", key="nr_exportar", use_container_width=True)
-        with c4:
-            enviar = st.button("📤 Enviar Requisição", type="primary",
-                               key="nr_enviar", use_container_width=True)
+        with c2:
+            limpar = st.button("🗑️ Limpar formulário", key="nr_limpar", use_container_width=True)
 
         if limpar:
             for k in list(st.session_state.keys()):
-                if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_exportar", "nr_enviar"):
+                if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_enviar"):
                     del st.session_state[k]
             # Resetar com data local (GMT-3)
             st.session_state["nr_data"] = now().date()
@@ -983,42 +996,14 @@ elif page == "Nova Requisição":
                     st.success("Rascunho salvo.")
                 st.rerun()
 
-        if exportar_pdf:
-            form_data = {
-                "paciente": paciente, "tutor": tutor, "clinica": clinica, "tipo_exame": tipo_exame,
-                "especie": especie, "idade": idade, "raca": raca, "sexo": sexo,
-                "medico_veterinario_solicitante": medico_vet, "regiao_estudo": regiao,
-                "suspeita_clinica": suspeita, "plantao": plantao, "historico_clinico": historico,
-                "data": data_exame,
-            }
-            paths = []
-            if uploaded_files:
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                tmp_dir = os.path.join(project_root, "uploads", "_tmp_export")
-                os.makedirs(tmp_dir, exist_ok=True)
-                for idx, uf in enumerate(uploaded_files):
-                    base, suf = os.path.splitext(uf.name)
-                    p = os.path.join(tmp_dir, f"{idx}_{base}{suf}")
-                    with open(p, "wb") as fp:
-                        fp.write(uf.getbuffer())
-                    paths.append(p)
-            try:
-                from utils.laudo_pdf import gerar_pdf_preview
-                pdf_bytes = gerar_pdf_preview(form_data, paths)
-                st.download_button("📥 Baixar PDF", data=pdf_bytes, file_name=f"laudo_preview_{paciente or 'exame'}.pdf".replace(
-                    " ", "_"), mime="application/pdf", key="nr_dl_pdf")
-            except Exception as e:
-                st.error(f"Erro ao gerar PDF: {e}")
-
         if enviar:
             if not paciente or not tutor:
                 st.error("Preencha o Nome do Paciente e o Nome do Tutor(a).")
             elif not uploaded_files:
                 st.error("Selecione ao menos uma imagem do exame.")
             else:
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                uploads_base = os.path.join(project_root, "uploads")
-                user_images_dir = os.path.join(uploads_base, user_id)
+                from config import UPLOADS_DIR
+                user_images_dir = os.path.join(UPLOADS_DIR, user_id)
                 os.makedirs(user_images_dir, exist_ok=True)
                 imagens_paths = []
                 for f in uploaded_files:

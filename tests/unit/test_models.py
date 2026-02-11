@@ -53,6 +53,74 @@ def test_clinica_create_and_find(clean_db):
 
 
 @pytest.mark.unit
+def test_clinica_create_com_endereco_completo(clean_db):
+    """Clinica.create com numero, bairro, cidade, cep persiste corretamente."""
+    from database.models import Clinica
+
+    model = Clinica(clean_db.clinicas)
+    cid = model.create(
+        nome="Clínica Endereço Completo",
+        cnpj="",
+        endereco="Av. Paulista",
+        numero="1000",
+        bairro="Bela Vista",
+        cidade="São Paulo",
+        cep="01310-100",
+        telefone="11999999999",
+        email="contato@clinica.local",
+    )
+    assert cid
+    c = model.find_by_id(cid)
+    assert c["nome"] == "Clínica Endereço Completo"
+    assert c["endereco"] == "Av. Paulista"
+    assert c["numero"] == "1000"
+    assert c["bairro"] == "Bela Vista"
+    assert c["cidade"] == "São Paulo"
+    assert c["cep"] == "01310-100"
+
+
+@pytest.mark.unit
+def test_clinica_create_sem_novos_campos_retrocompativel(clean_db):
+    """Clinica.create sem numero/bairro/cidade/cep (retrocompatibilidade)."""
+    from database.models import Clinica
+
+    model = Clinica(clean_db.clinicas)
+    cid = model.create(
+        nome="Clínica Antiga",
+        endereco="Rua X",
+        telefone="11999999999",
+    )
+    assert cid
+    c = model.find_by_id(cid)
+    assert c["endereco"] == "Rua X"
+    assert c.get("numero", "") in ("", None)
+    assert c.get("bairro", "") in ("", None)
+    assert c.get("cidade", "") in ("", None)
+    assert c.get("cep", "") in ("", None)
+
+
+@pytest.mark.unit
+def test_clinica_update_com_novos_campos(clean_db):
+    """Clinica.update com numero, bairro, cidade, cep."""
+    from database.models import Clinica
+
+    model = Clinica(clean_db.clinicas)
+    cid = model.create(nome="Clínica", endereco="Rua X")
+    ok = model.update(cid, {
+        "numero": "50",
+        "bairro": "Centro",
+        "cidade": "Campinas",
+        "cep": "13010-100",
+    })
+    assert ok
+    c = model.find_by_id(cid)
+    assert c["numero"] == "50"
+    assert c["bairro"] == "Centro"
+    assert c["cidade"] == "Campinas"
+    assert c["cep"] == "13010-100"
+
+
+@pytest.mark.unit
 def test_clinica_delete(clean_db):
     """Clinica.delete deve remover a clínica e limpar referências."""
     from auth.auth_utils import hash_password

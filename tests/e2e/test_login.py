@@ -26,7 +26,7 @@ def test_login_admin_success(e2e_page):
     # Aguardar redirect e verificar dashboard admin
     page.wait_for_timeout(4000)
     content = page.content()
-    assert "Requisições" in content or "Clínicas" in content or "Usuários" in content or "admin" in content.lower()
+    assert "Requisições" in content or "Clínicas e Usuários" in content or "admin" in content.lower()
 
 
 @pytest.mark.e2e
