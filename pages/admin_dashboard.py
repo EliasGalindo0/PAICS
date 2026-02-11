@@ -250,14 +250,14 @@ with st.sidebar:
     # Navegação
     page = st.radio(
         "Navegação",
-        ["Requisições", "Laudos", "Clínicas e Usuários",
-            "Financeiro", "Knowledge Base", "Aprendizado"],
+        ["Exames", "Nova Requisição", "Clínicas e Usuários",
+            "Financeiro", "Knowledge Base e Aprendizado"],
         key="admin_nav"
     )
 
 # Página principal baseada na seleção
-if page == "Requisições":
-    st.header("📋 Requisições de Laudos")
+if page == "Exames":
+    st.header("📋 Exames")
 
     # Filtros e Data
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
@@ -306,65 +306,65 @@ if page == "Requisições":
         st.write("")
 
     # Buscar todas as requisições do período para as estatísticas
-    requisicoes_periodo = requisicao_model.find_all(start_date=start_dt, end_date=end_dt)
+    exames_periodo = requisicao_model.find_all(start_date=start_dt, end_date=end_dt)
 
     # Estatísticas rápidas baseadas no período filtrado
-    pendentes_req = [r for r in requisicoes_periodo if r.get('status') == 'pendente']
-    em_analise = [r for r in requisicoes_periodo if r.get('status') == 'em_analise']
-    liberadas_req = [r for r in requisicoes_periodo if r.get('status') == 'liberado']
+    pendentes_exames = [e for e in exames_periodo if e.get('status') == 'pendente']
+    em_analise = [e for e in exames_periodo if e.get('status') == 'em_analise']
+    liberadas_exames = [e for e in exames_periodo if e.get('status') == 'liberado']
 
     col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
     with col_stat1:
-        st.metric("📋 Total no Período", len(requisicoes_periodo))
+        st.metric("📋 Total no Período", len(exames_periodo))
     with col_stat2:
-        st.metric("⏳ Pendentes", len(pendentes_req), delta=len(pendentes_req)
+        st.metric("⏳ Pendentes", len(pendentes_exames), delta=len(pendentes_exames)
                   if not show_all_dates else None, delta_color="off")
     with col_stat3:
         st.metric("🔍 Em Análise", len(em_analise))
     with col_stat4:
-        st.metric("✅ Liberadas", len(liberadas_req))
+        st.metric("✅ Liberadas", len(liberadas_exames))
 
     st.divider()
 
     # Buscar requisições com filtro de status e data
     status = None if status_filter == "Todos" else status_filter
-    requisicoes = requisicao_model.find_all(status=status, start_date=start_dt, end_date=end_dt)
+    exames = requisicao_model.find_all(status=status, start_date=start_dt, end_date=end_dt)
 
     # Aplicar filtros adicionais
     if tipo_filter != "Todos":
-        requisicoes = [r for r in requisicoes if r.get('tipo_exame') == tipo_filter]
+        exames = [e for e in exames if e.get('tipo_exame') == tipo_filter]
 
     if search_term:
         search_lower = search_term.lower().strip()
 
         def _searchable(r):
             parts = [
-                r.get("paciente", ""), r.get("tutor", ""), r.get("clinica", ""),
-                r.get("especie", ""), r.get("raca", ""), r.get(
+                e.get("paciente", ""), e.get("tutor", ""), e.get("clinica", ""),
+                e.get("especie", ""), e.get("raca", ""), e.get(
                     "medico_veterinario_solicitante", ""),
-                r.get("regiao_estudo", ""), r.get("suspeita_clinica", ""),
-                r.get("historico_clinico", "") or r.get("observacoes", ""),
+                e.get("regiao_estudo", ""), e.get("suspeita_clinica", ""),
+                e.get("historico_clinico", "") or e.get("observacoes", ""),
             ]
             return " ".join(p or "" for p in parts).lower()
-        requisicoes = [r for r in requisicoes if search_lower in _searchable(r)]
+        exames = [e for e in exames if search_lower in _searchable(e)]
 
     # Ordenação
     _status_order = {"pendente": 0, "em_analise": 1, "validado": 2, "liberado": 3, "rejeitado": 4}
 
-    def _sort_key(r):
-        dt = r.get("created_at") or datetime.min
+    def _sort_key(e):
+        dt = e.get("created_at") or datetime.min
         if "Status" in sort_by:
-            return (_status_order.get(r.get("status"), 99), dt)
+            return (_status_order.get(e.get("status"), 99), dt)
         if "Clínica" in sort_by:
-            return (r.get("clinica", "").lower(), dt)
+            return (e.get("clinica", "").lower(), dt)
         if "Paciente" in sort_by:
-            return (r.get("paciente", "").lower(), dt)
+            return (e.get("paciente", "").lower(), dt)
         return (dt,)
 
     reverse = "mais recente" in sort_by
-    requisicoes = sorted(requisicoes, key=_sort_key, reverse=reverse)
+    exames = sorted(exames, key=_sort_key, reverse=reverse)
 
-    st.metric("Total de Requisições", len(requisicoes))
+    st.metric("Total de Exames", len(exames))
 
     # Mensagem de sucesso após geração em massa (persiste após rerun)
     bulk_msg = st.session_state.pop("bulk_gen_success", None)
@@ -374,7 +374,7 @@ if page == "Requisições":
             f" {err} erro(s)." if err else "") + " A lista abaixo foi atualizada.")
 
     # Requisições sem laudo (elegíveis para geração em massa)
-    reqs_sem_laudo = [r for r in requisicoes if not laudo_model.find_by_requisicao(
+    reqs_sem_laudo = [e for e in exames if not laudo_model.find_by_requisicao(
         r["id"]) and (r.get("imagens") or [])]
     n_sem_laudo = len(reqs_sem_laudo)
     if n_sem_laudo > 0:
@@ -455,10 +455,10 @@ if page == "Requisições":
         return str(x)[:16]
 
     # Lista de requisições (todas no período/filtro; role para ver todas)
-    if requisicoes:
+    if exames:
         st.caption(
-            f"Mostrando **{len(requisicoes)}** requisição(ões). Role a página para ver todas e clique para expandir cada uma.")
-    for req in requisicoes:
+            f"Mostrando **{len(exames)}** exame(s). Role a página para ver todas e clique para expandir cada uma.")
+    for req in exames:
         status_req = req.get("status", "N/A")
         status_label = {"pendente": "⏳ Pendente", "em_analise": "🔍 Em análise", "validado": "✅ Validado",
                         "liberado": "✅ Concluída", "rejeitado": "❌ Rejeitada"}.get(status_req, status_req)
@@ -1426,194 +1426,227 @@ if page == "Requisições":
                         </script>
                     """, unsafe_allow_html=True)
 
-elif page == "Laudos":
-    st.header("📝 Gerenciamento de Laudos")
+elif page == "Nova Requisição":
+    st.header("📤 Nova Requisição de Laudo (Administrador)")
+    st.caption("Cadastre requisições em nome de clínicas. Selecione a clínica e o veterinário responsável. O campo criado_por registrará seu ID para auditoria.")
 
-    # Estatísticas rápidas
-    todos_laudos = laudo_model.find_all()
-    pendentes = [l for l in todos_laudos if l.get('status') == 'pendente']
-    validados = [l for l in todos_laudos if l.get('status') == 'validado']
-    liberados = [l for l in todos_laudos if l.get('status') == 'liberado']
+    st.markdown("""
+        <style>
+        .nr-block { background: #f8faf8; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; border-left: 4px solid #2e7d32; }
+        .main .block-container input[type="text"], .main .block-container textarea { text-transform: uppercase; }
+        </style>
+    """, unsafe_allow_html=True)
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📋 Total", len(todos_laudos))
-    with col2:
-        st.metric("⏳ Pendentes", len(pendentes), delta=len(pendentes), delta_color="off")
-    with col3:
-        st.metric("✅ Validados", len(validados))
-    with col4:
-        st.metric("📤 Liberados", len(liberados))
+    if st.session_state.get('admin_requisicao_enviada') and st.session_state.get('admin_requisicao_info'):
+        info = st.session_state['admin_requisicao_info']
+        st.success(f"✅ **Requisição enviada com sucesso!** ID: {info.get('req_id', '')[:8]}")
+        st.info("📝 A requisição entrou na fila para geração do laudo via IA.")
+        if st.button("✖️ Fechar", key="admin_close_requisicao_feedback"):
+            del st.session_state['admin_requisicao_enviada']
+            del st.session_state['admin_requisicao_info']
+            st.rerun()
+        st.markdown("---")
 
-    # Nota: A edição de laudos agora é feita inline na aba "Requisições"
-    # Esta aba serve como lista de consulta/visualização
-    st.info("💡 **Dica:** A edição de laudos é feita diretamente na aba **Requisições**. Use esta aba para consulta e visualização.")
-    st.divider()
+    # Prefixo para keys do formulário admin (evitar conflito com user dashboard)
+    pref = "admin_nr_"
+    for k in [f"{pref}paciente", f"{pref}tutor", f"{pref}especie", f"{pref}idade", f"{pref}raca",
+              f"{pref}sexo", f"{pref}medico_vet", f"{pref}regiao", f"{pref}suspeita", f"{pref}historico",
+              f"{pref}tipo_exame", f"{pref}veterinario_id", f"{pref}clinica_id"]:
+        if k not in st.session_state:
+            st.session_state[k] = ""
+    if f"{pref}plantao" not in st.session_state or st.session_state[f"{pref}plantao"] == "":
+        st.session_state[f"{pref}plantao"] = "Não"
+    if f"{pref}sexo" not in st.session_state or st.session_state[f"{pref}sexo"] == "":
+        st.session_state[f"{pref}sexo"] = "Macho"
+    if f"{pref}data" not in st.session_state:
+        st.session_state[f"{pref}data"] = now().date()
 
-    # Lista de laudos (apenas pendentes por padrão)
-    st.subheader("📋 Lista de Laudos")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        status_filter = st.selectbox(
-            "Filtrar por Status",
-            ["Apenas pendentes", "Todos", "pendente", "validado", "liberado", "rejeitado"],
-            index=0,
-            help="Por padrão, apenas laudos pendentes de revisão."
+    clinicas_list = clinica_model.get_all(apenas_ativas=True)
+    if not clinicas_list:
+        st.warning(
+            "⚠️ Nenhuma clínica ativa cadastrada. Cadastre clínicas em **Clínicas e Usuários** antes de criar requisições.")
+    else:
+        st.subheader("📋 Clínica e Veterinário")
+        clinica_opcoes = [
+            (c.get("nome", "") or f"Clínica {c.get('id', '')[:8]}", c.get("id", "")) for c in clinicas_list]
+        idx_clinica = 0
+        clinica_id_sel = st.session_state.get(f"{pref}clinica_id", "")
+        if clinica_id_sel:
+            for i, (_, cid) in enumerate(clinica_opcoes):
+                if cid == clinica_id_sel:
+                    idx_clinica = i
+                    break
+        clinica_nome_sel = st.selectbox(
+            "🏥 Clínica *",
+            range(len(clinica_opcoes)),
+            index=idx_clinica,
+            format_func=lambda i: clinica_opcoes[i][0] if i < len(clinica_opcoes) else "",
+            key=f"{pref}clinica_select",
         )
-    with col2:
-        search_term = st.text_input("🔍 Buscar (paciente/tutor/clínica)")
-    with col3:
-        sort_laudos = st.selectbox(
-            "Ordenar", ["Mais recentes", "Mais antigos", "Paciente", "Clínica"], key="laudo_sort")
+        clinica_id_sel = clinica_opcoes[clinica_nome_sel][1]
+        clinica_nome = clinica_opcoes[clinica_nome_sel][0]
+        st.session_state[f"{pref}clinica_id"] = clinica_id_sel
 
-    if status_filter == "Apenas pendentes":
-        status = "pendente"
-    elif status_filter == "Todos":
-        status = None
-    else:
-        status = status_filter
-    laudos = laudo_model.find_all(status=status)
+        veterinarios_list = veterinario_model.find_by_clinica(
+            clinica_id_sel, apenas_ativos=True) if clinica_id_sel else []
+        medico_vet = ""
+        veterinario_id_selecionado = ""
+        if len(veterinarios_list) == 0:
+            medico_vet = "Equipe " + clinica_nome if clinica_nome else ""
+            st.caption(
+                f"**Solicitante:** {clinica_nome}. Nenhum veterinário cadastrado nesta clínica.")
+        elif len(veterinarios_list) == 1:
+            vet_um = veterinarios_list[0]
+            medico_vet = (vet_um or {}).get("nome", "") or ("Equipe " + clinica_nome)
+            veterinario_id_selecionado = (vet_um or {}).get("id", "")
+            st.text_input("Veterinário requisitante", value=medico_vet, disabled=True,
+                          key=f"{pref}vet_display", label_visibility="collapsed")
+            st.caption(f"**Solicitante:** {clinica_nome} – único veterinário cadastrado.")
+        else:
+            options_vet = [
+                v.get("nome", "") or f"Veterinário {i + 1}" for i, v in enumerate(veterinarios_list)]
+            nr_vet_id = st.session_state.get(f"{pref}veterinario_id", "")
+            idx_v = 0
+            if nr_vet_id:
+                for i, v in enumerate(veterinarios_list):
+                    if v.get("id") == nr_vet_id:
+                        idx_v = i
+                        break
+            sel_v = st.selectbox(
+                "👨‍⚕️ Veterinário requisitante",
+                range(len(veterinarios_list)),
+                index=idx_v,
+                format_func=lambda i: options_vet[i] if i < len(options_vet) else "",
+                key=f"{pref}vet_select",
+            )
+            vet_escolhido = veterinarios_list[sel_v]
+            medico_vet = (vet_escolhido or {}).get("nome", "")
+            veterinario_id_selecionado = (vet_escolhido or {}).get("id", "")
+            st.session_state[f"{pref}veterinario_id"] = veterinario_id_selecionado or ""
+            st.caption(
+                f"**Solicitante:** {clinica_nome} · {len(veterinarios_list)} veterinário(s).")
 
-    # Aplicar busca (paciente, tutor, clínica)
-    if search_term:
-        search_lower = search_term.lower().strip()
-        laudos_filtrados = []
-        for laudo in laudos:
-            req = requisicao_model.find_by_id(laudo.get("requisicao_id"))
-            if req:
-                if (search_lower in (req.get("paciente") or "").lower()
-                        or search_lower in (req.get("tutor") or "").lower()
-                        or search_lower in (req.get("clinica") or "").lower()):
-                    laudos_filtrados.append(laudo)
-        laudos = laudos_filtrados
+        st.subheader("📋 Dados do Paciente e da Requisição")
+        paciente = st.text_input(
+            "🐾 Nome do Paciente *", value=st.session_state.get(f"{pref}paciente", ""), key=f"{pref}paciente")
+        ESPECIES_OPCOES = ["", "Canino", "Felino", "Ave", "Silvestre"]
+        idx_especie = 0
+        if st.session_state.get(f"{pref}especie", "") in ESPECIES_OPCOES:
+            idx_especie = ESPECIES_OPCOES.index(st.session_state.get(f"{pref}especie", ""))
+        especie = st.selectbox("🐕 Espécie", options=ESPECIES_OPCOES, index=idx_especie, key=f"{pref}especie",
+                               format_func=lambda x: "Selecione a espécie" if x == "" else x)
+        idade = st.text_input("📅 Idade", value=st.session_state.get(
+            f"{pref}idade", ""), key=f"{pref}idade")
+        raca = st.text_input("🏷️ Raça", value=st.session_state.get(
+            f"{pref}raca", ""), key=f"{pref}raca")
+        sexo = st.radio("Sexo", ["Macho", "Fêmea"], index=0 if st.session_state.get(f"{pref}sexo") == "Macho" else 1,
+                        key=f"{pref}sexo", horizontal=True)
+        tutor = st.text_input("👤 Nome do Tutor(a) *",
+                              value=st.session_state.get(f"{pref}tutor", ""), key=f"{pref}tutor")
+        regiao = st.text_input("📍 Região de estudo", value=st.session_state.get(
+            f"{pref}regiao", ""), key=f"{pref}regiao")
+        suspeita = st.text_input("🔬 Suspeita clínica", value=st.session_state.get(
+            f"{pref}suspeita", ""), key=f"{pref}suspeita")
+        plantao = st.radio("Plantão", ["Sim", "Não"], index=1,
+                           key=f"{pref}plantao", horizontal=True)
+        tipo_exame = st.selectbox(
+            "📋 Tipo de exame *", ["raio-x", "ultrassom"], index=0, key=f"{pref}tipo_exame")
+        data_exame = st.date_input("📆 Data", value=st.session_state.get(
+            f"{pref}data", now().date()), key=f"{pref}data")
+        historico = st.text_area("📝 Histórico Clínico", value=st.session_state.get(f"{pref}historico", ""),
+                                 height=120, key=f"{pref}historico")
 
-    # Ordenar
-    def _laudo_sort_key(l):
-        req = requisicao_model.find_by_id(l.get("requisicao_id"))
-        dt = l.get("created_at") or datetime.min
-        if "Mais antigos" in sort_laudos:
-            return (dt,)
-        if "Paciente" in sort_laudos:
-            return ((req or {}).get("paciente", "").lower(), dt)
-        if "Clínica" in sort_laudos:
-            return ((req or {}).get("clinica", "").lower(), dt)
-        return (dt,)
+        st.subheader("📷 Imagens do Exame")
+        upload_key_admin = f"{pref}upload_{st.session_state.get('admin_upload_counter', 0)}"
+        uploaded_files = st.file_uploader(
+            "Selecione as imagens (JPG, PNG, DICOM). Múltiplas imagens permitidas.",
+            type=["jpg", "jpeg", "png", "dcm", "dicom", "bmp", "tiff"],
+            accept_multiple_files=True,
+            key=upload_key_admin,
+        )
+        if uploaded_files:
+            st.caption(f"✅ {len(uploaded_files)} arquivo(s) anexado(s).")
 
-    reverse = "Mais recentes" in sort_laudos
-    laudos_ordenados = sorted(laudos, key=_laudo_sort_key, reverse=reverse)
+        def _upper(s):
+            return (s or "").strip().upper() if isinstance(s, str) else s
 
-    if status_filter == "Apenas pendentes":
-        st.info("📋 **Mostrando apenas laudos pendentes** de revisão. Altere o filtro para ver validados ou liberados.")
+        enviar = st.button("📤 Enviar Requisição", type="primary",
+                           key=f"{pref}enviar", use_container_width=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            limpar = st.button("🗑️ Limpar formulário",
+                               key=f"{pref}limpar", use_container_width=True)
 
-    if not laudos_ordenados:
-        st.info("Nenhum laudo encontrado com os filtros selecionados.")
-    else:
-        for laudo in laudos_ordenados:
-            req = requisicao_model.find_by_id(laudo.get('requisicao_id'))
+        if limpar:
+            for k in list(st.session_state.keys()):
+                if k.startswith(pref) and k not in (f"{pref}enviar", f"{pref}limpar"):
+                    del st.session_state[k]
+            st.session_state[f"{pref}data"] = now().date()
+            st.session_state[f"{pref}plantao"] = "Não"
+            st.session_state[f"{pref}sexo"] = "Macho"
+            st.session_state[f"{pref}tipo_exame"] = "raio-x"
+            st.session_state["admin_upload_counter"] = st.session_state.get(
+                "admin_upload_counter", 0) + 1
+            st.rerun()
 
-            # Badge de status
-            status_badge = {
-                "pendente": "⏳ Pendente - Aguardando Revisão",
-                "validado": "✅ Validado",
-                "liberado": "📤 Liberado",
-                "rejeitado": "❌ Rejeitado"
-            }.get(laudo.get('status'), laudo.get('status'))
+        if enviar:
+            if not paciente or not tutor:
+                st.error("Preencha o Nome do Paciente e o Nome do Tutor(a).")
+            elif not uploaded_files:
+                st.error("Selecione ao menos uma imagem do exame.")
+            else:
+                admin_id = st.session_state.get("user_id")
+                from config import UPLOADS_DIR
+                user_images_dir = os.path.join(UPLOADS_DIR, admin_id)
+                os.makedirs(user_images_dir, exist_ok=True)
+                imagens_paths = []
+                for f in uploaded_files:
+                    fp = os.path.abspath(os.path.join(user_images_dir, f.name))
+                    with open(fp, "wb") as out:
+                        out.write(f.getbuffer())
+                    imagens_paths.append(fp)
 
-            paciente_nome = req.get('paciente', 'N/A') if req else 'N/A'
+                data_exame_dt = combine_date_local(data_exame) if data_exame else now()
 
-            with st.expander(f"📄 {paciente_nome} - {status_badge} - #{laudo['id'][:8]}"):
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    if req:
-                        st.write(f"**Paciente:** {req.get('paciente', 'N/A')}")
-                        st.write(f"**Tutor:** {req.get('tutor', 'N/A')}")
-                        st.write(f"**Tipo de Exame:** {req.get('tipo_exame', 'N/A')}")
-
-                    # Buscar usuário
-                    if req:
-                        user = user_model.find_by_id(req.get('user_id'))
-                        if user:
-                            st.write(f"**Cliente:** {user.get('nome', user.get('username'))}")
-
-                with col2:
-                    st.write(f"**Status:** {status_badge}")
-                    st.write(f"**Criado em:** {_fmt_dt(laudo.get('created_at'))}")
-                    if laudo.get('validado_at'):
-                        st.write(f"**Validado em:** {_fmt_dt(laudo.get('validado_at'))}")
-                    if laudo.get('liberado_at'):
-                        st.write(f"**Liberado em:** {_fmt_dt(laudo.get('liberado_at'))}")
-
-                # Preview do laudo (renderizar markdown)
-                st.divider()
-                st.subheader("📝 Conteúdo do Laudo")
-                texto_preview = laudo.get('texto', '')[
-                    :500] + "..." if len(laudo.get('texto', '')) > 500 else laudo.get('texto', '')
-                st.markdown(texto_preview if texto_preview else "_Sem conteúdo._")
-
-                # Ações - redirecionar para Requisições para editar
-                col_btn1, col_btn2 = st.columns(2)
-
-                with col_btn1:
-                    if st.button("✏️ Editar na aba Requisições", key=f"edit_laudo_{laudo['id']}", use_container_width=True):
-                        st.info(
-                            "💡 **Vá para a aba 'Requisições' e clique em 'Gerar/Editar Laudo' na requisição correspondente para editar inline.**")
-                        st.rerun()
-
-                with col_btn2:
-                    if laudo.get('status') in ['pendente', 'validado']:
-                        if st.button("📤 Liberar", key=f"release_{laudo['id']}", use_container_width=True):
-                            # Liberar laudo (calcula rating automaticamente)
-                            laudo_model.release(laudo['id'], calcular_rating=True)
-                            if req:
-                                requisicao_model.update_status(req.get('id'), 'liberado')
-
-                            # Salvar dados de aprendizado
-                            try:
-                                from ai.learning_system import LearningSystem
-                                learning_system = LearningSystem()
-
-                                # Buscar contexto da requisição
-                                paciente_info = {
-                                    "especie": req.get("especie", "") if req else "",
-                                    "raca": req.get("raca", "") if req else "",
-                                    "idade": req.get("idade", "") if req else "",
-                                    "sexo": req.get("sexo", "") if req else "",
-                                    "historico_clinico": (req.get("historico_clinico", "") or req.get("observacoes", "")) if req else "",
-                                    "suspeita_clinica": req.get("suspeita_clinica", "") if req else "",
-                                    "regiao_estudo": req.get("regiao_estudo", "") if req else "",
-                                }
-
-                                # Recarregar laudo para pegar rating calculado
-                                laudo_atualizado = laudo_model.find_by_id(laudo['id'])
-                                rating = laudo_atualizado.get("rating", 3)
-
-                                # Buscar metadata se disponível
-                                metadata = {
-                                    "modelo_usado": laudo_atualizado.get("modelo_usado", "api_externa"),
-                                    "usado_api_externa": laudo_atualizado.get("usado_api_externa", True),
-                                    "similaridade_casos": laudo_atualizado.get("similaridade_casos")
-                                }
-
-                                # Salvar no sistema de aprendizado
-                                if req:
-                                    learning_system.save_learning_data(
-                                        laudo_id=laudo['id'],
-                                        requisicao_id=req.get('id'),
-                                        contexto=paciente_info,
-                                        texto_gerado=laudo_atualizado.get(
-                                            "texto_original_gerado", laudo_atualizado.get("texto_original", "")),
-                                        texto_final=laudo_atualizado.get("texto", ""),
-                                        rating=rating,
-                                        metadata=metadata
-                                    )
-                            except Exception as e:
-                                st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
-
-                            st.success("✅ Laudo liberado para o usuário!")
-                            st.balloons()
-                            st.rerun()
+                try:
+                    req_id = requisicao_model.create(
+                        user_id=admin_id,
+                        imagens=imagens_paths,
+                        paciente=_upper(paciente),
+                        tutor=_upper(tutor),
+                        clinica=clinica_nome,
+                        tipo_exame=tipo_exame,
+                        observacoes=_upper(historico),
+                        especie=especie,
+                        idade=idade,
+                        raca=_upper(raca),
+                        sexo=sexo,
+                        medico_veterinario_solicitante=medico_vet,
+                        regiao_estudo=_upper(regiao),
+                        suspeita_clinica=_upper(suspeita),
+                        plantao=plantao,
+                        historico_clinico=_upper(historico),
+                        data_exame=data_exame_dt,
+                        status="pendente",
+                        clinica_id=clinica_id_sel,
+                        veterinario_id=veterinario_id_selecionado or None,
+                    )
+                    st.session_state["admin_requisicao_enviada"] = True
+                    st.session_state["admin_requisicao_info"] = {
+                        "req_id": req_id, "paciente": paciente}
+                    for k in list(st.session_state.keys()):
+                        if k.startswith(pref) and k not in (f"{pref}enviar", f"{pref}limpar"):
+                            del st.session_state[k]
+                    st.session_state[f"{pref}data"] = now().date()
+                    st.session_state[f"{pref}plantao"] = "Não"
+                    st.session_state[f"{pref}sexo"] = "Macho"
+                    st.session_state["admin_upload_counter"] = st.session_state.get(
+                        "admin_upload_counter", 0) + 1
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao criar requisição: {str(e)}")
+                    import traceback as _tb
+                    _tb.print_exc()
 
 elif page == "Clínicas e Usuários":
     st.header("🏥 Clínicas e Usuários")
@@ -1806,7 +1839,8 @@ elif page == "Clínicas e Usuários":
 
         # Limpar formulário de clínica quando solicitado (antes de renderizar widgets)
         if st.session_state.pop("_clear_nova_clinica_form", False):
-            keys_to_clear = [k for k in list(st.session_state.keys()) if k.startswith("nova_clinica_")]
+            keys_to_clear = [k for k in list(st.session_state.keys())
+                             if k.startswith("nova_clinica_")]
             for k in keys_to_clear:
                 st.session_state.pop(k, None)
             st.rerun()
@@ -2118,7 +2152,8 @@ elif page == "Clínicas e Usuários":
 
         # 3. Administradores (apenas admins; clientes são gerenciados via clínicas acima)
         admins = [u for u in user_model.get_all(role="admin") if u.get('clinica_id') is None]
-        admins = [u for u in admins if u.get('ativo', True)] + [u for u in admins if not u.get('ativo', True)]
+        admins = [u for u in admins if u.get('ativo', True)] + \
+            [u for u in admins if not u.get('ativo', True)]
 
         if admins:
             st.subheader("👨‍⚕️ Administradores")
@@ -2430,288 +2465,288 @@ elif page == "Financeiro":
                                 st.success("Fatura cancelada")
                                 st.rerun()
 
-elif page == "Knowledge Base":
-    st.header("📚 Knowledge Base")
+elif page == "Knowledge Base e Aprendizado":
+    st.header("📚 Knowledge Base e Aprendizado")
 
-    st.info("Gerencie PDFs, prompts e orientações para o modelo local")
+    tab_kb, tab_aprend = st.tabs(
+        ["Conteúdo (PDFs, Prompts, Orientações)", "Sistema de Aprendizado"])
 
-    from knowledge_base.kb_manager import KnowledgeBaseManager
+    with tab_kb:
+        st.info("Gerencie PDFs, prompts e orientações para o modelo local")
 
-    kb_manager = KnowledgeBaseManager()
+        from knowledge_base.kb_manager import KnowledgeBaseManager
 
-    tab1, tab2, tab3 = st.tabs(["Adicionar Conteúdo", "Buscar", "Listar Tudo"])
+        kb_manager = KnowledgeBaseManager()
 
-    with tab1:
-        st.subheader("Adicionar Novo Conteúdo")
+        tab1, tab2, tab3 = st.tabs(["Adicionar Conteúdo", "Buscar", "Listar Tudo"])
 
-        tipo_conteudo = st.selectbox("Tipo de Conteúdo", ["PDF", "Prompt", "Orientação"])
+        with tab1:
+            st.subheader("Adicionar Novo Conteúdo")
 
-        if tipo_conteudo == "PDF":
-            uploaded_file = st.file_uploader("Selecionar PDF", type=['pdf'])
-            titulo = st.text_input("Título")
-            tags_input = st.text_input("Tags (separadas por vírgula)")
+            tipo_conteudo = st.selectbox("Tipo de Conteúdo", ["PDF", "Prompt", "Orientação"])
 
-            if st.button("📤 Adicionar PDF"):
-                if uploaded_file and titulo:
-                    try:
-                        # Salvar arquivo temporariamente
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-                            tmp_file.write(uploaded_file.getbuffer())
-                            tmp_path = tmp_file.name
+            if tipo_conteudo == "PDF":
+                uploaded_file = st.file_uploader("Selecionar PDF", type=['pdf'])
+                titulo = st.text_input("Título")
+                tags_input = st.text_input("Tags (separadas por vírgula)")
 
-                        tags = [t.strip() for t in tags_input.split(
-                            ',') if t.strip()] if tags_input else []
-                        kb_id = kb_manager.add_pdf(tmp_path, titulo, tags)
-                        st.success(f"✅ PDF adicionado com sucesso! ID: {kb_id[:8]}")
+                if st.button("📤 Adicionar PDF"):
+                    if uploaded_file and titulo:
+                        try:
+                            import tempfile
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                                tmp_file.write(uploaded_file.getbuffer())
+                                tmp_path = tmp_file.name
 
-                        # Limpar arquivo temporário
-                        os.unlink(tmp_path)
-                    except Exception as e:
-                        st.error(f"Erro ao adicionar PDF: {str(e)}")
+                            tags = [t.strip() for t in tags_input.split(
+                                ',') if t.strip()] if tags_input else []
+                            kb_id = kb_manager.add_pdf(tmp_path, titulo, tags)
+                            st.success(f"✅ PDF adicionado com sucesso! ID: {kb_id[:8]}")
 
-        elif tipo_conteudo == "Prompt":
-            titulo = st.text_input("Título")
-            conteudo = st.text_area("Conteúdo do Prompt", height=200)
-            tags_input = st.text_input("Tags (separadas por vírgula)")
+                            os.unlink(tmp_path)
+                        except Exception as e:
+                            st.error(f"Erro ao adicionar PDF: {str(e)}")
 
-            if st.button("📤 Adicionar Prompt"):
-                if titulo and conteudo:
-                    try:
-                        tags = [t.strip() for t in tags_input.split(
-                            ',') if t.strip()] if tags_input else []
-                        kb_id = kb_manager.add_prompt(titulo, conteudo, tags)
-                        st.success(f"✅ Prompt adicionado com sucesso! ID: {kb_id[:8]}")
-                    except Exception as e:
-                        st.error(f"Erro ao adicionar prompt: {str(e)}")
+            elif tipo_conteudo == "Prompt":
+                titulo = st.text_input("Título")
+                conteudo = st.text_area("Conteúdo do Prompt", height=200)
+                tags_input = st.text_input("Tags (separadas por vírgula)")
 
-        elif tipo_conteudo == "Orientação":
-            titulo = st.text_input("Título")
-            conteudo = st.text_area("Conteúdo da Orientação", height=200)
-            tags_input = st.text_input("Tags (separadas por vírgula)")
+                if st.button("📤 Adicionar Prompt"):
+                    if titulo and conteudo:
+                        try:
+                            tags = [t.strip() for t in tags_input.split(
+                                ',') if t.strip()] if tags_input else []
+                            kb_id = kb_manager.add_prompt(titulo, conteudo, tags)
+                            st.success(f"✅ Prompt adicionado com sucesso! ID: {kb_id[:8]}")
+                        except Exception as e:
+                            st.error(f"Erro ao adicionar prompt: {str(e)}")
 
-            if st.button("📤 Adicionar Orientação"):
-                if titulo and conteudo:
-                    try:
-                        tags = [t.strip() for t in tags_input.split(
-                            ',') if t.strip()] if tags_input else []
-                        kb_id = kb_manager.add_orientacao(titulo, conteudo, tags)
-                        st.success(f"✅ Orientação adicionada com sucesso! ID: {kb_id[:8]}")
-                    except Exception as e:
-                        st.error(f"Erro ao adicionar orientação: {str(e)}")
+            elif tipo_conteudo == "Orientação":
+                titulo = st.text_input("Título")
+                conteudo = st.text_area("Conteúdo da Orientação", height=200)
+                tags_input = st.text_input("Tags (separadas por vírgula)")
 
-    with tab2:
-        st.subheader("🔍 Buscar na Knowledge Base")
+                if st.button("📤 Adicionar Orientação"):
+                    if titulo and conteudo:
+                        try:
+                            tags = [t.strip() for t in tags_input.split(
+                                ',') if t.strip()] if tags_input else []
+                            kb_id = kb_manager.add_orientacao(titulo, conteudo, tags)
+                            st.success(f"✅ Orientação adicionada com sucesso! ID: {kb_id[:8]}")
+                        except Exception as e:
+                            st.error(f"Erro ao adicionar orientação: {str(e)}")
 
-        query = st.text_input("Digite sua busca")
-        n_results = st.slider("Número de resultados", 1, 20, 5)
+        with tab2:
+            st.subheader("🔍 Buscar na Knowledge Base")
 
-        if st.button("🔍 Buscar") and query:
-            try:
-                results = kb_manager.search(query, n_results)
+            query = st.text_input("Digite sua busca")
+            n_results = st.slider("Número de resultados", 1, 20, 5)
 
-                if results:
-                    st.success(f"Encontrados {len(results)} resultado(s)")
+            if st.button("🔍 Buscar") and query:
+                try:
+                    results = kb_manager.search(query, n_results)
 
-                    for idx, result in enumerate(results, 1):
-                        kb_item = result['kb_item']
-                        with st.expander(f"#{idx} - {kb_item.get('titulo')} (Relevância: {result['relevancia']:.2%})"):
-                            st.write(f"**Tipo:** {kb_item.get('tipo')}")
-                            st.write(f"**Tags:** {', '.join(kb_item.get('tags', []))}")
-                            st.write(f"**Relevância:** {result['relevancia']:.2%}")
-                            st.text_area("Conteúdo", value=kb_item.get('conteudo', '')
-                                         [:500] + "...", height=150, disabled=True)
-                else:
-                    st.info("Nenhum resultado encontrado.")
-            except Exception as e:
-                st.error(f"Erro na busca: {str(e)}")
+                    if results:
+                        st.success(f"Encontrados {len(results)} resultado(s)")
 
-    with tab3:
-        st.subheader("📋 Todos os Itens")
+                        for idx, result in enumerate(results, 1):
+                            kb_item = result['kb_item']
+                            with st.expander(f"#{idx} - {kb_item.get('titulo')} (Relevância: {result['relevancia']:.2%})"):
+                                st.write(f"**Tipo:** {kb_item.get('tipo')}")
+                                st.write(f"**Tags:** {', '.join(kb_item.get('tags', []))}")
+                                st.write(f"**Relevância:** {result['relevancia']:.2%}")
+                                st.text_area("Conteúdo", value=kb_item.get('conteudo', '')
+                                             [:500] + "...", height=150, disabled=True)
+                    else:
+                        st.info("Nenhum resultado encontrado.")
+                except Exception as e:
+                    st.error(f"Erro na busca: {str(e)}")
 
-        tipo_filter = st.selectbox("Filtrar por Tipo", ["Todos", "pdf", "prompt", "orientacao"])
+        with tab3:
+            st.subheader("📋 Todos os Itens")
 
-        tipo = None if tipo_filter == "Todos" else tipo_filter
-        items = kb_manager.get_all(tipo=tipo)
+            tipo_filter = st.selectbox("Filtrar por Tipo", ["Todos", "pdf", "prompt", "orientacao"])
 
-        st.metric("Total de Itens", len(items))
+            tipo = None if tipo_filter == "Todos" else tipo_filter
+            items = kb_manager.get_all(tipo=tipo)
 
-        for item in items:
-            with st.expander(f"📄 {item.get('titulo')} - {item.get('tipo')}"):
-                st.write(f"**Tipo:** {item.get('tipo')}")
-                st.write(f"**Tags:** {', '.join(item.get('tags', []))}")
-                st.write(f"**Criado em:** {item.get('created_at')}")
-                st.text_area("Conteúdo", value=item.get('conteudo', '')
-                             [:300] + "...", height=100, disabled=True)
+            st.metric("Total de Itens", len(items))
 
-elif page == "Aprendizado":
-    st.header("🧠 Sistema de Aprendizado Contínuo")
+            for item in items:
+                with st.expander(f"📄 {item.get('titulo')} - {item.get('tipo')}"):
+                    st.write(f"**Tipo:** {item.get('tipo')}")
+                    st.write(f"**Tags:** {', '.join(item.get('tags', []))}")
+                    st.write(f"**Criado em:** {item.get('created_at')}")
+                    st.text_area("Conteúdo", value=item.get('conteudo', '')
+                                 [:300] + "...", height=100, disabled=True)
 
-    try:
-        from ai.learning_system import LearningSystem
-        learning_system = LearningSystem()
+    with tab_aprend:
+        st.header("🧠 Sistema de Aprendizado Contínuo")
 
-        # Obter estatísticas
-        stats = learning_system.get_statistics()
+        try:
+            from ai.learning_system import LearningSystem
+            learning_system = LearningSystem()
 
-        st.info("""
-        **Sistema de Aprendizado Contínuo**
-        
-        Este sistema aprende com cada laudo processado:
-        - **Rating 5/5**: Laudo aprovado sem edições → usado como referência
-        - **Rating 3/5**: Laudo editado parcialmente → aprendizado moderado
-        - **Rating 1/5**: Laudo muito editado → caso complexo, requer API externa
-        
-        O sistema usa casos similares para decidir quando usar modelo local vs API externa.
-        """)
+            # Obter estatísticas
+            stats = learning_system.get_statistics()
 
-        # Métricas principais
-        col1, col2, col3, col4 = st.columns(4)
+            st.info("""
+            **Sistema de Aprendizado Contínuo**
 
-        with col1:
-            st.metric("📊 Total de Casos", stats.get("total_casos", 0))
+            Este sistema aprende com cada laudo processado:
+            - **Rating 5/5**: Laudo aprovado sem edições → usado como referência
+            - **Rating 3/5**: Laudo editado parcialmente → aprendizado moderado
+            - **Rating 1/5**: Laudo muito editado → caso complexo, requer API externa
 
-        with col2:
-            taxa_aprov = stats.get("taxa_aprovacao", 0)
-            st.metric("✅ Taxa de Aprovação", f"{taxa_aprov:.1f}%")
+            O sistema usa casos similares para decidir quando usar modelo local vs API externa.
+            """)
 
-        with col3:
-            economia = stats.get("economia_api", 0)
-            st.metric("💰 Economia API", f"{economia:.1f}%")
+            # Métricas principais
+            col1, col2, col3, col4 = st.columns(4)
 
-        with col4:
-            local_only = stats.get("local_only", 0)
-            st.metric("🏠 Modelo Local", local_only)
+            with col1:
+                st.metric("📊 Total de Casos", stats.get("total_casos", 0))
 
-        st.divider()
+            with col2:
+                taxa_aprov = stats.get("taxa_aprovacao", 0)
+                st.metric("✅ Taxa de Aprovação", f"{taxa_aprov:.1f}%")
 
-        # Distribuição de ratings
-        st.subheader("📈 Distribuição de Ratings")
-        col_r1, col_r2, col_r3 = st.columns(3)
+            with col3:
+                economia = stats.get("economia_api", 0)
+                st.metric("💰 Economia API", f"{economia:.1f}%")
 
-        with col_r1:
-            rating_5 = stats.get("rating_5", 0)
-            st.metric("⭐ Rating 5/5", rating_5, help="Laudos aprovados sem edições")
+            with col4:
+                local_only = stats.get("local_only", 0)
+                st.metric("🏠 Modelo Local", local_only)
 
-        with col_r2:
-            rating_3 = stats.get("rating_3", 0)
-            st.metric("⭐ Rating 3/5", rating_3, help="Laudos editados parcialmente")
+            st.divider()
 
-        with col_r3:
-            rating_1 = stats.get("rating_1", 0)
-            st.metric("⭐ Rating 1/5", rating_1, help="Laudos muito editados")
+            # Distribuição de ratings
+            st.subheader("📈 Distribuição de Ratings")
+            col_r1, col_r2, col_r3 = st.columns(3)
 
-        # Gráfico de distribuição
-        if stats.get("total_casos", 0) > 0:
-            try:
-                import pandas as pd
-                import plotly.express as px
+            with col_r1:
+                rating_5 = stats.get("rating_5", 0)
+                st.metric("⭐ Rating 5/5", rating_5, help="Laudos aprovados sem edições")
 
-                df_ratings = pd.DataFrame({
-                    "Rating": ["5/5", "3/5", "1/5"],
-                    "Quantidade": [rating_5, rating_3, rating_1]
-                })
+            with col_r2:
+                rating_3 = stats.get("rating_3", 0)
+                st.metric("⭐ Rating 3/5", rating_3, help="Laudos editados parcialmente")
 
-                fig = px.pie(
-                    df_ratings,
-                    values="Quantidade",
-                    names="Rating",
-                    title="Distribuição de Ratings",
-                    color="Rating",
-                    color_discrete_map={"5/5": "#2e7d32", "3/5": "#f57c00", "1/5": "#d32f2f"}
+            with col_r3:
+                rating_1 = stats.get("rating_1", 0)
+                st.metric("⭐ Rating 1/5", rating_1, help="Laudos muito editados")
+
+            # Gráfico de distribuição
+            if stats.get("total_casos", 0) > 0:
+                try:
+                    import pandas as pd
+                    import plotly.express as px
+
+                    df_ratings = pd.DataFrame({
+                        "Rating": ["5/5", "3/5", "1/5"],
+                        "Quantidade": [rating_5, rating_3, rating_1]
+                    })
+
+                    fig = px.pie(
+                        df_ratings,
+                        values="Quantidade",
+                        names="Rating",
+                        title="Distribuição de Ratings",
+                        color="Rating",
+                        color_discrete_map={"5/5": "#2e7d32", "3/5": "#f57c00", "1/5": "#d32f2f"}
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                except ImportError:
+                    st.warning("Biblioteca plotly não instalada. Instale com: pip install plotly")
+                except Exception as e:
+                    st.warning(f"Erro ao gerar gráfico: {str(e)}")
+
+            st.divider()
+
+            # Uso de modelos
+            st.subheader("🤖 Uso de Modelos")
+            col_m1, col_m2 = st.columns(2)
+
+            with col_m1:
+                st.metric("🏠 Apenas Local", stats.get("local_only", 0))
+
+            with col_m2:
+                st.metric("🌐 Com API Externa", stats.get("api_used", 0))
+
+            st.divider()
+
+            # Configurações do sistema
+            st.subheader("⚙️ Configurações do Sistema")
+
+            col_c1, col_c2, col_c3 = st.columns(3)
+
+            with col_c1:
+                threshold = st.number_input(
+                    "Threshold de Similaridade",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=learning_system.similarity_threshold,
+                    step=0.05,
+                    help="Similaridade mínima para usar apenas modelo local"
                 )
-                st.plotly_chart(fig, use_container_width=True)
-            except ImportError:
-                st.warning("Biblioteca plotly não instalada. Instale com: pip install plotly")
-            except Exception as e:
-                st.warning(f"Erro ao gerar gráfico: {str(e)}")
 
-        st.divider()
+            with col_c2:
+                min_rating = st.number_input(
+                    "Rating Mínimo para Local",
+                    min_value=1,
+                    max_value=5,
+                    value=learning_system.min_rating_for_local,
+                    step=1,
+                    help="Rating mínimo dos casos similares para usar modelo local"
+                )
 
-        # Uso de modelos
-        st.subheader("🤖 Uso de Modelos")
-        col_m1, col_m2 = st.columns(2)
+            with col_c3:
+                use_fallback = st.checkbox(
+                    "Usar Fallback para API Externa",
+                    value=learning_system.use_external_fallback,
+                    help="Se modelo local falhar, usar API externa automaticamente"
+                )
 
-        with col_m1:
-            st.metric("🏠 Apenas Local", stats.get("local_only", 0))
+            if st.button("💾 Salvar Configurações"):
+                st.success("Configurações salvas! (Reinicie o sistema para aplicar)")
 
-        with col_m2:
-            st.metric("🌐 Com API Externa", stats.get("api_used", 0))
+            st.divider()
 
-        st.divider()
+            # Últimos casos aprendidos
+            st.subheader("📚 Últimos Casos Aprendidos")
 
-        # Configurações do sistema
-        st.subheader("⚙️ Configurações do Sistema")
+            from database.models import LearningHistory
+            learning_model = LearningHistory(get_db().learning_history)
 
-        col_c1, col_c2, col_c3 = st.columns(3)
+            todos_casos = learning_model.collection.find().sort("created_at", -1).limit(10)
+            casos_list = [learning_model.to_dict(doc) for doc in todos_casos]
 
-        with col_c1:
-            threshold = st.number_input(
-                "Threshold de Similaridade",
-                min_value=0.0,
-                max_value=1.0,
-                value=learning_system.similarity_threshold,
-                step=0.05,
-                help="Similaridade mínima para usar apenas modelo local"
-            )
+            if casos_list:
+                for caso in casos_list:
+                    with st.expander(f"📋 Caso {caso.get('id', 'N/A')[:8]} - Rating: {caso.get('rating', 'N/A')}/5"):
+                        col_case1, col_case2 = st.columns(2)
 
-        with col_c2:
-            min_rating = st.number_input(
-                "Rating Mínimo para Local",
-                min_value=1,
-                max_value=5,
-                value=learning_system.min_rating_for_local,
-                step=1,
-                help="Rating mínimo dos casos similares para usar modelo local"
-            )
+                        with col_case1:
+                            st.write("**Contexto:**")
+                            contexto = caso.get("contexto", {})
+                            st.write(f"- Espécie: {contexto.get('especie', 'N/A')}")
+                            st.write(f"- Raça: {contexto.get('raca', 'N/A')}")
+                            st.write(f"- Região: {contexto.get('regiao_estudo', 'N/A')}")
+                            st.write(f"- Suspeita: {contexto.get('suspeita_clinica', 'N/A')}")
 
-        with col_c3:
-            use_fallback = st.checkbox(
-                "Usar Fallback para API Externa",
-                value=learning_system.use_external_fallback,
-                help="Se modelo local falhar, usar API externa automaticamente"
-            )
+                        with col_case2:
+                            st.write("**Modelo:**")
+                            st.write(f"- Tipo: {caso.get('modelo_usado', 'N/A')}")
+                            st.write(
+                                f"- API Externa: {'Sim' if caso.get('usado_api_externa') else 'Não'}")
+                            st.write(f"- Similaridade: {caso.get('similaridade_casos', 0):.2%}" if caso.get(
+                                'similaridade_casos') else "- Similaridade: N/A")
+                            st.write(f"- Data: {caso.get('created_at', 'N/A')}")
+            else:
+                st.info("Nenhum caso aprendido ainda. Os casos serão registrados quando laudos forem liberados.")
 
-        if st.button("💾 Salvar Configurações"):
-            # Atualizar configurações (poderia salvar em .env ou banco)
-            st.success("Configurações salvas! (Reinicie o sistema para aplicar)")
-
-        st.divider()
-
-        # Últimos casos aprendidos
-        st.subheader("📚 Últimos Casos Aprendidos")
-
-        from database.models import LearningHistory
-        learning_model = LearningHistory(get_db().learning_history)
-
-        # Buscar últimos 10 casos
-        todos_casos = learning_model.collection.find().sort("created_at", -1).limit(10)
-        casos_list = [learning_model.to_dict(doc) for doc in todos_casos]
-
-        if casos_list:
-            for caso in casos_list:
-                with st.expander(f"📋 Caso {caso.get('id', 'N/A')[:8]} - Rating: {caso.get('rating', 'N/A')}/5"):
-                    col_case1, col_case2 = st.columns(2)
-
-                    with col_case1:
-                        st.write("**Contexto:**")
-                        contexto = caso.get("contexto", {})
-                        st.write(f"- Espécie: {contexto.get('especie', 'N/A')}")
-                        st.write(f"- Raça: {contexto.get('raca', 'N/A')}")
-                        st.write(f"- Região: {contexto.get('regiao_estudo', 'N/A')}")
-                        st.write(f"- Suspeita: {contexto.get('suspeita_clinica', 'N/A')}")
-
-                    with col_case2:
-                        st.write("**Modelo:**")
-                        st.write(f"- Tipo: {caso.get('modelo_usado', 'N/A')}")
-                        st.write(
-                            f"- API Externa: {'Sim' if caso.get('usado_api_externa') else 'Não'}")
-                        st.write(f"- Similaridade: {caso.get('similaridade_casos', 0):.2%}" if caso.get(
-                            'similaridade_casos') else "- Similaridade: N/A")
-                        st.write(f"- Data: {caso.get('created_at', 'N/A')}")
-        else:
-            st.info("Nenhum caso aprendido ainda. Os casos serão registrados quando laudos forem liberados.")
-
-    except Exception as e:
-        st.error(f"Erro ao carregar métricas: {str(e)}")
-        st.exception(e)
+        except Exception as e:
+            st.error(f"Erro ao carregar métricas: {str(e)}")
+            st.exception(e)

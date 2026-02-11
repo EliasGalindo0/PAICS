@@ -23,9 +23,9 @@ def _get_mongo_uri() -> str:
     No Railway: adicione MONGO_URI como Referência ao serviço MongoDB → MONGO_URL.
     """
     uri = (
-        os.getenv("MONGO_URI") or
-        os.getenv("MONGO_URL") or
-        ""
+        os.getenv("MONGO_URI")
+        or os.getenv("MONGO_URL")
+        or ""
     ).strip()
 
     # Rejeitar se vazio ou contiver template não resolvido
@@ -141,6 +141,7 @@ def init_db():
     db.correcoes_laudo.create_index("requisicao_id")
     db.correcoes_laudo.create_index("categoria")
     db.correcoes_laudo.create_index("created_at")
-    db.correcoes_laudo.create_index([("contexto.especie", 1), ("contexto.raca", 1), ("contexto.regiao_estudo", 1)])
+    db.correcoes_laudo.create_index(
+        [("contexto.especie", 1), ("contexto.raca", 1), ("contexto.regiao_estudo", 1)])
 
     return db
