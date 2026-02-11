@@ -93,12 +93,17 @@ class Clinica(BaseModel):
     """Modelo de clínica veterinária"""
 
     def create(self, nome: str, cnpj: str = "", endereco: str = "",
+               numero: str = "", bairro: str = "", cidade: str = "", cep: str = "",
                telefone: str = "", email: str = "", ativa: bool = True) -> str:
         """Cria uma nova clínica"""
         data = {
             "nome": nome,
             "cnpj": cnpj,
             "endereco": endereco,
+            "numero": numero,
+            "bairro": bairro,
+            "cidade": cidade,
+            "cep": cep,
             "telefone": telefone,
             "email": email,
             "ativa": ativa,

@@ -250,7 +250,7 @@ with st.sidebar:
     # Navegação
     page = st.radio(
         "Navegação",
-        ["Requisições", "Laudos", "Usuários", "Clínicas",
+        ["Requisições", "Laudos", "Clínicas e Usuários",
             "Financeiro", "Knowledge Base", "Aprendizado"],
         key="admin_nav"
     )
@@ -1615,8 +1615,9 @@ elif page == "Laudos":
                             st.balloons()
                             st.rerun()
 
-elif page == "Usuários":
-    st.header("👥 Gerenciamento de Usuários")
+elif page == "Clínicas e Usuários":
+    st.header("🏥 Clínicas e Usuários")
+    st.caption("Cadastre clientes (clínicas) com conta de acesso. Cada clínica = 1 login; adicione veterinários para o formulário de requisições.")
 
     # Verificar se há um usuário sendo visualizado
     if st.session_state.get('viewing_user'):
@@ -1790,483 +1791,402 @@ elif page == "Usuários":
             st.rerun()
 
     else:
-        tab1, tab2 = st.tabs(["Cadastrar Novo Usuário", "Listar Usuários"])
+        # Feedback de cadastro de usuário
+        if st.session_state.get('user_created') and st.session_state.get('new_user_credentials'):
+            creds = st.session_state['new_user_credentials']
+            st.success("✅ Usuário cadastrado! Compartilhe as credenciais abaixo.")
+            st.warning("⚠️ Senha temporária: o usuário será obrigado a alterar no primeiro acesso.")
+            st.code(
+                f"Usuário: {creds['username']}\nE-mail: {creds['email']}\nSenha temporária: {creds['senha_temporaria']}", language="")
+            if st.button("✖️ Fechar", key="close_user_feedback"):
+                del st.session_state['user_created']
+                del st.session_state['new_user_credentials']
+                st.rerun()
+            st.divider()
 
-        with tab1:
-            st.subheader("➕ Cadastrar Novo Usuário/Cliente")
-            st.info("ℹ️ O sistema gerará uma senha temporária automaticamente. O usuário será obrigado a alterar a senha no primeiro acesso.")
-
-            # Mostrar feedback de cadastro bem-sucedido
-            if st.session_state.get('user_created') and st.session_state.get('new_user_credentials'):
-                creds = st.session_state['new_user_credentials']
-                st.success(f"✅ Usuário cadastrado com sucesso! ID: {creds['user_id'][:8]}")
-                st.balloons()
-
-                # Mostrar credenciais temporárias em destaque
-                st.markdown("---")
-                st.markdown("### 📋 Credenciais Temporárias")
-                st.warning(
-                    "⚠️ **IMPORTANTE:** Compartilhe essas credenciais com o usuário. Ele será obrigado a alterar a senha no primeiro acesso.")
-
-                col_info1, col_info2 = st.columns(2)
-                with col_info1:
-                    st.markdown(f"**Usuário (login):** `{creds['username']}`")
-                    st.markdown(f"**E-mail:** `{creds['email']}`")
-                with col_info2:
-                    st.markdown(f"**Tipo:** `{creds['role']}`")
-                    st.markdown(f"**Senha Temporária:** `{creds['senha_temporaria']}`")
-
-                # Botão para copiar credenciais
-                st.code(
-                    f"E-mail: {creds['email']}\nSenha Temporária: {creds['senha_temporaria']}", language="")
-
-                # Botão para limpar feedback
-                if st.button("✖️ Fechar", key="close_user_feedback"):
-                    del st.session_state['user_created']
-                    del st.session_state['new_user_credentials']
-                    st.rerun()
-
-                st.markdown("---")
-
-            # Cadastrar nova clínica + conta de acesso (login é por clínica)
-            clinicas_opcoes = clinica_model.get_all(apenas_ativas=True)
-            with st.expander("➕ Cadastrar nova clínica", expanded=(len(clinicas_opcoes) == 0)):
-                st.caption("Ao cadastrar a clínica, crie também a conta de acesso (uma por clínica). A clínica fará login com esse usuário e verá um dropdown de veterinários nas requisições.")
-                with st.form("nova_clinica_inline"):
-                    nome_clinica = st.text_input("Nome da clínica *", key="nova_clinica_nome")
-                    cnpj_clinica = st.text_input("CNPJ", key="nova_clinica_cnpj")
-                    endereco_clinica = st.text_input("Endereço", key="nova_clinica_endereco")
-                    telefone_clinica = st.text_input("Telefone", key="nova_clinica_telefone")
-                    email_clinica = st.text_input("E-mail da clínica", key="nova_clinica_email")
-                    username_clinica = st.text_input(
-                        "Usuário para login *", key="nova_clinica_username")
-                    email_login_clinica = st.text_input(
-                        "E-mail para login *", value=st.session_state.get("nova_clinica_email", ""), key="nova_clinica_email_login")
-                    if st.form_submit_button("Salvar clínica e conta de acesso"):
-                        if not nome_clinica or not nome_clinica.strip():
-                            st.error("Preencha o nome da clínica.")
-                        elif not username_clinica or not username_clinica.strip():
-                            st.error("Preencha o usuário para login.")
-                        elif not email_login_clinica or not email_login_clinica.strip():
-                            st.error("Preencha o e-mail para login.")
-                        elif user_model.find_by_username(username_clinica.strip()):
-                            st.error("Este usuário já está em uso.")
-                        elif user_model.find_by_email(email_login_clinica.strip()):
-                            st.error("Este e-mail já está cadastrado.")
-                        else:
-                            try:
-                                import secrets
-                                import string
-                                from auth.auth_utils import hash_password
-                                clinica_id_inline = clinica_model.create(
-                                    nome=nome_clinica.strip(),
-                                    cnpj=cnpj_clinica or "",
-                                    endereco=endereco_clinica or "",
-                                    telefone=telefone_clinica or "",
-                                    email=email_clinica or "",
-                                    ativa=True,
-                                )
-                                alphabet = string.ascii_letters + string.digits
-                                senha_tmp = ''.join(secrets.choice(alphabet) for _ in range(8))
-                                user_model.create(
-                                    username=username_clinica.strip(),
-                                    email=email_login_clinica.strip(),
-                                    password_hash=hash_password(senha_tmp),
-                                    role="user",
-                                    nome=nome_clinica.strip(),
-                                    ativo=True,
-                                    primeiro_acesso=True,
-                                    senha_temporaria=senha_tmp,
-                                    clinica_id=clinica_id_inline,
-                                )
-                                st.success(
-                                    "Clínica e conta de acesso criadas. Compartilhe o login com a clínica.")
-                                st.code(
-                                    f"Usuário: {username_clinica.strip()}\nSenha temporária: {senha_tmp}", language=None)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro: {str(e)}")
-
-            with st.form("cadastrar_usuario"):
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    nome = st.text_input("Nome Completo *")
-                    username = st.text_input("Usuário (login) *")
-                    email = st.text_input("E-mail *")
-
-                with col2:
-                    role = st.selectbox("Tipo de Usuário", [
-                                        "user", "admin"], help="'user' para clientes, 'admin' para administradores")
-                    ativo = st.checkbox("Usuário Ativo", value=True)
-                    clinicas_opcoes = clinica_model.get_all(apenas_ativas=True)
-                    clinica_sel = st.selectbox(
-                        "Clínica (conta de acesso)",
-                        options=[None] + [c["id"] for c in clinicas_opcoes],
-                        format_func=lambda x: "— Nenhuma —" if x is None else next(
-                            (c["nome"] for c in clinicas_opcoes if c["id"] == x), x),
-                        index=0,
-                        help="Login é por clínica: use «Cadastrar nova clínica» acima para criar clínica + conta de acesso. Aqui você pode criar um usuário adicional vinculado a uma clínica já existente.",
-                    )
-
-                submit = st.form_submit_button(
-                    "✅ Cadastrar Usuário", type="primary", use_container_width=True)
-
-                if submit:
-                    # Validações
-                    if not all([nome, username, email]):
-                        st.error("❌ Por favor, preencha todos os campos obrigatórios!")
-                    else:
-                        # Verificar se email ou username já existem
-                        if user_model.find_by_email(email):
-                            st.error(f"❌ E-mail {email} já está cadastrado!")
-                        elif user_model.find_by_username(username):
-                            st.error(f"❌ Usuário {username} já está em uso!")
-                        else:
-                            try:
-                                import secrets
-                                import string
-                                from auth.auth_utils import hash_password
-
-                                # Gerar senha temporária (8 caracteres alfanuméricos)
-                                alphabet = string.ascii_letters + string.digits
-                                senha_temporaria = ''.join(secrets.choice(alphabet)
-                                                           for i in range(8))
-
-                                # Criar hash da senha temporária
-                                password_hash = hash_password(senha_temporaria)
-
-                                # Criar usuário com primeiro_acesso=True
-                                user_id = user_model.create(
-                                    username=username,
-                                    email=email,
-                                    password_hash=password_hash,
-                                    role=role,
-                                    nome=nome,
-                                    ativo=ativo,
-                                    primeiro_acesso=True,
-                                    senha_temporaria=senha_temporaria,
-                                    clinica_id=clinica_sel if role == "user" else None
-                                )
-
-                                # Salvar informações na sessão para mostrar após rerun
-                                st.session_state['user_created'] = True
-                                st.session_state['new_user_credentials'] = {
-                                    'username': username,
-                                    'email': email,
-                                    'role': role,
-                                    'senha_temporaria': senha_temporaria,
-                                    'user_id': user_id
-                                }
-
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Erro ao cadastrar usuário: {str(e)}")
-                                import traceback
-                                st.exception(e)
-
-        with tab2:
-            st.subheader("📋 Lista de Usuários")
-
-            # Filtros
-            col1, col2 = st.columns(2)
-            with col1:
-                role_filter = st.selectbox("Filtrar por Tipo", ["Todos", "user", "admin"])
-            with col2:
-                status_filter = st.selectbox("Filtrar por Status", ["Todos", "Ativo", "Inativo"])
-
-            # Buscar usuários
-            role = None if role_filter == "Todos" else role_filter
-            users = user_model.get_all(role=role)
-
-            # Filtrar por status
-            if status_filter == "Ativo":
-                users = [u for u in users if u.get('ativo', True)]
-            elif status_filter == "Inativo":
-                users = [u for u in users if not u.get('ativo', True)]
-
-            st.metric("Total de Usuários", len(users))
-
-            for user in users:
-                status_badge = "✅ Ativo" if user.get('ativo', True) else "🚫 Inativo"
-                role_badge = "👨‍⚕️ Admin" if user.get('role') == 'admin' else "👤 Cliente"
-
-                with st.expander(f"{role_badge} {user.get('nome', user.get('username'))} - {status_badge}"):
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.write(f"**Usuário (login):** {user.get('username')}")
-                        st.write(f"**E-mail:** {user.get('email')}")
-                        st.write(f"**Nome:** {user.get('nome', 'N/A')}")
-                        st.write(f"**Tipo:** {role_badge}")
-                        st.write(f"**Status:** {status_badge}")
-                        st.write(f"**Cadastrado em:** {user.get('created_at', 'N/A')}")
-
-            with col2:
-                # Clínica (se houver)
-                if user.get("clinica_id"):
-                    _c_u = clinica_model.find_by_id(user["clinica_id"])
-                    _cn = (_c_u or {}).get("nome", "") or "—"
-                    st.write(f"**Clínica:** {_cn}")
-                else:
-                    st.write("**Clínica:** —")
-                # Estatísticas do usuário
-                reqs = requisicao_model.find_by_user(user['id'])
-                laudos = laudo_model.find_by_user(user['id'])
-                laudos_liberados = [l for l in laudos if l.get('status') == 'liberado']
-
-                st.metric("📋 Requisições", len(reqs))
-                st.metric("📝 Laudos", len(laudos))
-                st.metric("✅ Laudos Liberados", len(laudos_liberados))
-
-                # Ações
-                col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
-                with col_btn1:
-                    if user.get('ativo'):
-                        if st.button("🚫 Desativar", key=f"deactivate_{user['id']}", use_container_width=True):
-                            user_model.update(user['id'], {"ativo": False})
-                            st.success("Usuário desativado")
-                            st.rerun()
-                    else:
-                        if st.button("✅ Ativar", key=f"activate_{user['id']}", use_container_width=True):
-                            user_model.update(user['id'], {"ativo": True})
-                            st.success("Usuário ativado")
-                            st.rerun()
-
-                with col_btn2:
-                    if st.button("📊 Ver Detalhes", key=f"details_{user['id']}", use_container_width=True):
-                        st.session_state['viewing_user'] = user['id']
-                        st.rerun()
-
-                with col_btn3:
-                    if st.button("✏️ Editar", key=f"edit_btn_{user['id']}", use_container_width=True):
-                        st.session_state['viewing_user'] = user['id']
-                        st.rerun()
-
-                with col_btn4:
-                    # Não permitir excluir o próprio usuário
-                    current_user = get_current_user()
-                    if current_user and current_user.get('id') == user['id']:
-                        st.button("🗑️ Excluir", key=f"delete_{user['id']}", disabled=True, use_container_width=True,
-                                  help="Você não pode excluir seu próprio usuário")
-                    else:
-                        # Verificar se é o admin dummy
-                        is_dummy = user.get('username') == 'admin' and user.get(
-                            'email') == 'admin@paics.local'
-
-                        has_data = len(reqs) > 0 or len(laudos) > 0
-                        delete_key = f"delete_{user['id']}"
-                        if st.button("🗑️ Excluir", key=delete_key, use_container_width=True):
-                            if not st.session_state.get(f"confirm_{delete_key}", False):
-                                st.session_state[f"confirm_{delete_key}"] = True
-                                st.warning(
-                                    f"⚠️ Clique novamente em 'Excluir' para confirmar a exclusão de '{user.get('username')}'")
-                                if has_data:
-                                    st.info("💡 O usuário possui requisições/laudos. Eles permanecerão no sistema com referência ao usuário excluído. Considere desativar em vez de excluir.")
-                                if is_dummy:
-                                    st.info(
-                                        "💡 Certifique-se de ter criado seu próprio usuário administrador antes de excluir o dummy.")
-                                st.rerun()
-                            else:
-                                if user_model.delete(user['id']):
-                                    del st.session_state[f"confirm_{delete_key}"]
-                                    if is_dummy:
-                                        st.success("✅ Usuário dummy excluído com sucesso!")
-                                    else:
-                                        st.success("✅ Usuário excluído com sucesso!")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Erro ao excluir usuário")
-                                    del st.session_state[f"confirm_{delete_key}"]
-
-elif page == "Clínicas":
-    st.header("🏥 Clínicas e Veterinários")
-
-    clinicas_list = clinica_model.get_all(apenas_ativas=False)
-    add_key = "clinica_add"
-    edit_key = st.session_state.get("clinica_edit_id")
-    if st.button("➕ Adicionar Clínica", key="btn_add_clinica"):
-        st.session_state[add_key] = True
-        if "clinica_edit_id" in st.session_state:
-            del st.session_state["clinica_edit_id"]
-        st.rerun()
-
-    if st.session_state.get(add_key):
-        st.subheader("Nova Clínica")
-        st.caption("O acesso ao sistema é por clínica: ao cadastrar a clínica, crie também a conta de login (uma por clínica). Depois cadastre os veterinários da clínica; no formulário de requisições aparecerá um dropdown com eles.")
-        with st.form("form_clinica_new"):
-            nome_c = st.text_input("Nome da clínica *", key="clinica_nome_new")
-            cnpj_c = st.text_input("CNPJ", key="clinica_cnpj_new")
-            endereco_c = st.text_input("Endereço", key="clinica_endereco_new")
-            telefone_c = st.text_input("Telefone", key="clinica_telefone_new")
-            email_c = st.text_input("E-mail da clínica", key="clinica_email_new")
-            ativa_c = st.checkbox("Ativa", value=True, key="clinica_ativa_new")
-            st.markdown("**Conta de acesso (login da clínica)**")
-            username_c = st.text_input(
-                "Usuário para login *", key="clinica_username_new", help="Usado para a clínica acessar o sistema.")
-            email_login_c = st.text_input("E-mail para login *", value=email_c or "",
-                                          key="clinica_email_login_new", help="E-mail da conta de acesso.")
-            sub = st.form_submit_button("Salvar")
-            if sub and nome_c and nome_c.strip():
-                if not username_c or not username_c.strip():
-                    st.error("Informe o usuário para login da clínica.")
-                elif not email_login_c or not email_login_c.strip():
-                    st.error("Informe o e-mail para login da clínica.")
-                elif user_model.find_by_username(username_c.strip()):
-                    st.error("Este usuário já está em uso.")
-                elif user_model.find_by_email(email_login_c.strip()):
-                    st.error("Este e-mail já está cadastrado.")
-                else:
-                    try:
-                        import secrets
-                        import string
-                        from auth.auth_utils import hash_password
-                        clinica_id_new = clinica_model.create(
-                            nome=nome_c.strip(), cnpj=cnpj_c or "", endereco=endereco_c or "",
-                            telefone=telefone_c or "", email=email_c or "", ativa=ativa_c
-                        )
-                        alphabet = string.ascii_letters + string.digits
-                        senha_temporaria = ''.join(secrets.choice(alphabet) for _ in range(8))
-                        password_hash = hash_password(senha_temporaria)
-                        user_model.create(
-                            username=username_c.strip(),
-                            email=email_login_c.strip(),
-                            password_hash=password_hash,
-                            role="user",
-                            nome=nome_c.strip(),
-                            ativo=True,
-                            primeiro_acesso=True,
-                            senha_temporaria=senha_temporaria,
-                            clinica_id=clinica_id_new,
-                        )
-                        del st.session_state[add_key]
-                        st.success(
-                            "Clínica e conta de acesso criadas. Compartilhe com a clínica: usuário e senha temporária.")
-                        st.code(
-                            f"Usuário: {username_c.strip()}\nSenha temporária: {senha_temporaria}", language=None)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao cadastrar: {str(e)}")
-            elif sub:
-                st.error("Preencha o nome da clínica.")
-        if st.button("Cancelar", key="cancel_add_clinica"):
-            del st.session_state[add_key]
+        # Limpar formulário de clínica quando solicitado (antes de renderizar widgets)
+        if st.session_state.pop("_clear_nova_clinica_form", False):
+            keys_to_clear = [k for k in list(st.session_state.keys()) if k.startswith("nova_clinica_")]
+            for k in keys_to_clear:
+                st.session_state.pop(k, None)
             st.rerun()
 
-    for clin in clinicas_list:
-        with st.expander(f"🏥 {clin.get('nome', '—')} {' (inativa)' if not clin.get('ativa', True) else ''}", expanded=(edit_key == clin["id"])):
-            if edit_key == clin["id"]:
-                with st.form(f"form_clinica_edit_{clin['id']}"):
-                    nome_c = st.text_input("Nome *", value=clin.get("nome", ""),
-                                           key=f"clinica_nome_{clin['id']}")
-                    cnpj_c = st.text_input("CNPJ", value=clin.get(
-                        "cnpj", ""), key=f"clinica_cnpj_{clin['id']}")
-                    endereco_c = st.text_input("Endereço", value=clin.get(
-                        "endereco", ""), key=f"clinica_endereco_{clin['id']}")
-                    telefone_c = st.text_input("Telefone", value=clin.get(
-                        "telefone", ""), key=f"clinica_telefone_{clin['id']}")
-                    email_c = st.text_input("E-mail", value=clin.get(
-                        "email", ""), key=f"clinica_email_{clin['id']}")
-                    ativa_c = st.checkbox("Ativa", value=clin.get(
-                        "ativa", True), key=f"clinica_ativa_{clin['id']}")
-                    if st.form_submit_button("Salvar"):
-                        clinica_model.update(clin["id"], {
-                            "nome": nome_c.strip(), "cnpj": cnpj_c or "", "endereco": endereco_c or "",
-                            "telefone": telefone_c or "", "email": email_c or "", "ativa": ativa_c
-                        })
-                        del st.session_state["clinica_edit_id"]
-                        st.success("Clínica atualizada.")
-                        st.rerun()
-                if st.button("Cancelar edição", key=f"cancel_edit_{clin['id']}"):
-                    del st.session_state["clinica_edit_id"]
+        # Mensagem de sucesso ao cadastrar clínica (login e senha para copiar)
+        if st.session_state.get("clinica_cadastrada_credenciais"):
+            creds = st.session_state["clinica_cadastrada_credenciais"]
+            st.success("✅ Clínica e conta de acesso criadas com sucesso!")
+            st.info("📋 **Copie as credenciais abaixo e envie ao usuário:**")
+            st.code(
+                f"Usuário (login): {creds['username']}\nE-mail: {creds['email']}\nSenha temporária: {creds['senha_temporaria']}\n\n⚠️ O usuário será obrigado a alterar a senha no primeiro acesso.",
+                language="",
+            )
+            if st.button("✖️ Fechar", key="close_clinica_feedback"):
+                del st.session_state["clinica_cadastrada_credenciais"]
+                st.rerun()
+            st.divider()
+
+        # 1. Cadastrar nova clínica + conta de acesso (login e senha temporária)
+        clinicas_opcoes = clinica_model.get_all(apenas_ativas=True)
+        with st.expander("➕ Cadastrar nova clínica", expanded=(len(clinicas_opcoes) == 0)):
+            st.caption("Ao cadastrar a clínica, crie também a conta de acesso (uma por clínica). A clínica fará login com esse usuário e verá um dropdown de veterinários nas requisições.")
+            # ViaCEP: CEP + Buscar (primeiro na seção de endereço, fora do form)
+            prefill = st.session_state.get("nova_clinica_cep_prefill") or {}
+            st.markdown("**Endereço**")
+            col_cep, col_btn = st.columns([3, 1])
+            with col_cep:
+                cep_default = prefill.get("cep", "") if prefill else ""
+                cep_lookup = st.text_input(
+                    "CEP *",
+                    value=cep_default,
+                    key="nova_clinica_cep_lookup",
+                    placeholder="Digite o CEP (com ou sem hífen) e clique em Buscar",
+                    help="Ex: 01310-100 ou 01310100",
+                )
+            with col_btn:
+                buscar_cep_btn = st.button(
+                    "🔍 Buscar endereço", key="nova_clinica_buscar_cep", type="primary")
+            cep_para_buscar = (cep_lookup or "").strip()
+            if buscar_cep_btn and cep_para_buscar:
+                from utils.viacep import buscar_cep
+                data = buscar_cep(cep_para_buscar)
+                if data:
+                    st.session_state["nova_clinica_cep_prefill"] = data
+                    # Preencher campos do form apenas ao receber novos dados (evita conflito com state)
+                    st.session_state["nova_clinica_endereco"] = data.get("logradouro", "")
+                    st.session_state["nova_clinica_bairro"] = data.get("bairro", "")
+                    st.session_state["nova_clinica_cidade"] = data.get("cidade", "")
+                    st.session_state["nova_clinica_cep"] = data.get("cep", "")
+                    st.success("Endereço encontrado! Os campos abaixo foram preenchidos.")
                     st.rerun()
-            else:
-                row_edit, row_del, row_excluir, row_info = st.columns([1, 1, 1, 11])
-                with row_edit:
-                    if st.button("✏️", key=f"edit_clin_{clin['id']}", help="Editar clínica"):
-                        st.session_state["clinica_edit_id"] = clin["id"]
-                        st.rerun()
-                with row_del:
-                    if clin.get("ativa", True):
-                        if st.button("🚫", key=f"desativar_clin_{clin['id']}", help="Desativar clínica"):
-                            clinica_model.update(clin["id"], {"ativa": False})
-                            st.rerun()
+                else:
+                    st.error("CEP não encontrado. Verifique e tente novamente.")
+
+            with st.form("nova_clinica_inline"):
+                nome_clinica = st.text_input("Nome da clínica *", key="nova_clinica_nome")
+                cnpj_clinica = st.text_input("CNPJ", key="nova_clinica_cnpj")
+                endereco_clinica = st.text_input("Logradouro (Rua)", value=prefill.get(
+                    "logradouro", ""), key="nova_clinica_endereco", placeholder="Preencha o CEP acima ou digite manualmente")
+                col_num, col_bairro = st.columns(2)
+                with col_num:
+                    numero_clinica = st.text_input(
+                        "Número", key="nova_clinica_numero", placeholder="nº")
+                with col_bairro:
+                    bairro_clinica = st.text_input("Bairro", value=prefill.get(
+                        "bairro", ""), key="nova_clinica_bairro")
+                col_cidade, col_cep_f = st.columns(2)
+                with col_cidade:
+                    cidade_clinica = st.text_input("Cidade", value=prefill.get(
+                        "cidade", ""), key="nova_clinica_cidade")
+                with col_cep_f:
+                    cep_clinica = st.text_input("CEP", value=prefill.get(
+                        "cep", ""), key="nova_clinica_cep", placeholder="00000-000")
+                telefone_clinica = st.text_input("Telefone", key="nova_clinica_telefone")
+                email_clinica = st.text_input(
+                    "E-mail *", key="nova_clinica_email",
+                    help="E-mail da clínica e da conta de acesso (login)")
+                username_clinica = st.text_input(
+                    "Usuário para login *", key="nova_clinica_username")
+
+                if st.form_submit_button("Salvar clínica e conta de acesso"):
+                    if not nome_clinica or not nome_clinica.strip():
+                        st.error("Preencha o nome da clínica.")
+                    elif not username_clinica or not username_clinica.strip():
+                        st.error("Preencha o usuário para login.")
+                    elif not email_clinica or not email_clinica.strip():
+                        st.error("Preencha o e-mail.")
+                    elif user_model.find_by_username(username_clinica.strip()):
+                        st.error("Este usuário já está em uso.")
+                    elif user_model.find_by_email(email_clinica.strip()):
+                        st.error("Este e-mail já está cadastrado.")
                     else:
-                        if st.button("✅", key=f"ativar_clin_{clin['id']}", help="Ativar clínica"):
-                            clinica_model.update(clin["id"], {"ativa": True})
+                        try:
+                            import secrets
+                            import string
+                            from auth.auth_utils import hash_password
+                            clinica_id_inline = clinica_model.create(
+                                nome=nome_clinica.strip(),
+                                cnpj=cnpj_clinica or "",
+                                endereco=endereco_clinica or "",
+                                numero=numero_clinica or "",
+                                bairro=bairro_clinica or "",
+                                cidade=cidade_clinica or "",
+                                cep=cep_clinica or "",
+                                telefone=telefone_clinica or "",
+                                email=email_clinica.strip() or "",
+                                ativa=True,
+                            )
+                            alphabet = string.ascii_letters + string.digits
+                            senha_tmp = ''.join(secrets.choice(alphabet) for _ in range(8))
+                            user_model.create(
+                                username=username_clinica.strip(),
+                                email=email_clinica.strip(),
+                                password_hash=hash_password(senha_tmp),
+                                role="user",
+                                nome=nome_clinica.strip(),
+                                ativo=True,
+                                primeiro_acesso=True,
+                                senha_temporaria=senha_tmp,
+                                clinica_id=clinica_id_inline,
+                            )
+                            st.session_state["clinica_cadastrada_credenciais"] = {
+                                "username": username_clinica.strip(),
+                                "email": email_clinica.strip(),
+                                "senha_temporaria": senha_tmp,
+                                "nome_clinica": nome_clinica.strip(),
+                            }
+                            st.session_state["_clear_nova_clinica_form"] = True
                             st.rerun()
-                with row_excluir:
-                    delete_clin_key = f"excluir_clin_{clin['id']}"
-                    if st.button("🗑️", key=delete_clin_key, help="Excluir clínica"):
-                        if not st.session_state.get(f"confirm_{delete_clin_key}", False):
-                            st.session_state[f"confirm_{delete_clin_key}"] = True
-                            st.warning(f"⚠️ Clique novamente em 🗑️ para confirmar a exclusão de '{clin.get('nome', '—')}'")
+                        except Exception as e:
+                            st.error(f"Erro: {str(e)}")
+
+        # 2. Clientes (cada clínica = conta de acesso + veterinários)
+        st.subheader("Clientes")
+        clinicas_list = clinica_model.get_all(apenas_ativas=False)
+        edit_key = st.session_state.get("clinica_edit_id")
+        all_users = user_model.get_all()
+        for clin in clinicas_list:
+            with st.expander(f"🏥 {clin.get('nome', '—')} {' (inativa)' if not clin.get('ativa', True) else ''}", expanded=(edit_key == clin["id"])):
+                if edit_key == clin["id"]:
+                    # ViaCEP para edição
+                    edit_prefill_key = f"clinica_cep_edit_{clin['id']}"
+                    edit_prefill = st.session_state.get(edit_prefill_key) or {}
+                    col_ec, col_eb = st.columns([3, 1])
+                    with col_ec:
+                        cep_edit = st.text_input("CEP (buscar endereço)", value=edit_prefill.get(
+                            "cep", clin.get("cep", "")), key=f"clinica_cep_lookup_{clin['id']}", placeholder="00000-000")
+                    with col_eb:
+                        buscar_edit = st.button("🔍 Buscar", key=f"clinica_buscar_cep_{clin['id']}")
+                    if buscar_edit and cep_edit:
+                        from utils.viacep import buscar_cep
+                        data = buscar_cep(cep_edit)
+                        if data:
+                            st.session_state[edit_prefill_key] = data
+                            st.success("Endereço encontrado!")
                             st.rerun()
                         else:
-                            if clinica_model.delete(clin["id"]):
-                                del st.session_state[f"confirm_{delete_clin_key}"]
-                                st.success("Clínica excluída.")
+                            st.error("CEP não encontrado.")
+                    with st.form(f"form_clinica_edit_{clin['id']}"):
+                        nome_c = st.text_input(
+                            "Nome *", value=clin.get("nome", ""), key=f"clinica_nome_{clin['id']}")
+                        cnpj_c = st.text_input("CNPJ", value=clin.get(
+                            "cnpj", ""), key=f"clinica_cnpj_{clin['id']}")
+                        st.markdown("**Endereço**")
+                        endereco_c = st.text_input("Logradouro (Rua)", value=edit_prefill.get(
+                            "logradouro", clin.get("endereco", "")), key=f"clinica_endereco_{clin['id']}")
+                        col_nc, col_bc = st.columns(2)
+                        with col_nc:
+                            numero_c = st.text_input("Número", value=clin.get(
+                                "numero", ""), key=f"clinica_numero_{clin['id']}")
+                        with col_bc:
+                            bairro_c = st.text_input("Bairro", value=edit_prefill.get(
+                                "bairro", clin.get("bairro", "")), key=f"clinica_bairro_{clin['id']}")
+                        col_cc, col_cec = st.columns(2)
+                        with col_cc:
+                            cidade_c = st.text_input("Cidade", value=edit_prefill.get(
+                                "cidade", clin.get("cidade", "")), key=f"clinica_cidade_{clin['id']}")
+                        with col_cec:
+                            cep_c = st.text_input("CEP", value=edit_prefill.get(
+                                "cep", clin.get("cep", "")), key=f"clinica_cep_{clin['id']}")
+                        telefone_c = st.text_input("Telefone", value=clin.get(
+                            "telefone", ""), key=f"clinica_telefone_{clin['id']}")
+                        email_c = st.text_input(
+                            "E-mail", value=clin.get("email", ""), key=f"clinica_email_{clin['id']}")
+                        ativa_c = st.checkbox("Ativa", value=clin.get(
+                            "ativa", True), key=f"clinica_ativa_{clin['id']}")
+                        if st.form_submit_button("Salvar"):
+                            clinica_model.update(clin["id"], {
+                                "nome": nome_c.strip(), "cnpj": cnpj_c or "",
+                                "endereco": endereco_c or "", "numero": numero_c or "", "bairro": bairro_c or "",
+                                "cidade": cidade_c or "", "cep": cep_c or "",
+                                "telefone": telefone_c or "", "email": email_c or "", "ativa": ativa_c
+                            })
+                            if edit_prefill_key in st.session_state:
+                                del st.session_state[edit_prefill_key]
+                            del st.session_state["clinica_edit_id"]
+                            st.success("Clínica atualizada.")
+                            st.rerun()
+                    if st.button("Cancelar edição", key=f"cancel_edit_{clin['id']}"):
+                        del st.session_state["clinica_edit_id"]
+                        if f"clinica_cep_edit_{clin['id']}" in st.session_state:
+                            del st.session_state[f"clinica_cep_edit_{clin['id']}"]
+                        st.rerun()
+                else:
+                    row_edit, row_del, row_excluir, row_info = st.columns([1, 1, 1, 11])
+                    with row_edit:
+                        if st.button("✏️", key=f"edit_clin_{clin['id']}", help="Editar clínica"):
+                            st.session_state["clinica_edit_id"] = clin["id"]
+                            st.rerun()
+                    with row_del:
+                        if clin.get("ativa", True):
+                            if st.button("🚫", key=f"desativar_clin_{clin['id']}", help="Desativar clínica"):
+                                clinica_model.update(clin["id"], {"ativa": False})
+                                st.rerun()
+                        else:
+                            if st.button("✅", key=f"ativar_clin_{clin['id']}", help="Ativar clínica"):
+                                clinica_model.update(clin["id"], {"ativa": True})
+                                st.rerun()
+                    with row_excluir:
+                        delete_clin_key = f"excluir_clin_{clin['id']}"
+                        if st.button("🗑️", key=delete_clin_key, help="Excluir clínica"):
+                            if not st.session_state.get(f"confirm_{delete_clin_key}", False):
+                                st.session_state[f"confirm_{delete_clin_key}"] = True
+                                st.warning(
+                                    f"⚠️ Clique novamente em 🗑️ para confirmar a exclusão de '{clin.get('nome', '—')}'")
                                 st.rerun()
                             else:
-                                st.error("Erro ao excluir clínica")
-                                del st.session_state[f"confirm_{delete_clin_key}"]
-                with row_info:
-                    st.write(
-                        f"**{clin.get('nome', '—')}** {' _(inativa)_' if not clin.get('ativa', True) else ''}")
-                    st.caption(
-                        f"CNPJ: {clin.get('cnpj') or '—'} · Endereço: {clin.get('endereco') or '—'} · Tel: {clin.get('telefone') or '—'} · {clin.get('email') or '—'}")
+                                if clinica_model.delete(clin["id"]):
+                                    del st.session_state[f"confirm_{delete_clin_key}"]
+                                    st.success("Clínica excluída.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao excluir clínica")
+                                    del st.session_state[f"confirm_{delete_clin_key}"]
+                    with row_info:
+                        st.write(
+                            f"**{clin.get('nome', '—')}** {' _(inativa)_' if not clin.get('ativa', True) else ''}")
+                        end = clin.get('endereco') or ''
+                        num = clin.get('numero', '')
+                        bair = clin.get('bairro', '')
+                        cid = clin.get('cidade', '')
+                        cp = clin.get('cep', '')
+                        addr = ", ".join(x for x in [end, num, bair, cid, cp] if x)
+                        st.caption(
+                            f"CNPJ: {clin.get('cnpj') or '—'} · Endereço: {addr or '—'} · Tel: {clin.get('telefone') or '—'} · {clin.get('email') or '—'}")
 
-            st.subheader("Veterinários")
-            veterinarios_list = veterinario_model.find_by_clinica(clin["id"], apenas_ativos=False)
-            if st.button("➕ Adicionar Veterinário", key=f"add_vet_{clin['id']}"):
-                st.session_state[f"vet_add_{clin['id']}"] = True
-                st.rerun()
-            if st.session_state.get(f"vet_add_{clin['id']}"):
-                with st.form(f"form_vet_new_{clin['id']}"):
-                    nome_v = st.text_input("Nome *", key=f"vet_nome_{clin['id']}_new")
-                    crmv_v = st.text_input("CRMV *", key=f"vet_crmv_{clin['id']}_new")
-                    email_v = st.text_input("E-mail", key=f"vet_email_{clin['id']}_new")
-                    if st.form_submit_button("Salvar"):
-                        if nome_v and nome_v.strip() and crmv_v and crmv_v.strip():
-                            veterinario_model.create(nome=nome_v.strip(), crmv=crmv_v.strip(
-                            ), clinica_id=clin["id"], email=email_v or "")
-                            del st.session_state[f"vet_add_{clin['id']}"]
-                            st.success("Veterinário cadastrado.")
-                            st.rerun()
-                        else:
-                            st.error("Preencha nome e CRMV.")
-                if st.button("Cancelar", key=f"vet_cancel_{clin['id']}"):
-                    del st.session_state[f"vet_add_{clin['id']}"]
+                # Conta de acesso (login da clínica)
+                user_clinica = next(
+                    (u for u in all_users if u.get("clinica_id") == clin["id"]), None)
+                if user_clinica:
+                    st.markdown("**Conta de acesso**")
+                    senha_info = f" · Senha temporária: `{user_clinica.get('senha_temporaria', '—')}`" if user_clinica.get(
+                        "primeiro_acesso") else ""
+                    st.caption(
+                        f"Login: `{user_clinica.get('username', '—')}` · E-mail: `{user_clinica.get('email', '—')}`{senha_info}")
+
+                st.markdown("**Veterinários**")
+                veterinarios_list = veterinario_model.find_by_clinica(
+                    clin["id"], apenas_ativos=False)
+                if st.button("➕ Adicionar Veterinário", key=f"add_vet_{clin['id']}"):
+                    st.session_state[f"vet_add_{clin['id']}"] = True
                     st.rerun()
-            for vet in veterinarios_list:
-                ve, vr, vt = st.columns([1, 1, 12])
-                with ve:
-                    if st.button("✏️", key=f"edit_vet_{vet['id']}", help="Editar"):
-                        st.session_state[f"vet_edit_{vet['id']}"] = True
-                        st.rerun()
-                with vr:
-                    if st.button("🗑️", key=f"remover_vet_{vet['id']}", help="Remover"):
-                        veterinario_model.delete(vet["id"])
-                        st.rerun()
-                with vt:
-                    st.write(
-                        f"• **{vet.get('nome', '—')}** — CRMV: {vet.get('crmv', '—')} {' _(inativo)_' if not vet.get('ativo', True) else ''}")
-                if st.session_state.get(f"vet_edit_{vet['id']}"):
-                    with st.form(f"form_vet_edit_{vet['id']}"):
-                        nome_v = st.text_input("Nome *", value=vet.get("nome", ""),
-                                               key=f"vet_nome_edit_{vet['id']}")
-                        crmv_v = st.text_input("CRMV *", value=vet.get("crmv", ""),
-                                               key=f"vet_crmv_edit_{vet['id']}")
-                        email_v = st.text_input("E-mail", value=vet.get(
-                            "email", ""), key=f"vet_email_edit_{vet['id']}")
-                        ativo_v = st.checkbox("Ativo", value=vet.get(
-                            "ativo", True), key=f"vet_ativo_edit_{vet['id']}")
+                if st.session_state.get(f"vet_add_{clin['id']}"):
+                    with st.form(f"form_vet_new_{clin['id']}"):
+                        nome_v = st.text_input("Nome *", key=f"vet_nome_{clin['id']}_new")
+                        crmv_v = st.text_input("CRMV *", key=f"vet_crmv_{clin['id']}_new")
+                        email_v = st.text_input("E-mail", key=f"vet_email_{clin['id']}_new")
                         if st.form_submit_button("Salvar"):
-                            veterinario_model.update(vet["id"], {"nome": nome_v.strip(
-                            ), "crmv": crmv_v.strip(), "email": email_v or "", "ativo": ativo_v})
-                            del st.session_state[f"vet_edit_{vet['id']}"]
-                            st.success("Veterinário atualizado.")
+                            if nome_v and nome_v.strip() and crmv_v and crmv_v.strip():
+                                veterinario_model.create(nome=nome_v.strip(), crmv=crmv_v.strip(
+                                ), clinica_id=clin["id"], email=email_v or "")
+                                del st.session_state[f"vet_add_{clin['id']}"]
+                                st.success("Veterinário cadastrado.")
+                                st.rerun()
+                            else:
+                                st.error("Preencha nome e CRMV.")
+                    if st.button("Cancelar", key=f"vet_cancel_{clin['id']}"):
+                        del st.session_state[f"vet_add_{clin['id']}"]
+                        st.rerun()
+                for vet in veterinarios_list:
+                    ve, vr, vt = st.columns([1, 1, 12])
+                    with ve:
+                        if st.button("✏️", key=f"edit_vet_{vet['id']}", help="Editar"):
+                            st.session_state[f"vet_edit_{vet['id']}"] = True
                             st.rerun()
+                    with vr:
+                        if st.button("🗑️", key=f"remover_vet_{vet['id']}", help="Remover"):
+                            veterinario_model.delete(vet["id"])
+                            st.rerun()
+                    with vt:
+                        st.write(
+                            f"• **{vet.get('nome', '—')}** — CRMV: {vet.get('crmv', '—')} {' _(inativo)_' if not vet.get('ativo', True) else ''}")
+                    if st.session_state.get(f"vet_edit_{vet['id']}"):
+                        with st.form(f"form_vet_edit_{vet['id']}"):
+                            nome_v = st.text_input(
+                                "Nome *", value=vet.get("nome", ""), key=f"vet_nome_edit_{vet['id']}")
+                            crmv_v = st.text_input(
+                                "CRMV *", value=vet.get("crmv", ""), key=f"vet_crmv_edit_{vet['id']}")
+                            email_v = st.text_input(
+                                "E-mail", value=vet.get("email", ""), key=f"vet_email_edit_{vet['id']}")
+                            ativo_v = st.checkbox("Ativo", value=vet.get(
+                                "ativo", True), key=f"vet_ativo_edit_{vet['id']}")
+                            if st.form_submit_button("Salvar"):
+                                veterinario_model.update(vet["id"], {"nome": nome_v.strip(
+                                ), "crmv": crmv_v.strip(), "email": email_v or "", "ativo": ativo_v})
+                                del st.session_state[f"vet_edit_{vet['id']}"]
+                                st.success("Veterinário atualizado.")
+                                st.rerun()
+
+        # 3. Administradores (apenas admins; clientes são gerenciados via clínicas acima)
+        admins = [u for u in user_model.get_all(role="admin") if u.get('clinica_id') is None]
+        admins = [u for u in admins if u.get('ativo', True)] + [u for u in admins if not u.get('ativo', True)]
+
+        if admins:
+            st.subheader("👨‍⚕️ Administradores")
+            for user in admins:
+                status_badge = "✅ Ativo" if user.get('ativo', True) else "🚫 Inativo"
+                with st.expander(f"👨‍⚕️ {user.get('nome', user.get('username'))} · {status_badge}", expanded=False):
+                    st.caption(f"Login: `{user.get('username')}` · E-mail: `{user.get('email')}`")
+                    reqs = requisicao_model.find_by_user(user['id'])
+                    laudos = laudo_model.find_by_user(user['id'])
+                    col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
+                    with col_btn1:
+                        if user.get('ativo'):
+                            if st.button("🚫 Desativar", key=f"deactivate_{user['id']}", use_container_width=True):
+                                user_model.update(user['id'], {"ativo": False})
+                                st.success("Usuário desativado")
+                                st.rerun()
+                        else:
+                            if st.button("✅ Ativar", key=f"activate_{user['id']}", use_container_width=True):
+                                user_model.update(user['id'], {"ativo": True})
+                                st.success("Usuário ativado")
+                                st.rerun()
+
+                    with col_btn2:
+                        if st.button("📊 Ver Detalhes", key=f"details_{user['id']}", use_container_width=True):
+                            st.session_state['viewing_user'] = user['id']
+                            st.rerun()
+
+                    with col_btn3:
+                        if st.button("✏️ Editar", key=f"edit_btn_{user['id']}", use_container_width=True):
+                            st.session_state['viewing_user'] = user['id']
+                            st.rerun()
+
+                    with col_btn4:
+                        # Não permitir excluir o próprio usuário
+                        current_user = get_current_user()
+                        if current_user and current_user.get('id') == user['id']:
+                            st.button("🗑️ Excluir", key=f"delete_{user['id']}", disabled=True, use_container_width=True,
+                                      help="Você não pode excluir seu próprio usuário")
+                        else:
+                            # Verificar se é o admin dummy
+                            is_dummy = user.get('username') == 'admin' and user.get(
+                                'email') == 'admin@paics.local'
+
+                            has_data = len(reqs) > 0 or len(laudos) > 0
+                            delete_key = f"delete_{user['id']}"
+                            if st.button("🗑️ Excluir", key=delete_key, use_container_width=True):
+                                if not st.session_state.get(f"confirm_{delete_key}", False):
+                                    st.session_state[f"confirm_{delete_key}"] = True
+                                    st.warning(
+                                        f"⚠️ Clique novamente em 'Excluir' para confirmar a exclusão de '{user.get('username')}'")
+                                    if has_data:
+                                        st.info(
+                                            "💡 O usuário possui requisições/laudos. Eles permanecerão no sistema com referência ao usuário excluído. Considere desativar em vez de excluir.")
+                                    if is_dummy:
+                                        st.info(
+                                            "💡 Certifique-se de ter criado seu próprio usuário administrador antes de excluir o dummy.")
+                                    st.rerun()
+                                else:
+                                    if user_model.delete(user['id']):
+                                        del st.session_state[f"confirm_{delete_key}"]
+                                        if is_dummy:
+                                            st.success("✅ Usuário dummy excluído com sucesso!")
+                                        else:
+                                            st.success("✅ Usuário excluído com sucesso!")
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Erro ao excluir usuário")
+                                        del st.session_state[f"confirm_{delete_key}"]
 
 elif page == "Financeiro":
     st.header("💰 Painel Financeiro")
