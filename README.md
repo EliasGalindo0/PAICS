@@ -93,7 +93,9 @@ Acesse `http://localhost:8501`.
 Se usar **MongoDB Atlas** (em vez do MongoDB do Railway):
 
 1. **Network Access** no Atlas: **Add IP Address** → **Allow Access from Anywhere** (`0.0.0.0/0`) para permitir conexões do Railway.
-2. **Connection string**: use `mongodb+srv://user:password@cluster.xxx.mongodb.net/?retryWrites=true&w=majority`.
+2. **Connection string**:
+   - **Cluster padrão**: `mongodb+srv://user:password@cluster.xxx.mongodb.net/?retryWrites=true&w=majority`
+   - **Atlas SQL** (Data Federation): `mongodb://user:password@atlas-sql-xxx.a.query.mongodb.net/paics_db?ssl=true&authSource=admin`
 3. **TLSV1_ALERT_INTERNAL_ERROR**: se o handshake SSL falhar, defina no Railway: **MONGO_TLS_RELAXED** = `1`.
 
 ---
