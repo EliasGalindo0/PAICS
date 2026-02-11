@@ -47,30 +47,49 @@ def _is_atlas_uri(uri: str) -> bool:
     return "mongodb.net" in (uri or "")
 
 
+def _build_atlas_client_kwargs():
+    """Monta kwargs TLS para MongoDB Atlas. Tenta estratégias para resolver TLSV1_ALERT_INTERNAL_ERROR."""
+    kwargs = {"serverSelectionTimeoutMS": 20000}
+    # Padrão: modo relaxado para Railway/Docker (TLSV1_ALERT_INTERNAL_ERROR é comum com certifi nesses ambientes)
+    strict = os.getenv("MONGO_TLS_STRICT", "").strip().lower() in ("1", "true", "yes")
+
+    if strict:
+        # Modo estrito: usa certifi (recomendado pelo Atlas em ambientes padrão)
+        kwargs["tls"] = True
+        kwargs["tlsCAFile"] = certifi.where()
+    else:
+        # Modo relaxado: ignora verificação de certificado (funciona em Railway/containers com Atlas)
+        kwargs["tls"] = True
+        kwargs["tlsAllowInvalidCertificates"] = True
+        kwargs["tlsAllowInvalidHostnames"] = True
+
+    return kwargs
+
+
 def get_client():
     """Retorna o cliente MongoDB (singleton)"""
     global _client
     if _client is None:
         try:
-            kwargs = {"serverSelectionTimeoutMS": 10000}
+            kwargs = {"serverSelectionTimeoutMS": 20000}
             if _is_atlas_uri(MONGO_URI):
-                kwargs["tls"] = True
-                strict = os.getenv("MONGO_TLS_STRICT", "").strip().lower() in ("1", "true", "yes")
-                if strict:
-                    kwargs["tlsCAFile"] = certifi.where()
-                else:
-                    # Railway/containers: TLSV1_ALERT_INTERNAL_ERROR com CA/certifi.
-                    # SSL sem verificação de certificado usa fluxo que costuma funcionar.
-                    kwargs["tlsAllowInvalidCertificates"] = True
-                    kwargs["tlsAllowInvalidHostnames"] = True
+                kwargs.update(_build_atlas_client_kwargs())
             _client = MongoClient(MONGO_URI, **kwargs)
-            # Testar conexão
             _client.server_info()
         except ConnectionFailure as e:
+            err_str = str(e).lower()
+            # Se falhou com TLS e não está em modo relaxado, sugerir MONGO_TLS_RELAXED
+            if _is_atlas_uri(MONGO_URI) and ("tlsv1_alert_internal_error" in err_str or "ssl handshake" in err_str):
+                hint = (
+                    " Dica: Em ambientes como Railway, tente definir MONGO_TLS_RELAXED=1. "
+                    "No Atlas: verifique Network Access (0.0.0.0/0 para permitir qualquer IP)."
+                )
+            else:
+                hint = ""
             raise ConnectionError(
                 "Não foi possível conectar ao MongoDB. "
                 "Verifique se o MongoDB está rodando e se a URI está correta. "
-                f"Detalhe: {e}"
+                f"Detalhe: {e}{hint}"
             ) from e
     return _client
 

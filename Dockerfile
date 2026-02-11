@@ -1,9 +1,9 @@
 # Imagem completa (não slim): OpenSSL do Debian full costuma resolver TLSV1_ALERT_INTERNAL_ERROR com Atlas no Railway
 FROM python:3.12
 
-# build-essential para compilar deps; curl para healthcheck (ca-certificates já na imagem full)
+# build-essential para compilar deps; curl para healthcheck; ca-certificates para TLS com Atlas
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl \
+    build-essential curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Define o diretório de trabalho

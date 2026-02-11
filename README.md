@@ -88,6 +88,16 @@ Acesse `http://localhost:8501`.
 
 ---
 
+## MongoDB Atlas no Railway
+
+Se usar **MongoDB Atlas** (em vez do MongoDB do Railway):
+
+1. **Network Access** no Atlas: **Add IP Address** → **Allow Access from Anywhere** (`0.0.0.0/0`) para permitir conexões do Railway.
+2. **Connection string**: use `mongodb+srv://user:password@cluster.xxx.mongodb.net/?retryWrites=true&w=majority`.
+3. **TLSV1_ALERT_INTERNAL_ERROR**: se o handshake SSL falhar, defina no Railway: **MONGO_TLS_RELAXED** = `1`.
+
+---
+
 ## Deploy no Railway
 
 1. Adicione o serviço MongoDB no Railway.
