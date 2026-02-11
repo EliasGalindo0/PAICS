@@ -8,9 +8,13 @@ textColor = "#1a237e"
 [server]
 # CORS deve ser true quando XSRF está ativo (Streamlit exige origins para o cookie CSRF)
 enableCORS = true
-enableXsrfProtection = true
+# XSRF desativado: em produção (Railway, etc.) o cookie _xsrf não é enviado no upload
+# e causa AxiosError 400. Para apps públicos com file_uploader é o workaround recomendado.
+enableXsrfProtection = false
 headless = true
 port = 8501
+# Tamanho máximo por arquivo (MB); default 200
+maxUploadSize = 200
 
 [browser]
 gatherUsageStats = false
