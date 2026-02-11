@@ -202,19 +202,19 @@ if st.session_state.get('requer_alteracao_senha') or st.session_state.get('prime
                 elif not verify_password(senha_atual, user['password_hash']):
                     st.error("❌ Senha temporária incorreta!")
                 else:
-                    # Atualizar senha e remover flag de primeiro acesso
-                    nova_senha_hash = hash_password(nova_senha)
-                    if user_model.update(user['id'], {
-                        'password_hash': nova_senha_hash,
-                        'primeiro_acesso': False,
-                        'senha_temporaria': None
-                    }):
-                        st.success("✅ Senha alterada com sucesso! Redirecionando...")
-                        st.session_state['requer_alteracao_senha'] = False
-                        st.session_state['primeiro_acesso'] = False
-                        st.rerun()
-                    else:
-                        st.error("❌ Erro ao alterar senha. Tente novamente.")
+                    with st.spinner("🔐 Alterando senha..."):
+                        nova_senha_hash = hash_password(nova_senha)
+                        if user_model.update(user['id'], {
+                            'password_hash': nova_senha_hash,
+                            'primeiro_acesso': False,
+                            'senha_temporaria': None
+                        }):
+                            st.success("✅ Senha alterada com sucesso! Redirecionando...")
+                            st.session_state['requer_alteracao_senha'] = False
+                            st.session_state['primeiro_acesso'] = False
+                            st.rerun()
+                        else:
+                            st.error("❌ Erro ao alterar senha. Tente novamente.")
 
         st.stop()
 
@@ -839,41 +839,42 @@ if page == "Exames":
             with col_btn3:
                 if laudo and laudo.get("status") in ("pendente", "validado") and not is_editing:
                     if st.button("📤 Aprovar/Liberar", key=f"approve_{req['id']}", use_container_width=True):
-                        # Liberar laudo (calcula rating automaticamente)
-                        laudo_model.release(laudo["id"], calcular_rating=True)
-                        requisicao_model.update_status(req["id"], "liberado")
+                        with st.spinner("📤 Liberando laudo..."):
+                            # Liberar laudo (calcula rating automaticamente)
+                            laudo_model.release(laudo["id"], calcular_rating=True)
+                            requisicao_model.update_status(req["id"], "liberado")
 
-                        # Salvar dados de aprendizado
-                        try:
-                            from ai.learning_system import LearningSystem
-                            learning_system = LearningSystem()
+                            # Salvar dados de aprendizado
+                            try:
+                                from ai.learning_system import LearningSystem
+                                learning_system = LearningSystem()
 
-                            # Buscar metadata e contexto salvos
-                            metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
-                            paciente_info = st.session_state.get(
-                                f"laudo_paciente_info_{req['id']}", {})
+                                # Buscar metadata e contexto salvos
+                                metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
+                                paciente_info = st.session_state.get(
+                                    f"laudo_paciente_info_{req['id']}", {})
 
-                            # Recarregar laudo para pegar rating calculado
-                            laudo_atualizado = laudo_model.find_by_id(laudo["id"])
-                            rating = laudo_atualizado.get("rating", 3)
+                                # Recarregar laudo para pegar rating calculado
+                                laudo_atualizado = laudo_model.find_by_id(laudo["id"])
+                                rating = laudo_atualizado.get("rating", 3)
 
-                            # Salvar no sistema de aprendizado
-                            if paciente_info:
-                                learning_system.save_learning_data(
-                                    laudo_id=laudo["id"],
-                                    requisicao_id=req["id"],
-                                    contexto=paciente_info,
-                                    texto_gerado=laudo.get(
-                                        "texto_original_gerado", laudo.get("texto_original", "")),
-                                    texto_final=laudo_atualizado.get("texto", ""),
-                                    rating=rating,
-                                    metadata=metadata
-                                )
-                        except Exception as e:
-                            st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
+                                # Salvar no sistema de aprendizado
+                                if paciente_info:
+                                    learning_system.save_learning_data(
+                                        laudo_id=laudo["id"],
+                                        requisicao_id=req["id"],
+                                        contexto=paciente_info,
+                                        texto_gerado=laudo.get(
+                                            "texto_original_gerado", laudo.get("texto_original", "")),
+                                        texto_final=laudo_atualizado.get("texto", ""),
+                                        rating=rating,
+                                        metadata=metadata
+                                    )
+                            except Exception as e:
+                                st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
 
-                        st.success("✅ Laudo liberado para o usuário!")
-                        st.rerun()
+                            st.success("✅ Laudo liberado para o usuário!")
+                            st.rerun()
             with col_btn4:
                 if st.button("🗑️ Rejeitar", key=f"reject_{req['id']}", use_container_width=True):
                     requisicao_model.update_status(req["id"], "rejeitado")
@@ -1350,64 +1351,65 @@ if page == "Exames":
                                         st.error(f"Erro ao gerar: {str(e)}")
                         with col2:
                             if st.button("📤 Liberar", use_container_width=True, key=f"lib_inline_{laudo['id']}"):
-                                # Salva o conteúdo atual antes de liberar (não exige botão "Salvar" separado)
-                                if texto_editado != texto_laudo_formatado:
-                                    user = get_current_user()
-                                    laudo_model.registrar_edicao(
-                                        laudo["id"],
-                                        texto_editado,
-                                        user["id"] if user else None
-                                    )
-                                else:
-                                    laudo_model.update(laudo["id"], {"texto": texto_editado})
-                                laudo_model.release(laudo["id"], calcular_rating=True)
-                                requisicao_model.update_status(req["id"], "liberado")
+                                with st.spinner("📤 Liberando laudo..."):
+                                    # Salva o conteúdo atual antes de liberar (não exige botão "Salvar" separado)
+                                    if texto_editado != texto_laudo_formatado:
+                                        user = get_current_user()
+                                        laudo_model.registrar_edicao(
+                                            laudo["id"],
+                                            texto_editado,
+                                            user["id"] if user else None
+                                        )
+                                    else:
+                                        laudo_model.update(laudo["id"], {"texto": texto_editado})
+                                    laudo_model.release(laudo["id"], calcular_rating=True)
+                                    requisicao_model.update_status(req["id"], "liberado")
 
-                                # Salvar dados de aprendizado (inclui laudos regenerados com correções)
-                                try:
-                                    from ai.learning_system import LearningSystem
-                                    ls = LearningSystem()
-                                    paciente_info = {
-                                        "especie": req.get("especie", ""),
-                                        "raca": req.get("raca", ""),
-                                        "idade": req.get("idade", ""),
-                                        "sexo": req.get("sexo", ""),
-                                        "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
-                                        "suspeita_clinica": req.get("suspeita_clinica", ""),
-                                        "regiao_estudo": req.get("regiao_estudo", ""),
-                                        "observacoes_adicionais_usuario": "\n".join(
-                                            o.get("texto", "").strip()
-                                            for o in (req.get("observacoes_usuario") or [])
-                                            if o.get("texto", "").strip()
-                                        ),
-                                    }
-                                    laudo_apos_release = laudo_model.find_by_id(laudo["id"])
-                                    rating = laudo_apos_release.get("rating", 3)
-                                    metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
-                                    if not metadata:
-                                        metadata = {
-                                            "modelo_usado": laudo.get("modelo_usado", "api_externa"),
-                                            "usado_api_externa": laudo.get("usado_api_externa", True),
-                                            "similaridade_casos": laudo.get("similaridade_casos"),
-                                            "casos_similares": [],
+                                    # Salvar dados de aprendizado (inclui laudos regenerados com correções)
+                                    try:
+                                        from ai.learning_system import LearningSystem
+                                        ls = LearningSystem()
+                                        paciente_info = {
+                                            "especie": req.get("especie", ""),
+                                            "raca": req.get("raca", ""),
+                                            "idade": req.get("idade", ""),
+                                            "sexo": req.get("sexo", ""),
+                                            "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
+                                            "suspeita_clinica": req.get("suspeita_clinica", ""),
+                                            "regiao_estudo": req.get("regiao_estudo", ""),
+                                            "observacoes_adicionais_usuario": "\n".join(
+                                                o.get("texto", "").strip()
+                                                for o in (req.get("observacoes_usuario") or [])
+                                                if o.get("texto", "").strip()
+                                            ),
                                         }
-                                    ls.save_learning_data(
-                                        laudo_id=laudo["id"],
-                                        requisicao_id=req["id"],
-                                        contexto=paciente_info,
-                                        texto_gerado=laudo.get("texto_original_gerado", laudo.get("texto_original", "")),
-                                        texto_final=laudo_apos_release.get("texto", ""),
-                                        rating=rating,
-                                        metadata=metadata,
-                                    )
-                                except Exception as e:
-                                    st.warning(f"⚠️ Erro ao salvar aprendizado: {str(e)}")
+                                        laudo_apos_release = laudo_model.find_by_id(laudo["id"])
+                                        rating = laudo_apos_release.get("rating", 3)
+                                        metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
+                                        if not metadata:
+                                            metadata = {
+                                                "modelo_usado": laudo.get("modelo_usado", "api_externa"),
+                                                "usado_api_externa": laudo.get("usado_api_externa", True),
+                                                "similaridade_casos": laudo.get("similaridade_casos"),
+                                                "casos_similares": [],
+                                            }
+                                        ls.save_learning_data(
+                                            laudo_id=laudo["id"],
+                                            requisicao_id=req["id"],
+                                            contexto=paciente_info,
+                                            texto_gerado=laudo.get("texto_original_gerado", laudo.get("texto_original", "")),
+                                            texto_final=laudo_apos_release.get("texto", ""),
+                                            rating=rating,
+                                            metadata=metadata,
+                                        )
+                                    except Exception as e:
+                                        st.warning(f"⚠️ Erro ao salvar aprendizado: {str(e)}")
 
-                                st.success(
-                                    "✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
-                                st.balloons()
-                                del st.session_state[editing_key]
-                                st.rerun()
+                                    st.success(
+                                        "✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
+                                    st.balloons()
+                                    del st.session_state[editing_key]
+                                    st.rerun()
                         with col3:
                             if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_inline_{laudo['id']}"):
                                 del st.session_state[editing_key]
@@ -1652,60 +1654,61 @@ elif page == "Nova Requisição":
             elif not uploaded_files:
                 st.error("Selecione ao menos uma imagem do exame.")
             else:
-                admin_id = st.session_state.get("user_id")
-                from database.image_storage import save_image
-                imagens_refs = []
-                for f in uploaded_files:
+                with st.spinner("📤 Enviando requisição e salvando imagens..."):
+                    admin_id = st.session_state.get("user_id")
+                    from database.image_storage import save_image
+                    imagens_refs = []
+                    for f in uploaded_files:
+                        try:
+                            data = f.getbuffer().tobytes()
+                            image_id = save_image(data, f.name, metadata={"admin_id": admin_id})
+                            imagens_refs.append(image_id)
+                        except Exception as e:
+                            log.exception("Erro ao salvar imagem admin no GridFS %s: %s", f.name, e)
+                            raise
+
+                    data_exame_dt = combine_date_local(data_exame) if data_exame else now()
+
                     try:
-                        data = f.getbuffer().tobytes()
-                        image_id = save_image(data, f.name, metadata={"admin_id": admin_id})
-                        imagens_refs.append(image_id)
+                        req_id = requisicao_model.create(
+                            user_id=admin_id,
+                            imagens=imagens_refs,
+                            paciente=_upper(paciente),
+                            tutor=_upper(tutor),
+                            clinica=clinica_nome,
+                            tipo_exame=tipo_exame,
+                            observacoes=_upper(historico),
+                            especie=especie,
+                            idade=idade,
+                            raca=_upper(raca),
+                            sexo=sexo,
+                            medico_veterinario_solicitante=medico_vet,
+                            regiao_estudo=_upper(regiao),
+                            suspeita_clinica=_upper(suspeita),
+                            plantao=plantao,
+                            historico_clinico=_upper(historico),
+                            data_exame=data_exame_dt,
+                            status="pendente",
+                            clinica_id=clinica_id_sel,
+                            veterinario_id=veterinario_id_selecionado or None,
+                        )
+                        st.session_state["admin_requisicao_enviada"] = True
+                        st.session_state["admin_requisicao_info"] = {
+                            "req_id": req_id, "paciente": paciente}
+                        for k in list(st.session_state.keys()):
+                            if k.startswith(pref) and k not in (f"{pref}enviar", f"{pref}limpar"):
+                                del st.session_state[k]
+                        st.session_state[f"{pref}data"] = now().date()
+                        st.session_state[f"{pref}plantao"] = "Não"
+                        st.session_state[f"{pref}sexo"] = "Macho"
+                        st.session_state["admin_upload_counter"] = st.session_state.get(
+                            "admin_upload_counter", 0) + 1
+                        st.rerun()
                     except Exception as e:
-                        log.exception("Erro ao salvar imagem admin no GridFS %s: %s", f.name, e)
-                        raise
-
-                data_exame_dt = combine_date_local(data_exame) if data_exame else now()
-
-                try:
-                    req_id = requisicao_model.create(
-                        user_id=admin_id,
-                        imagens=imagens_refs,
-                        paciente=_upper(paciente),
-                        tutor=_upper(tutor),
-                        clinica=clinica_nome,
-                        tipo_exame=tipo_exame,
-                        observacoes=_upper(historico),
-                        especie=especie,
-                        idade=idade,
-                        raca=_upper(raca),
-                        sexo=sexo,
-                        medico_veterinario_solicitante=medico_vet,
-                        regiao_estudo=_upper(regiao),
-                        suspeita_clinica=_upper(suspeita),
-                        plantao=plantao,
-                        historico_clinico=_upper(historico),
-                        data_exame=data_exame_dt,
-                        status="pendente",
-                        clinica_id=clinica_id_sel,
-                        veterinario_id=veterinario_id_selecionado or None,
-                    )
-                    st.session_state["admin_requisicao_enviada"] = True
-                    st.session_state["admin_requisicao_info"] = {
-                        "req_id": req_id, "paciente": paciente}
-                    for k in list(st.session_state.keys()):
-                        if k.startswith(pref) and k not in (f"{pref}enviar", f"{pref}limpar"):
-                            del st.session_state[k]
-                    st.session_state[f"{pref}data"] = now().date()
-                    st.session_state[f"{pref}plantao"] = "Não"
-                    st.session_state[f"{pref}sexo"] = "Macho"
-                    st.session_state["admin_upload_counter"] = st.session_state.get(
-                        "admin_upload_counter", 0) + 1
-                    st.rerun()
-                except Exception as e:
-                    log.exception("Erro ao criar requisição admin após upload: %s", e)
-                    st.error(f"Erro ao criar requisição: {str(e)}")
-                    import traceback as _tb
-                    _tb.print_exc()
+                        log.exception("Erro ao criar requisição admin após upload: %s", e)
+                        st.error(f"Erro ao criar requisição: {str(e)}")
+                        import traceback as _tb
+                        _tb.print_exc()
 
 elif page == "Clínicas e Usuários":
     st.header("🏥 Clínicas e Usuários")

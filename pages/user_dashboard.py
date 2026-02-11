@@ -296,19 +296,19 @@ if st.session_state.get('requer_alteracao_senha') or st.session_state.get('prime
                 elif not verify_password(senha_atual, user['password_hash']):
                     st.error("❌ Senha temporária incorreta!")
                 else:
-                    # Atualizar senha e remover flag de primeiro acesso
-                    nova_senha_hash = hash_password(nova_senha)
-                    if user_model.update(user['id'], {
-                        'password_hash': nova_senha_hash,
-                        'primeiro_acesso': False,
-                        'senha_temporaria': None
-                    }):
-                        st.success("✅ Senha alterada com sucesso! Redirecionando...")
-                        st.session_state['requer_alteracao_senha'] = False
-                        st.session_state['primeiro_acesso'] = False
-                        st.rerun()
-                    else:
-                        st.error("❌ Erro ao alterar senha. Tente novamente.")
+                    with st.spinner("🔐 Alterando senha..."):
+                        nova_senha_hash = hash_password(nova_senha)
+                        if user_model.update(user['id'], {
+                            'password_hash': nova_senha_hash,
+                            'primeiro_acesso': False,
+                            'senha_temporaria': None
+                        }):
+                            st.success("✅ Senha alterada com sucesso! Redirecionando...")
+                            st.session_state['requer_alteracao_senha'] = False
+                            st.session_state['primeiro_acesso'] = False
+                            st.rerun()
+                        else:
+                            st.error("❌ Erro ao alterar senha. Tente novamente.")
 
         st.stop()
 
@@ -607,103 +607,104 @@ if page == "Exames":
                     st.success("✅ Este laudo foi liberado e está disponível para download!")
                     st.text_area("Conteúdo do Laudo", value=laudo.get("texto", ""),
                                  height=300, disabled=True, key=f"liberado_{laudo['id']}")
-                    try:
-                        from ai.analyzer import load_images_for_analysis
-                        imagens_paths = req.get("imagens", [])
-                        images = load_images_for_analysis(imagens_paths)
-                        # Resolver clínica e veterinário (requisição → usuário da requisição)
-                        _clinica_pdf = req.get("clinica") or ""
-                        if req.get("clinica_id"):
-                            c_obj = clinica_model.find_by_id(req["clinica_id"])
-                            if c_obj:
-                                _clinica_pdf = c_obj.get("nome", "") or _clinica_pdf
-                        if not (_clinica_pdf or "").strip() and req.get("user_id"):
-                            _user_req = user_model.find_by_id(req["user_id"])
-                            if _user_req and _user_req.get("clinica_id"):
-                                c_obj = clinica_model.find_by_id(_user_req["clinica_id"])
-                                _clinica_pdf = (c_obj or {}).get("nome", "") or _clinica_pdf
-                        _vet_pdf = req.get("medico_veterinario_solicitante") or ""
-                        if req.get("veterinario_id"):
-                            v_obj = veterinario_model.find_by_id(req["veterinario_id"])
-                            if v_obj:
-                                _vet_pdf = v_obj.get("nome", "") or _vet_pdf
-                        if not (_vet_pdf or "").strip() and req.get("user_id"):
-                            _user_req = user_model.find_by_id(req["user_id"])
-                            if _user_req and _user_req.get("clinica_id"):
-                                vets = veterinario_model.find_by_clinica(
-                                    _user_req["clinica_id"], apenas_ativos=True)
-                                _vet_pdf = (vets[0].get("nome") if vets else None) or _vet_pdf
-                        pdf = FPDF("P", "mm", "A4")
-                        pdf.set_auto_page_break(auto=True, margin=15)
+                    with st.spinner("📄 Preparando download do PDF..."):
+                        try:
+                            from ai.analyzer import load_images_for_analysis
+                            imagens_paths = req.get("imagens", [])
+                            images = load_images_for_analysis(imagens_paths)
+                            # Resolver clínica e veterinário (requisição → usuário da requisição)
+                            _clinica_pdf = req.get("clinica") or ""
+                            if req.get("clinica_id"):
+                                c_obj = clinica_model.find_by_id(req["clinica_id"])
+                                if c_obj:
+                                    _clinica_pdf = c_obj.get("nome", "") or _clinica_pdf
+                            if not (_clinica_pdf or "").strip() and req.get("user_id"):
+                                _user_req = user_model.find_by_id(req["user_id"])
+                                if _user_req and _user_req.get("clinica_id"):
+                                    c_obj = clinica_model.find_by_id(_user_req["clinica_id"])
+                                    _clinica_pdf = (c_obj or {}).get("nome", "") or _clinica_pdf
+                            _vet_pdf = req.get("medico_veterinario_solicitante") or ""
+                            if req.get("veterinario_id"):
+                                v_obj = veterinario_model.find_by_id(req["veterinario_id"])
+                                if v_obj:
+                                    _vet_pdf = v_obj.get("nome", "") or _vet_pdf
+                            if not (_vet_pdf or "").strip() and req.get("user_id"):
+                                _user_req = user_model.find_by_id(req["user_id"])
+                                if _user_req and _user_req.get("clinica_id"):
+                                    vets = veterinario_model.find_by_clinica(
+                                        _user_req["clinica_id"], apenas_ativos=True)
+                                    _vet_pdf = (vets[0].get("nome") if vets else None) or _vet_pdf
+                            pdf = FPDF("P", "mm", "A4")
+                            pdf.set_auto_page_break(auto=True, margin=15)
 
-                        def _clean(t):
-                            t = str(t) if t is not None else ""
-                            for a, b in [("'", "'"), ("'", "'"), (""", '"'), (""", '"'), ("—", "-"), ("–", "-"), ("…", "..."), ("°", " graus")]:
-                                t = t.replace(a, b)
-                            t = t.replace("**", "")
-                            try:
-                                t.encode("latin-1")
-                            except UnicodeEncodeError:
-                                import unicodedata
-                                t = unicodedata.normalize("NFKD", t).encode(
-                                    "latin-1", "ignore").decode("latin-1")
-                            return t
-                        pdf.add_page()
-                        pdf.set_font("Arial", "B", 14)
-                        pdf.ln(5)
-                        pdf.set_font("Arial", "", 10)
-                        pdf.cell(
-                            0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(
-                            0, 6, f"Clinica Solicitante: {_clean(_clinica_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(
-                            0, 6, f"Medico(a) Veterinario(a): {_clean(_vet_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.ln(4)
-                        pdf.set_font("Arial", "B", 12)
-                        pdf.ln(2)
-                        pdf.set_font("Arial", "", 11)
-                        pdf.multi_cell(0, 5, _clean(laudo.get("texto", "")))
-                        if images:
+                            def _clean(t):
+                                t = str(t) if t is not None else ""
+                                for a, b in [("'", "'"), ("'", "'"), (""", '"'), (""", '"'), ("—", "-"), ("–", "-"), ("…", "..."), ("°", " graus")]:
+                                    t = t.replace(a, b)
+                                t = t.replace("**", "")
+                                try:
+                                    t.encode("latin-1")
+                                except UnicodeEncodeError:
+                                    import unicodedata
+                                    t = unicodedata.normalize("NFKD", t).encode(
+                                        "latin-1", "ignore").decode("latin-1")
+                                return t
                             pdf.add_page()
-                            for i, img in enumerate(images):
-                                w_px, h_px = img.size
-                                ar = h_px / w_px
-                                w_mm, h_mm = 180, 180 * ar
-                                if pdf.get_y() + h_mm > 267:
-                                    pdf.add_page()
-                                buf = io.BytesIO()
-                                img.save(buf, format="PNG")
-                                buf.seek(0)
-                                pdf.image(buf, w=w_mm, h=h_mm)
-                                pdf.set_font("Arial", "I", 9)
-                                pdf.cell(0, 6, f"Imagem {i + 1}",
-                                         new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-                                pdf.ln(4)
-                        pdf.set_y(-35)
-                        pdf.set_font("Arial", "", 10)
-                        pdf.cell(0, 10, "_" * 60, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
-                        pdf.ln(2)
-                        pdf.set_font("Arial", "B", 10)
-                        pdf.cell(0, 5, "Dra. Laís Costa Muchiutti",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
-                        pdf.ln(2)
-                        pdf.set_font("Arial", "", 9)
-                        pdf.cell(0, 5, "Medica Veterinaria-CRMV SP32247",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        out = pdf.output(dest="S")
-                        out = bytes(out) if isinstance(out, bytearray) else out
-                        st.download_button(
-                            "📥 Baixar como PDF", data=out, file_name=f"laudo_{req.get('paciente', 'exame').replace(' ', '_')}.pdf", mime="application/pdf", use_container_width=True, key=f"dl_pdf_{laudo['id']}")
-                    except Exception as e:
-                        st.error(f"Erro ao gerar PDF: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        st.download_button("📥 Baixar como PDF", data="", file_name="laudo.pdf", mime="application/pdf",
-                                           disabled=True, use_container_width=True, key=f"dl_pdf_err_{laudo['id']}")
+                            pdf.set_font("Arial", "B", 14)
+                            pdf.ln(5)
+                            pdf.set_font("Arial", "", 10)
+                            pdf.cell(
+                                0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                            pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}",
+                                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                            pdf.cell(
+                                0, 6, f"Clinica Solicitante: {_clean(_clinica_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                            pdf.cell(
+                                0, 6, f"Medico(a) Veterinario(a): {_clean(_vet_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                            pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}",
+                                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                            pdf.ln(4)
+                            pdf.set_font("Arial", "B", 12)
+                            pdf.ln(2)
+                            pdf.set_font("Arial", "", 11)
+                            pdf.multi_cell(0, 5, _clean(laudo.get("texto", "")))
+                            if images:
+                                pdf.add_page()
+                                for i, img in enumerate(images):
+                                    w_px, h_px = img.size
+                                    ar = h_px / w_px
+                                    w_mm, h_mm = 180, 180 * ar
+                                    if pdf.get_y() + h_mm > 267:
+                                        pdf.add_page()
+                                    buf = io.BytesIO()
+                                    img.save(buf, format="PNG")
+                                    buf.seek(0)
+                                    pdf.image(buf, w=w_mm, h=h_mm)
+                                    pdf.set_font("Arial", "I", 9)
+                                    pdf.cell(0, 6, f"Imagem {i + 1}",
+                                             new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+                                    pdf.ln(4)
+                            pdf.set_y(-35)
+                            pdf.set_font("Arial", "", 10)
+                            pdf.cell(0, 10, "_" * 60, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+                            pdf.ln(2)
+                            pdf.set_font("Arial", "B", 10)
+                            pdf.cell(0, 5, "Dra. Laís Costa Muchiutti",
+                                     new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+                            pdf.ln(2)
+                            pdf.set_font("Arial", "", 9)
+                            pdf.cell(0, 5, "Medica Veterinaria-CRMV SP32247",
+                                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                            out = pdf.output(dest="S")
+                            out = bytes(out) if isinstance(out, bytearray) else out
+                            st.download_button(
+                                "📥 Baixar como PDF", data=out, file_name=f"laudo_{req.get('paciente', 'exame').replace(' ', '_')}.pdf", mime="application/pdf", use_container_width=True, key=f"dl_pdf_{laudo['id']}")
+                        except Exception as e:
+                            st.error(f"Erro ao gerar PDF: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            st.download_button("📥 Baixar como PDF", data="", file_name="laudo.pdf", mime="application/pdf",
+                                               disabled=True, use_container_width=True, key=f"dl_pdf_err_{laudo['id']}")
 
 elif page == "Nova Requisição":
     st.header("📤 Nova Requisição de Laudo")
@@ -964,37 +965,38 @@ elif page == "Nova Requisição":
             if not paciente.strip() or not tutor.strip():
                 st.error("Para salvar rascunho, preencha pelo menos Nome do Paciente e Nome do Tutor(a).")
             else:
-                from utils.timezone import combine_date_local
-                draft_id = st.session_state.get("nr_draft_id")
-                data_exame_dt = combine_date_local(data_exame) if data_exame else now()
-                payload = {
-                    "paciente": _upper(paciente), "tutor": _upper(tutor), "clinica": clinica, "tipo_exame": tipo_exame,
-                    "especie": especie, "idade": idade, "raca": _upper(raca), "sexo": sexo,
-                    "medico_veterinario_solicitante": medico_vet, "regiao_estudo": _upper(regiao),
-                    "suspeita_clinica": _upper(suspeita), "plantao": plantao, "historico_clinico": _upper(historico),
-                    "observacoes": _upper(historico), "data_exame": data_exame_dt,
-                }
-                if user_clinica_id:
-                    payload["clinica_id"] = user_clinica_id
-                    payload["veterinario_id"] = veterinario_id_selecionado or None
-                if draft_id:
-                    requisicao_model.update(draft_id, {**payload, "imagens": []})
-                    st.success("Rascunho atualizado.")
-                else:
-                    rid = requisicao_model.create(
-                        user_id=user_id, imagens=[], status="rascunho",
-                        paciente=payload["paciente"], tutor=payload["tutor"], clinica=payload["clinica"],
-                        tipo_exame=payload["tipo_exame"], observacoes=payload["observacoes"],
-                        especie=payload["especie"], idade=payload["idade"], raca=payload["raca"], sexo=payload["sexo"],
-                        medico_veterinario_solicitante=payload["medico_veterinario_solicitante"],
-                        regiao_estudo=payload["regiao_estudo"], suspeita_clinica=payload["suspeita_clinica"],
-                        plantao=payload["plantao"], historico_clinico=payload["historico_clinico"],
-                        data_exame=payload["data_exame"],
-                        clinica_id=payload.get("clinica_id"), veterinario_id=payload.get("veterinario_id"),
-                    )
-                    st.session_state["nr_draft_id"] = rid
-                    st.success("Rascunho salvo.")
-                st.rerun()
+                with st.spinner("💾 Salvando rascunho..."):
+                    from utils.timezone import combine_date_local
+                    draft_id = st.session_state.get("nr_draft_id")
+                    data_exame_dt = combine_date_local(data_exame) if data_exame else now()
+                    payload = {
+                        "paciente": _upper(paciente), "tutor": _upper(tutor), "clinica": clinica, "tipo_exame": tipo_exame,
+                        "especie": especie, "idade": idade, "raca": _upper(raca), "sexo": sexo,
+                        "medico_veterinario_solicitante": medico_vet, "regiao_estudo": _upper(regiao),
+                        "suspeita_clinica": _upper(suspeita), "plantao": plantao, "historico_clinico": _upper(historico),
+                        "observacoes": _upper(historico), "data_exame": data_exame_dt,
+                    }
+                    if user_clinica_id:
+                        payload["clinica_id"] = user_clinica_id
+                        payload["veterinario_id"] = veterinario_id_selecionado or None
+                    if draft_id:
+                        requisicao_model.update(draft_id, {**payload, "imagens": []})
+                        st.success("Rascunho atualizado.")
+                    else:
+                        rid = requisicao_model.create(
+                            user_id=user_id, imagens=[], status="rascunho",
+                            paciente=payload["paciente"], tutor=payload["tutor"], clinica=payload["clinica"],
+                            tipo_exame=payload["tipo_exame"], observacoes=payload["observacoes"],
+                            especie=payload["especie"], idade=payload["idade"], raca=payload["raca"], sexo=payload["sexo"],
+                            medico_veterinario_solicitante=payload["medico_veterinario_solicitante"],
+                            regiao_estudo=payload["regiao_estudo"], suspeita_clinica=payload["suspeita_clinica"],
+                            plantao=payload["plantao"], historico_clinico=payload["historico_clinico"],
+                            data_exame=payload["data_exame"],
+                            clinica_id=payload.get("clinica_id"), veterinario_id=payload.get("veterinario_id"),
+                        )
+                        st.session_state["nr_draft_id"] = rid
+                        st.success("Rascunho salvo.")
+                    st.rerun()
 
         if enviar:
             if not paciente or not tutor:
@@ -1002,62 +1004,63 @@ elif page == "Nova Requisição":
             elif not uploaded_files:
                 st.error("Selecione ao menos uma imagem do exame.")
             else:
-                from database.image_storage import save_image
-                imagens_refs = []
-                for f in uploaded_files:
+                with st.spinner("📤 Enviando requisição e salvando imagens..."):
+                    from database.image_storage import save_image
+                    imagens_refs = []
+                    for f in uploaded_files:
+                        try:
+                            data = f.getbuffer().tobytes()
+                            image_id = save_image(data, f.name, metadata={"user_id": user_id})
+                            imagens_refs.append(image_id)
+                        except Exception as e:
+                            log.exception("Erro ao salvar imagem no GridFS %s: %s", f.name, e)
+                            raise
+
+                    from utils.timezone import combine_date_local
+                    data_exame_dt = combine_date_local(data_exame) if data_exame else now()
+
                     try:
-                        data = f.getbuffer().tobytes()
-                        image_id = save_image(data, f.name, metadata={"user_id": user_id})
-                        imagens_refs.append(image_id)
+                        req_id = requisicao_model.create(
+                            user_id=user_id, imagens=imagens_refs,
+                            paciente=_upper(paciente), tutor=_upper(tutor), clinica=clinica, tipo_exame=tipo_exame,
+                            observacoes=_upper(historico), especie=especie, idade=idade, raca=_upper(raca), sexo=sexo,
+                            medico_veterinario_solicitante=medico_vet, regiao_estudo=_upper(regiao),
+                            suspeita_clinica=_upper(suspeita), plantao=plantao, historico_clinico=_upper(historico),
+                            data_exame=data_exame_dt, status="pendente",
+                            clinica_id=user_clinica_id or None, veterinario_id=veterinario_id_selecionado or None,
+                        )
+                        # Imagens apenas armazenadas. Laudo é gerado pela IA quando o admin
+                        # acessar "Criar/Editar Laudo" (Requisições) ou "Gerar Laudo com IA" (Laudos).
+                        st.session_state["requisicao_enviada"] = True
+                        st.session_state["requisicao_info"] = {"req_id": req_id, "paciente": paciente}
+
+                        # Limpar formulário completamente
+                        for k in list(st.session_state.keys()):
+                            if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_exportar", "nr_enviar"):
+                                del st.session_state[k]
+
+                        # Resetar valores padrão
+                        st.session_state["nr_data"] = now().date()
+                        st.session_state["nr_plantao"] = "Não"
+                        st.session_state["nr_sexo"] = "Macho"
+                        st.session_state["nr_tipo_exame"] = "raio-x"
+
+                        # Incrementar contador do uploader para forçar reset
+                        st.session_state["upload_counter"] = st.session_state.get(
+                            "upload_counter", 0) + 1
+
+                        # Rolar para o topo após rerun
+                        st.markdown("""
+                            <script>
+                                setTimeout(function() {
+                                    window.parent.scrollTo({ top: 0, behavior: 'smooth' });
+                                }, 200);
+                            </script>
+                        """, unsafe_allow_html=True)
+                        st.rerun()
                     except Exception as e:
-                        log.exception("Erro ao salvar imagem no GridFS %s: %s", f.name, e)
-                        raise
-
-                from utils.timezone import combine_date_local
-                data_exame_dt = combine_date_local(data_exame) if data_exame else now()
-
-                try:
-                    req_id = requisicao_model.create(
-                        user_id=user_id, imagens=imagens_refs,
-                        paciente=_upper(paciente), tutor=_upper(tutor), clinica=clinica, tipo_exame=tipo_exame,
-                        observacoes=_upper(historico), especie=especie, idade=idade, raca=_upper(raca), sexo=sexo,
-                        medico_veterinario_solicitante=medico_vet, regiao_estudo=_upper(regiao),
-                        suspeita_clinica=_upper(suspeita), plantao=plantao, historico_clinico=_upper(historico),
-                        data_exame=data_exame_dt, status="pendente",
-                        clinica_id=user_clinica_id or None, veterinario_id=veterinario_id_selecionado or None,
-                    )
-                    # Imagens apenas armazenadas. Laudo é gerado pela IA quando o admin
-                    # acessar "Criar/Editar Laudo" (Requisições) ou "Gerar Laudo com IA" (Laudos).
-                    st.session_state["requisicao_enviada"] = True
-                    st.session_state["requisicao_info"] = {"req_id": req_id, "paciente": paciente}
-
-                    # Limpar formulário completamente
-                    for k in list(st.session_state.keys()):
-                        if k.startswith("nr_") and k not in ("nr_rascunho_sel", "nr_load_draft", "nr_limpar", "nr_rascunho", "nr_exportar", "nr_enviar"):
-                            del st.session_state[k]
-
-                    # Resetar valores padrão
-                    st.session_state["nr_data"] = now().date()
-                    st.session_state["nr_plantao"] = "Não"
-                    st.session_state["nr_sexo"] = "Macho"
-                    st.session_state["nr_tipo_exame"] = "raio-x"
-
-                    # Incrementar contador do uploader para forçar reset
-                    st.session_state["upload_counter"] = st.session_state.get(
-                        "upload_counter", 0) + 1
-
-                    # Rolar para o topo após rerun
-                    st.markdown("""
-                        <script>
-                            setTimeout(function() {
-                                window.parent.scrollTo({ top: 0, behavior: 'smooth' });
-                            }, 200);
-                        </script>
-                    """, unsafe_allow_html=True)
-                    st.rerun()
-                except Exception as e:
-                    log.exception("Erro ao criar requisição após upload: %s", e)
-                    st.error(f"Erro ao criar requisição: {str(e)}")
+                        log.exception("Erro ao criar requisição após upload: %s", e)
+                        st.error(f"Erro ao criar requisição: {str(e)}")
 
 elif page == "Minhas Faturas":
     st.header("💰 Minhas Faturas")

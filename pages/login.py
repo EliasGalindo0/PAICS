@@ -156,8 +156,9 @@ with st.form("login_form"):
 
     if submit:
         if email_or_username and password:
-            success, message, tokens = login_user(
-                email_or_username, password, remember_me=remember_me)
+            with st.spinner("🔐 Entrando..."):
+                success, message, tokens = login_user(
+                    email_or_username, password, remember_me=remember_me)
 
             if success:
                 # Sempre salvar tokens no session_state

@@ -341,6 +341,19 @@ def apply_custom_theme():
     .dataframe tbody tr:nth-child(even) {
         background-color: var(--background-light);
     }
+    
+    /* Animação de carregamento - spinner mais visível e suave */
+    [data-testid="stSpinner"] {
+        margin: 1rem auto !important;
+    }
+    [data-testid="stSpinner"] > div {
+        border-color: var(--primary-color) transparent transparent transparent !important;
+        animation: stSpinnerPulse 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    }
+    @keyframes stSpinnerPulse {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
     </style>
     <script>
     // Fix cores dinamicamente no modo escuro
@@ -675,6 +688,19 @@ def apply_custom_theme():
     .dataframe thead {
         background-color: var(--primary-color);
         color: white;
+    }
+    
+    /* Animação de carregamento - spinner mais visível e suave */
+    [data-testid="stSpinner"] {
+        margin: 1rem auto !important;
+    }
+    [data-testid="stSpinner"] > div {
+        border-color: var(--primary-color) transparent transparent transparent !important;
+        animation: stSpinnerPulse 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    }
+    @keyframes stSpinnerPulse {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
     </style>
     """
