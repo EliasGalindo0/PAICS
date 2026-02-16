@@ -95,3 +95,59 @@ def test_laudo_find_by_requisicao(clean_db):
     assert found.get("id") == laudo_id
     assert found.get("requisicao_id") == req_id
     assert found.get("texto") == "Laudo teste"
+
+
+@pytest.mark.unit
+def test_requisicao_find_by_ids(clean_db):
+    """Requisicao.find_by_ids deve retornar dict id->requisicao em batch."""
+    from database.models import User, Requisicao
+
+    user_id = User(clean_db.users).create(
+        username="u", email="u@t.com", password_hash="h", role="user"
+    )
+    req_model = Requisicao(clean_db.requisicoes)
+    req_id1 = req_model.create(user_id=user_id, imagens=[], paciente="P1")
+    req_id2 = req_model.create(user_id=user_id, imagens=[], paciente="P2")
+
+    reqs_map = req_model.find_by_ids([req_id1, req_id2])
+    assert len(reqs_map) == 2
+    assert req_id1 in reqs_map
+    assert req_id2 in reqs_map
+    assert reqs_map[req_id1].get("paciente") == "P1"
+    assert reqs_map[req_id2].get("paciente") == "P2"
+
+    # IDs inexistentes não devem quebrar
+    reqs_map2 = req_model.find_by_ids([req_id1, "000000000000000000000000"])
+    assert len(reqs_map2) == 1
+    assert req_id1 in reqs_map2
+
+
+@pytest.mark.unit
+def test_laudo_find_by_requisicao_ids(clean_db):
+    """Laudo.find_by_requisicao_ids deve retornar dict requisicao_id->laudo em batch."""
+    from database.models import User, Requisicao, Laudo
+
+    user_id = User(clean_db.users).create(
+        username="u", email="u@t.com", password_hash="h", role="user"
+    )
+    req_model = Requisicao(clean_db.requisicoes)
+    laudo_model = Laudo(clean_db.laudos)
+
+    req_id1 = req_model.create(user_id=user_id, imagens=[], paciente="A")
+    req_id2 = req_model.create(user_id=user_id, imagens=[], paciente="B")
+    laudo_model.create(requisicao_id=req_id1, texto="Laudo A", texto_original="Laudo A")
+    laudo_model.create(requisicao_id=req_id2, texto="Laudo B", texto_original="Laudo B")
+
+    laudos_map = laudo_model.find_by_requisicao_ids([req_id1, req_id2])
+    assert len(laudos_map) == 2
+    assert req_id1 in laudos_map
+    assert req_id2 in laudos_map
+    assert laudos_map[req_id1].get("texto") == "Laudo A"
+    assert laudos_map[req_id2].get("texto") == "Laudo B"
+
+    # Requisição sem laudo retorna vazio para ela
+    req_id3 = req_model.create(user_id=user_id, imagens=[], paciente="C")
+    laudos_map2 = laudo_model.find_by_requisicao_ids([req_id1, req_id3])
+    assert len(laudos_map2) == 1
+    assert req_id1 in laudos_map2
+    assert req_id3 not in laudos_map2

@@ -1,7 +1,7 @@
 """
 Utilitários para o painel financeiro
 """
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict
 from database.connection import get_db
 from database.models import Requisicao, Laudo, Fatura, User, SystemConfig
@@ -54,6 +54,10 @@ def gerar_fechamento(
     # Buscar requisições do usuário no período
     requisicoes = requisicao_model.find_by_user(user_id)
 
+    # Batch: buscar todos os laudos de uma vez
+    req_ids = [r["id"] for r in requisicoes]
+    laudos_map = laudo_model.find_by_requisicao_ids(req_ids) if req_ids else {}
+
     # Filtrar por período e status liberado
     exames = []
     from datetime import timezone as _tzmod
@@ -76,7 +80,7 @@ def gerar_fechamento(
         req_date_local = utc_to_local(req_date)
 
         if data_inicio <= req_date_local <= data_fim:
-            laudo = laudo_model.find_by_requisicao(req["id"])
+            laudo = laudos_map.get(req["id"])
             if laudo and laudo.get("status") == "liberado":
                 is_plantao = (req.get("plantao") == "Sim")
                 valor_base = valor_base_exame
