@@ -297,6 +297,24 @@ class Requisicao(BaseModel):
         doc = self.collection.find_one({"_id": ObjectId(req_id)})
         return self.to_dict(doc) if doc else None
 
+    def find_by_ids(self, req_ids: List[str]) -> Dict[str, Dict]:
+        """Busca requisições por múltiplos IDs em uma única consulta. Retorna dict id->requisicao."""
+        if not req_ids:
+            return {}
+        ids_oid = []
+        for rid in req_ids:
+            try:
+                ids_oid.append(ObjectId(rid))
+            except Exception:
+                continue
+        docs = list(self.collection.find({"_id": {"$in": ids_oid}}))
+        result = {}
+        for d in docs:
+            conv = self.to_dict(d)
+            if conv and conv.get("id"):
+                result[conv["id"]] = conv
+        return result
+
     def find_by_user(self, user_id: str, status: Optional[str] = None) -> List[Dict]:
         """Busca requisições de um usuário"""
         query = {"user_id": user_id}

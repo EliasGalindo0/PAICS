@@ -22,20 +22,35 @@ def _ref_to_data_url_and_filename(ref: str) -> tuple[str | None, str]:
     """
     Carrega imagem por ref (GridFS id ou path) e retorna (data_url, filename).
     Evita st.image() que usa armazenamento efêmero em produção.
+    Tenta load_images_for_analysis primeiro; se falhar, usa get_image_bytes + conversão manual.
     """
-    from database.image_storage import get_filename
+    from io import BytesIO
+    from database.image_storage import get_filename, get_image_bytes_and_filename
     from ai.analyzer import load_images_for_analysis
+    filename = get_filename(ref)
     try:
         loaded = load_images_for_analysis([ref])
-        if not loaded:
-            return (None, get_filename(ref))
-        buf = BytesIO()
-        loaded[0].save(buf, format="PNG")
-        buf.seek(0)
-        data_url = f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
-        return (data_url, get_filename(ref))
+        if loaded:
+            buf = BytesIO()
+            loaded[0].save(buf, format="PNG")
+            buf.seek(0)
+            data_url = f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
+            return (data_url, filename)
+        # Fallback: bytes direto (ex.: DICOM que pode falhar em load_images)
+        result = get_image_bytes_and_filename(ref)
+        if result:
+            data, fn = result
+            from ai.analyzer import _load_image_from_bytes
+            img = _load_image_from_bytes(data, fn)
+            if img:
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                buf.seek(0)
+                data_url = f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
+                return (data_url, filename)
     except Exception:
-        return (None, get_filename(ref))
+        pass
+    return (None, filename)
 
 # IMPORTANTE: st.set_page_config deve vir PRIMEIRO
 st.set_page_config(
@@ -474,6 +489,38 @@ if page == "Exames":
             return x_local.strftime("%d/%m/%Y %H:%M")
         return str(x)[:16]
 
+    # Gerar laudo diretamente do card minimal (sem abrir exame)
+    gerar_direto_id = st.session_state.pop("admin_gerar_laudo_direto_req_id", None)
+    if gerar_direto_id:
+        req_gerar = next((r for r in exames if r["id"] == gerar_direto_id), None)
+        if req_gerar and gerar_direto_id not in laudos_por_req:
+            selected_paths = req_gerar.get("imagens") or []
+            if selected_paths:
+                try:
+                    from ai.analyzer import load_images_for_analysis
+                    from ai.learning_system import LearningSystem
+                    images = load_images_for_analysis(selected_paths)
+                    if images:
+                        ls = LearningSystem()
+                        _obs = "\n".join(o.get("texto", "").strip() for o in (req_gerar.get("observacoes_usuario") or []) if o.get("texto", "").strip())
+                        paciente_info = {"especie": req_gerar.get("especie", ""), "raca": req_gerar.get("raca", ""),
+                            "idade": req_gerar.get("idade", ""), "sexo": req_gerar.get("sexo", ""),
+                            "historico_clinico": (req_gerar.get("historico_clinico") or req_gerar.get("observacoes", "")),
+                            "suspeita_clinica": req_gerar.get("suspeita_clinica", ""), "regiao_estudo": req_gerar.get("regiao_estudo", ""),
+                            "observacoes_adicionais_usuario": _obs}
+                        texto_gerado, metadata = ls.generate_laudo(images, paciente_info, req_gerar["id"])
+                        laudo_model.create(requisicao_id=req_gerar["id"], texto=texto_gerado, texto_original=texto_gerado,
+                            status="pendente", modelo_usado=metadata.get("modelo_usado", "api_externa"),
+                            usado_api_externa=metadata.get("usado_api_externa", True), imagens_usadas=selected_paths,
+                            similaridade_casos=metadata.get("similaridade_casos"))
+                    else:
+                        laudo_model.create(requisicao_id=req_gerar["id"], texto="", texto_original="", status="pendente", imagens_usadas=selected_paths)
+                except Exception:
+                    laudo_model.create(requisicao_id=req_gerar["id"], texto="", texto_original="", status="pendente")
+                st.session_state["admin_exame_aberto_id"] = gerar_direto_id
+                st.session_state[f"editing_{gerar_direto_id}"] = True
+                st.rerun()
+
     # Lazy loading: carregar laudo, imagens e dados pesados apenas do exame ABERTO
     exame_aberto_id = st.session_state.get("admin_exame_aberto_id")
     exame_ids = [r["id"] for r in exames]
@@ -491,8 +538,9 @@ if page == "Exames":
 
         # Lazy loading: exame NÃO aberto → mostrar card minimal (sem carregar laudo, imagens, etc.)
         if req["id"] != exame_aberto_id:
+            tem_laudo = req["id"] in laudos_por_req
             with st.container():
-                card_col, btn_col = st.columns([4, 1])
+                card_col, btn_col = st.columns([3, 2])
                 with card_col:
                     st.markdown(
                         f"**📄 #{req['id'][:8]}** · {(req.get('paciente') or 'Sem nome').upper()} · "
@@ -500,9 +548,16 @@ if page == "Exames":
                         f"{_fmt_dt(req.get('created_at') or req.get('data_exame'))}"
                     )
                 with btn_col:
-                    if st.button("📂 Abrir", key=f"abrir_exame_{req['id']}", use_container_width=True):
-                        st.session_state["admin_exame_aberto_id"] = req["id"]
-                        st.rerun()
+                    b1, b2 = st.columns(2)
+                    with b1:
+                        if st.button("📂 Abrir", key=f"abrir_exame_{req['id']}", use_container_width=True):
+                            st.session_state["admin_exame_aberto_id"] = req["id"]
+                            st.rerun()
+                    with b2:
+                        if not tem_laudo and n_imgs > 0:
+                            if st.button("🤖 Gerar Laudo", key=f"gerar_direto_{req['id']}", use_container_width=True):
+                                st.session_state["admin_gerar_laudo_direto_req_id"] = req["id"]
+                                st.rerun()
             st.divider()
             continue
 
@@ -514,396 +569,283 @@ if page == "Exames":
             laudo = laudos_por_req.get(req["id"])  # usa cache da consulta em batch
             user = user_model.find_by_id(req.get("user_id")) if req.get("user_id") else None
 
-            if view_mode == "Rápida":
-                _clinica_rap, _ = _req_clinica_vet_display(req)
-                clinica_rap = (_clinica_rap or "—").upper()
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.write(f"**Paciente:** {(req.get('paciente') or '—').upper()}")
-                    st.write(f"**Tutor:** {(req.get('tutor') or '—').upper()}")
-                    st.write(f"**Clínica:** {clinica_rap}")
-                with c2:
-                    st.write(f"**Status:** {(status_label or '—').upper()}")
-                    st.write(f"**Data:** {_fmt_dt(req.get('created_at') or req.get('data_exame'))}")
-                    st.write(f"**Tipo:** {(req.get('tipo_exame') or '—').upper()}")
-                    st.write(f"**Imagens:** {n_imgs} ARQUIVO(S)")
-                with c3:
-                    if user:
-                        st.write(f"**Usuário:** {user.get('nome', user.get('username'))}")
-                    if laudo:
-                        st.info(f"📝 Laudo: {laudo.get('status', 'N/A')}")
-                    else:
-                        st.warning("⏳ Laudo não criado")
-                    _n_obs = len(req.get("observacoes_usuario") or [])
-                    if _n_obs:
-                        st.caption(f"📌 {_n_obs} observação(ões) do usuário")
-                # Galeria rápida (expander)
-                if n_imgs:
-                    with st.expander("🖼️ Ver imagens", expanded=False):
-                        imagens_paths = req.get("imagens") or []
-                        n_cols_img = 5
-                        for start in range(0, len(imagens_paths), n_cols_img):
-                            cols = st.columns(n_cols_img)
-                            for k, ref in enumerate(imagens_paths[start : start + n_cols_img]):
-                                if k < len(cols):
-                                    with cols[k]:
-                                        data_url, nome = _ref_to_data_url_and_filename(ref)
-                                        if data_url:
-                                            nome_disp = nome[:40] + ("..." if len(nome) > 40 else "")
-                                            st.markdown(
-                                                f'<img src="{data_url}" style="width:100%;max-height:200px;object-fit:contain;border-radius:4px;">'
-                                                f'<div style="text-align:center;font-size:0.8rem;color:#666;">{nome_disp}</div>',
-                                                unsafe_allow_html=True,
-                                            )
-                                        else:
-                                            st.caption(nome or str(ref)[:20])
-            else:
-                st.subheader("📋 Dados completos da requisição")
-                # Resolver nome da clínica e do veterinário (req ou usuário da requisição)
-                clinica_display, vet_display = _req_clinica_vet_display(req)
-                clinica_display = (clinica_display or "—").upper()
-                vet_display = (vet_display or "—").upper()
-                def _up(s): return (s or "—").upper() if isinstance(
-                    s, str) else (str(s).upper() if s is not None else "—")
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.write("**Paciente:**", _up(req.get("paciente")))
-                    st.write("**Espécie:**", _up(req.get("especie")))
-                    st.write("**Idade:**", _up(req.get("idade")))
-                    st.write("**Raça:**", _up(req.get("raca")))
-                    st.write("**Sexo:**", _up(req.get("sexo")))
-                    st.write("**Tutor(a):**", _up(req.get("tutor")))
-                    st.write("**Clínica solicitante:**", clinica_display)
-                    st.write("**Médico(a) veterinário(a):**", vet_display)
-                with col_b:
-                    st.write("**Região de estudo:**", _up(req.get("regiao_estudo")))
-                    st.write("**Suspeita clínica:**", _up(req.get("suspeita_clinica")))
-                    st.write("**Plantão:**", _up(req.get("plantao")))
-                    st.write("**Data da requisição:**",
-                             _fmt_dt(req.get("created_at") or req.get("data_exame")))
-                    st.write("**Status:**", (status_label or "—").upper())
-                    st.write("**Tipo de exame:**", _up(req.get("tipo_exame")))
-                    if user:
-                        st.write("**Usuário:**", user.get("nome", user.get("username")),
-                                 "·", user.get("email", ""))
-                st.write("**Histórico clínico:**")
-                hc = (req.get("historico_clinico") or req.get("observacoes") or "—").upper()
-                st.text_area("", value=hc, height=80, disabled=True, key=f"hist_{req['id']}")
-
-            # Observações adicionais enviadas pelo usuário (ele não edita a req, só adiciona notas)
-            _obs_admin = req.get("observacoes_usuario") or []
-            if _obs_admin:
-                with st.expander("📌 Observações do usuário", expanded=True):
-                    st.caption(
-                        "O usuário enviou estas observações para considerar no laudo (sem alterar os dados originais da requisição).")
-                    for _io, _ob in enumerate(reversed(_obs_admin)):
-                        _txt = _ob.get("texto", "")
-                        _dt = _ob.get("created_at", "")
-                        if _dt and hasattr(_dt, "strftime"):
-                            _dt = _dt.strftime("%d/%m/%Y %H:%M")
-                        st.text_area("", value=_txt, height=70, disabled=True,
-                                     key=f"adm_obs_{req['id']}_{_io}")
-                        st.caption(f"Enviado em {_dt}")
-
-            # Conteúdo do laudo: visível assim que o laudo existe (gerado em massa ou individualmente),
-            # para não confundir o usuário que pensaria que precisa clicar em "Gerar" para ver o laudo já gerado.
-            if laudo and (laudo.get("texto") or "").strip():
-                texto_preview = _formatar_texto_laudo_para_edicao(laudo.get("texto", ""))
-                with st.expander("📝 Conteúdo do laudo", expanded=True):
-                    st.text_area(
-                        "Conteúdo do laudo (somente leitura)",
-                        value=texto_preview,
-                        height=280,
-                        disabled=False,
-                        key=f"preview_laudo_{req['id']}",
-                        label_visibility="collapsed",
-                    )
-                st.caption(
-                    "Para editar o texto, liberar ou regenerar com correções, use **Editar Laudo** abaixo.")
-
-            # Histórico de edições (auditoria: quem alterou o quê e quando)
-            _hist = req.get("historico_edicoes") or []
-            if _hist:
-                with st.expander("📜 Histórico de edições da requisição", expanded=False):
-                    st.caption(
-                        "Registro de alterações feitas pelo admin. O usuário não pode editar a requisição.")
-                    for _h in reversed(_hist):
-                        _alt = _h.get("alteracoes", {})
-                        _dt = _h.get("created_at", "")
-                        if _dt and hasattr(_dt, "strftime"):
-                            _dt = _dt.strftime("%d/%m/%Y %H:%M")
-                        st.write(f"**{_dt}** (admin)")
-                        for _campo, _val in _alt.items():
-                            st.write(
-                                f"- **{_campo}:** de «{_val.get('de', '')}» → «{_val.get('para', '')}»")
-                        st.divider()
-
-            # Editar informações da requisição (corrigir dados enviados pelo usuário) — registra no histórico
-            with st.expander("✏️ Editar informações da requisição", expanded=False):
-                with st.form(f"form_edit_req_{req['id']}"):
-                    e1, e2 = st.columns(2)
-                    with e1:
-                        epaciente = st.text_input("Paciente", value=req.get(
-                            "paciente") or "", key=f"req_edit_pac_{req['id']}")
-                        etutor = st.text_input("Tutor(a)", value=req.get(
-                            "tutor") or "", key=f"req_edit_tutor_{req['id']}")
-                        eespecie = st.text_input("Espécie", value=req.get(
-                            "especie") or "", key=f"req_edit_esp_{req['id']}")
-                        eidade = st.text_input("Idade", value=req.get(
-                            "idade") or "", key=f"req_edit_idade_{req['id']}")
-                        eraca = st.text_input("Raça", value=req.get(
-                            "raca") or "", key=f"req_edit_raca_{req['id']}")
-                        esexo = st.text_input("Sexo", value=req.get(
-                            "sexo") or "", key=f"req_edit_sexo_{req['id']}")
-                        eclinica_txt = st.text_input("Clínica (texto)", value=req.get(
-                            "clinica") or "", key=f"req_edit_clinica_{req['id']}", help="Texto da clínica; se a requisição tiver vínculo por ID, este campo é complementar.")
-                        evet_txt = st.text_input("Médico(a) veterinário(a) (texto)", value=req.get(
-                            "medico_veterinario_solicitante") or "", key=f"req_edit_vet_{req['id']}")
-                    with e2:
-                        eregiao = st.text_input("Região de estudo", value=req.get(
-                            "regiao_estudo") or "", key=f"req_edit_regiao_{req['id']}")
-                        esuspeita = st.text_input("Suspeita clínica", value=req.get(
-                            "suspeita_clinica") or "", key=f"req_edit_suspeita_{req['id']}")
-                        eplantao = st.text_input("Plantão", value=req.get(
-                            "plantao") or "", key=f"req_edit_plantao_{req['id']}")
-                        etipo = st.selectbox("Tipo de exame", ["raio-x", "ultrassom"], index=0 if (
-                            req.get("tipo_exame") or "raio-x") == "raio-x" else 1, key=f"req_edit_tipo_{req['id']}")
-                        ehistorico = st.text_area("Histórico clínico", value=(req.get("historico_clinico") or req.get(
-                            "observacoes") or ""), height=80, key=f"req_edit_hist_{req['id']}")
-                    if st.form_submit_button("💾 Salvar alterações na requisição"):
-                        updates = {
-                            "paciente": epaciente.strip(),
-                            "tutor": etutor.strip(),
-                            "especie": eespecie.strip(),
-                            "idade": eidade.strip(),
-                            "raca": eraca.strip(),
-                            "sexo": esexo.strip(),
-                            "clinica": eclinica_txt.strip(),
-                            "medico_veterinario_solicitante": evet_txt.strip(),
-                            "regiao_estudo": eregiao.strip(),
-                            "suspeita_clinica": esuspeita.strip(),
-                            "plantao": eplantao.strip(),
-                            "tipo_exame": etipo,
-                            "historico_clinico": ehistorico.strip(),
-                        }
-                        current_user = get_current_user()
-                        admin_id = (current_user or {}).get("id") or ""
-                        if requisicao_model.update_with_history(req["id"], updates, admin_id):
-                            st.success("Requisição atualizada. Alteração registrada no histórico.")
-                            st.rerun()
-                        else:
-                            st.warning("Nenhuma alteração aplicada.")
-
-            # Controle de edição inline
+            # Controle de edição: quando já tem laudo, abre direto no editor
             editing_key = f"editing_{req['id']}"
-            is_editing = st.session_state.get(editing_key, False)
+            is_editing = st.session_state.get(editing_key, bool(laudo))
 
-            # Seleção de imagens para laudo (quando ainda não há laudo)
             imagens_paths = req.get("imagens") or []
             sel_key = f"img_sel_{req['id']}"
+
+            # Sem laudo: preview das imagens PRIMEIRO com seleção para a LLM, depois Gerar Laudo
             if not laudo and imagens_paths:
+                st.subheader("🖼️ Imagens para o laudo")
+                st.caption("Desmarque as imagens que NÃO devem ser enviadas à IA para gerar o laudo.")
                 if sel_key not in st.session_state:
                     st.session_state[sel_key] = [True] * len(imagens_paths)
-                # Comandos "Selecionar/Desselecionar Todas": aplicar antes de criar os checkboxes (evita modificar keys dos widgets após criação)
                 cmd_all = st.session_state.pop(f"_cmd_sel_all_{req['id']}", False)
                 cmd_none = st.session_state.pop(f"_cmd_sel_none_{req['id']}", False)
                 if cmd_all or cmd_none:
-                    st.session_state[sel_key] = [True] * \
-                        len(imagens_paths) if cmd_all else [False] * len(imagens_paths)
+                    st.session_state[sel_key] = [True] * len(imagens_paths) if cmd_all else [False] * len(imagens_paths)
                     for i in range(len(imagens_paths)):
                         st.session_state.pop(f"{sel_key}_{i}", None)
                     st.rerun()
-                st.divider()
-                with st.expander("🖼️ Imagens para o laudo (desmarque as que NÃO devem ir para a IA)", expanded=True):
-                    n_cols = 5
-                    for start in range(0, len(imagens_paths), n_cols):
-                        row = st.columns(n_cols)
-                        for k, idx in enumerate(range(start, min(start + n_cols, len(imagens_paths)))):
-                            path = imagens_paths[idx]
-                            with row[k]:
-                                nome = os.path.basename(path)
-                                st.checkbox(
-                                    nome[:40] + ("..." if len(nome) > 40 else ""),
-                                    value=st.session_state[sel_key][idx],
-                                    key=f"{sel_key}_{idx}",
-                                )
-                                data_url, _ = _ref_to_data_url_and_filename(path)
-                                if data_url:
-                                    st.markdown(
-                                        f'<img src="{data_url}" style="width:100%;max-height:180px;object-fit:contain;border-radius:4px;">',
-                                        unsafe_allow_html=True,
-                                    )
-                    # Sincronizar lista com valores atuais dos checkboxes
-                    st.session_state[sel_key] = [st.session_state.get(
-                        f"{sel_key}_{i}", True) for i in range(len(imagens_paths))]
-                    n_sel = sum(st.session_state[sel_key])
-                    st.caption(
-                        f"**{n_sel} de {len(imagens_paths)}** IMAGEM(NS) selecionada(s). Mínimo 1 para gerar laudo.")
-                    col_a, col_b, col_dl = st.columns(3)
-                    with col_a:
-                        if st.button("✅ Selecionar Todas", key=f"sel_all_{req['id']}"):
-                            st.session_state[f"_cmd_sel_all_{req['id']}"] = True
-                            st.rerun()
-                    with col_b:
-                        if st.button("⬜ Desmarcar Todas", key=f"desel_all_{req['id']}"):
-                            st.session_state[f"_cmd_sel_none_{req['id']}"] = True
-                            st.rerun()
-                    with col_dl:
-                        from database.image_storage import get_image_bytes_and_filename
-                        buf_zip = io.BytesIO()
-                        with zipfile.ZipFile(buf_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for i, ref in enumerate(imagens_paths):
-                                result = get_image_bytes_and_filename(ref)
-                                if result:
-                                    data, nome = result
-                                    arcname = f"{i + 1}_{nome}"
-                                    zf.writestr(arcname, data)
-                        buf_zip.seek(0)
-                        zip_bytes = buf_zip.getvalue()
-                        if zip_bytes:
-                            st.download_button(
-                                "📦 Baixar todas",
-                                data=zip_bytes,
-                                file_name=f"requisicao_{req['id'][:8]}_imagens.zip",
-                                mime="application/zip",
-                                key=f"dl_zip_laudo_{req['id']}",
-                                use_container_width=True,
-                            )
-            else:
-                st.divider()
-
-            # Botão para iniciar/parar edição
-            col_btn_toggle, col_btn2, col_btn3, col_btn4 = st.columns(4)
-            with col_btn_toggle:
-                if is_editing:
-                    if st.button("❌ Fechar Editor", key=f"close_edit_{req['id']}", use_container_width=True):
-                        del st.session_state[editing_key]
+                n_cols = 5
+                for start in range(0, len(imagens_paths), n_cols):
+                    row = st.columns(n_cols)
+                    for k, idx in enumerate(range(start, min(start + n_cols, len(imagens_paths)))):
+                        path = imagens_paths[idx]
+                        with row[k]:
+                            data_url, nome = _ref_to_data_url_and_filename(path)
+                            # Preview da imagem PRIMEIRO (admin precisa ver para decidir)
+                            if data_url:
+                                st.markdown(
+                                    f'<img src="{data_url}" style="width:100%;max-height:180px;object-fit:contain;border-radius:4px;display:block;">',
+                                    unsafe_allow_html=True)
+                            else:
+                                st.caption("🖼️ Preview indisponível")
+                            # Checkbox com nome do arquivo (não o ID)
+                            nome_disp = (nome or str(path)[:24])[:40] + ("..." if len(nome or str(path)) > 40 else "")
+                            st.checkbox(nome_disp, value=st.session_state[sel_key][idx], key=f"{sel_key}_{idx}")
+                st.session_state[sel_key] = [st.session_state.get(f"{sel_key}_{i}", True) for i in range(len(imagens_paths))]
+                n_sel = sum(st.session_state[sel_key])
+                st.caption(f"**{n_sel} de {len(imagens_paths)}** imagem(ns) selecionada(s). Mínimo 1 para gerar laudo.")
+                col_sel, col_sel2, col_dl = st.columns(3)
+                with col_sel:
+                    if st.button("✅ Selecionar Todas", key=f"sel_all_{req['id']}"):
+                        st.session_state[f"_cmd_sel_all_{req['id']}"] = True
                         st.rerun()
-                else:
-                    btn_label = "✏️ Editar Laudo" if laudo else "🤖 Gerar Laudo"
-                    if st.button(btn_label, key=f"edit_{req['id']}", use_container_width=True):
-                        # Se não há laudo, gerar com IA primeiro (usar apenas imagens selecionadas)
-                        if not laudo:
-                            try:
-                                selected_paths = []
-                                if imagens_paths and sel_key in st.session_state:
-                                    selected_paths = [imagens_paths[i] for i in range(
-                                        len(imagens_paths)) if st.session_state[sel_key][i]]
-                                else:
-                                    selected_paths = list(imagens_paths)
-                                if not selected_paths:
-                                    st.error("Selecione ao menos 1 imagem para gerar o laudo.")
-                                    st.stop()
-                                from ai.analyzer import load_images_for_analysis
-                                from ai.learning_system import LearningSystem
-                                images = load_images_for_analysis(selected_paths)
-                                if images:
-                                    learning_system = LearningSystem()
-                                    _obs_tex = "\n".join(
-                                        o.get("texto", "").strip()
-                                        for o in (req.get("observacoes_usuario") or [])
-                                        if o.get("texto", "").strip()
-                                    )
-                                    paciente_info = {
-                                        "especie": req.get("especie", ""),
-                                        "raca": req.get("raca", ""),
-                                        "idade": req.get("idade", ""),
-                                        "sexo": req.get("sexo", ""),
-                                        "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
-                                        "suspeita_clinica": req.get("suspeita_clinica", ""),
-                                        "regiao_estudo": req.get("regiao_estudo", ""),
-                                        "observacoes_adicionais_usuario": _obs_tex,
-                                    }
-                                    texto_gerado, metadata = learning_system.generate_laudo(
-                                        images, paciente_info, req["id"]
-                                    )
-                                    modelo_info = metadata.get("modelo_usado", "api_externa")
-                                    if metadata.get("similaridade_casos", 0) > 0:
-                                        st.info(
-                                            f"🤖 Modelo: {modelo_info} | Similaridade: {metadata['similaridade_casos']:.2%}")
-                                    laudo_id = laudo_model.create(
-                                        requisicao_id=req["id"],
-                                        texto=texto_gerado,
-                                        texto_original=texto_gerado,
-                                        status="pendente",
-                                        modelo_usado=modelo_info,
-                                        usado_api_externa=metadata.get(
-                                            "usado_api_externa", True),
-                                        similaridade_casos=metadata.get("similaridade_casos"),
-                                        imagens_usadas=selected_paths,
-                                    )
-                                    st.session_state[f"laudo_metadata_{req['id']}"] = metadata
-                                    st.session_state[f"laudo_paciente_info_{req['id']}"] = paciente_info
-                                    st.success("✅ Laudo gerado com IA!")
-                                    laudo = laudo_model.find_by_id(laudo_id)
-                                else:
-                                    st.warning(
-                                        "Nenhuma imagem válida. Criando laudo vazio para edição manual.")
-                                    laudo_id = laudo_model.create(
-                                        requisicao_id=req["id"],
-                                        texto="",
-                                        texto_original="",
-                                        status="pendente",
-                                        imagens_usadas=selected_paths,
-                                    )
-                                    laudo = laudo_model.find_by_id(laudo_id)
-                            except Exception as e:
-                                st.warning(f"⚠️ Erro ao gerar laudo: {str(e)}")
-                                laudo_id = laudo_model.create(
-                                    requisicao_id=req["id"],
-                                    texto="",
-                                    texto_original="",
-                                    status="pendente",
-                                )
-                                laudo = laudo_model.find_by_id(laudo_id)
-                        # Abrir editor
+                with col_sel2:
+                    if st.button("⬜ Desmarcar Todas", key=f"desel_all_{req['id']}"):
+                        st.session_state[f"_cmd_sel_none_{req['id']}"] = True
+                        st.rerun()
+                with col_dl:
+                    from database.image_storage import get_image_bytes_and_filename
+                    buf_zip = io.BytesIO()
+                    with zipfile.ZipFile(buf_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for i, ref in enumerate(imagens_paths):
+                            result = get_image_bytes_and_filename(ref)
+                            if result:
+                                data, nome = result
+                                zf.writestr(f"{i + 1}_{nome}", data)
+                    buf_zip.seek(0)
+                    if buf_zip.getvalue():
+                        st.download_button("📦 Baixar todas", data=buf_zip.getvalue(),
+                            file_name=f"requisicao_{req['id'][:8]}_imagens.zip", mime="application/zip",
+                            key=f"dl_zip_laudo_{req['id']}", use_container_width=True)
+                st.divider()
+                if st.button("🤖 Gerar Laudo com IA", type="primary", key=f"gerar_laudo_{req['id']}", use_container_width=True):
+                    selected_paths = [imagens_paths[i] for i in range(len(imagens_paths)) if st.session_state[sel_key][i]]
+                    if not selected_paths:
+                        st.error("Selecione ao menos 1 imagem para gerar o laudo.")
+                    else:
+                        try:
+                            from ai.analyzer import load_images_for_analysis
+                            from ai.learning_system import LearningSystem
+                            images = load_images_for_analysis(selected_paths)
+                            if images:
+                                ls = LearningSystem()
+                                _obs = "\n".join(o.get("texto", "").strip() for o in (req.get("observacoes_usuario") or []) if o.get("texto", "").strip())
+                                paciente_info = {"especie": req.get("especie", ""), "raca": req.get("raca", ""),
+                                    "idade": req.get("idade", ""), "sexo": req.get("sexo", ""),
+                                    "historico_clinico": (req.get("historico_clinico") or req.get("observacoes", "")),
+                                    "suspeita_clinica": req.get("suspeita_clinica", ""), "regiao_estudo": req.get("regiao_estudo", ""),
+                                    "observacoes_adicionais_usuario": _obs}
+                                texto_gerado, metadata = ls.generate_laudo(images, paciente_info, req["id"])
+                                laudo_model.create(requisicao_id=req["id"], texto=texto_gerado, texto_original=texto_gerado,
+                                    status="pendente", modelo_usado=metadata.get("modelo_usado", "api_externa"),
+                                    usado_api_externa=metadata.get("usado_api_externa", True), imagens_usadas=selected_paths,
+                                    similaridade_casos=metadata.get("similaridade_casos"))
+                                st.session_state[f"laudo_metadata_{req['id']}"] = metadata
+                                st.session_state[f"laudo_paciente_info_{req['id']}"] = paciente_info
+                            else:
+                                laudo_model.create(requisicao_id=req["id"], texto="", texto_original="", status="pendente", imagens_usadas=selected_paths)
+                        except Exception as e:
+                            st.warning(f"Erro ao gerar: {e}")
+                            laudo_model.create(requisicao_id=req["id"], texto="", texto_original="", status="pendente")
                         st.session_state[editing_key] = True
                         st.rerun()
-            with col_btn2:
-                pass  # Botão "Iniciar Análise" removido - fluxo direto para Gerar Laudo
-            with col_btn3:
-                if laudo and laudo.get("status") in ("pendente", "validado") and not is_editing:
-                    if st.button("📤 Aprovar/Liberar", key=f"approve_{req['id']}", use_container_width=True):
-                        # Liberar laudo (calcula rating automaticamente)
-                        laudo_model.release(laudo["id"], calcular_rating=True)
-                        requisicao_model.update_status(req["id"], "liberado")
+                st.divider()
 
-                        # Salvar dados de aprendizado
-                        try:
-                            from ai.learning_system import LearningSystem
-                            learning_system = LearningSystem()
+            # Dados da requisição (ocultos quando no editor)
+            if not is_editing:
+                if view_mode == "Rápida":
+                    _clinica_rap, _ = _req_clinica_vet_display(req)
+                    clinica_rap = (_clinica_rap or "—").upper()
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.write(f"**Paciente:** {(req.get('paciente') or '—').upper()}")
+                        st.write(f"**Tutor:** {(req.get('tutor') or '—').upper()}")
+                        st.write(f"**Clínica:** {clinica_rap}")
+                    with c2:
+                        st.write(f"**Status:** {(status_label or '—').upper()}")
+                        st.write(f"**Data:** {_fmt_dt(req.get('created_at') or req.get('data_exame'))}")
+                        st.write(f"**Tipo:** {(req.get('tipo_exame') or '—').upper()}")
+                        st.write(f"**Imagens:** {n_imgs} ARQUIVO(S)")
+                    with c3:
+                        if user:
+                            st.write(f"**Usuário:** {user.get('nome', user.get('username'))}")
+                        if laudo:
+                            st.info(f"📝 Laudo: {laudo.get('status', 'N/A')}")
+                        else:
+                            st.warning("⏳ Laudo não criado")
+                        _n_obs = len(req.get("observacoes_usuario") or [])
+                        if _n_obs:
+                            st.caption(f"📌 {_n_obs} observação(ões) do usuário")
+                else:
+                    st.subheader("📋 Dados completos da requisição")
+                    clinica_display, vet_display = _req_clinica_vet_display(req)
+                    clinica_display = (clinica_display or "—").upper()
+                    vet_display = (vet_display or "—").upper()
+                    def _up(s): return (s or "—").upper() if isinstance(s, str) else (str(s).upper() if s is not None else "—")
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write("**Paciente:**", _up(req.get("paciente")))
+                        st.write("**Espécie:**", _up(req.get("especie")))
+                        st.write("**Idade:**", _up(req.get("idade")))
+                        st.write("**Raça:**", _up(req.get("raca")))
+                        st.write("**Sexo:**", _up(req.get("sexo")))
+                        st.write("**Tutor(a):**", _up(req.get("tutor")))
+                        st.write("**Clínica solicitante:**", clinica_display)
+                        st.write("**Médico(a) veterinário(a):**", vet_display)
+                    with col_b:
+                        st.write("**Região de estudo:**", _up(req.get("regiao_estudo")))
+                        st.write("**Suspeita clínica:**", _up(req.get("suspeita_clinica")))
+                        st.write("**Plantão:**", _up(req.get("plantao")))
+                        st.write("**Data da requisição:**", _fmt_dt(req.get("created_at") or req.get("data_exame")))
+                        st.write("**Status:**", (status_label or "—").upper())
+                        st.write("**Tipo de exame:**", _up(req.get("tipo_exame")))
+                        if user:
+                            st.write("**Usuário:**", user.get("nome", user.get("username")), "·", user.get("email", ""))
+                    st.write("**Histórico clínico:**")
+                    hc = (req.get("historico_clinico") or req.get("observacoes") or "—").upper()
+                    st.text_area("", value=hc, height=80, disabled=True, key=f"hist_{req['id']}")
 
-                            # Buscar metadata e contexto salvos
-                            metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
-                            paciente_info = st.session_state.get(
-                                f"laudo_paciente_info_{req['id']}", {})
+            # Observações, histórico, editar req (ocultos quando no editor)
+            if not is_editing:
+                _obs_admin = req.get("observacoes_usuario") or []
+                if _obs_admin:
+                    with st.expander("📌 Observações do usuário", expanded=True):
+                        st.caption(
+                            "O usuário enviou estas observações para considerar no laudo (sem alterar os dados originais da requisição).")
+                        for _io, _ob in enumerate(reversed(_obs_admin)):
+                            _txt = _ob.get("texto", "")
+                            _dt = _ob.get("created_at", "")
+                            if _dt and hasattr(_dt, "strftime"):
+                                _dt = _dt.strftime("%d/%m/%Y %H:%M")
+                            st.text_area("", value=_txt, height=70, disabled=True,
+                                         key=f"adm_obs_{req['id']}_{_io}")
+                            st.caption(f"Enviado em {_dt}")
 
-                            # Recarregar laudo para pegar rating calculado
-                            laudo_atualizado = laudo_model.find_by_id(laudo["id"])
-                            rating = laudo_atualizado.get("rating", 3)
+                _hist = req.get("historico_edicoes") or []
+                if _hist:
+                    with st.expander("📜 Histórico de edições da requisição", expanded=False):
+                        st.caption(
+                            "Registro de alterações feitas pelo admin. O usuário não pode editar a requisição.")
+                        for _h in reversed(_hist):
+                            _alt = _h.get("alteracoes", {})
+                            _dt = _h.get("created_at", "")
+                            if _dt and hasattr(_dt, "strftime"):
+                                _dt = _dt.strftime("%d/%m/%Y %H:%M")
+                            st.write(f"**{_dt}** (admin)")
+                            for _campo, _val in _alt.items():
+                                st.write(
+                                    f"- **{_campo}:** de «{_val.get('de', '')}» → «{_val.get('para', '')}»")
+                            st.divider()
 
-                            # Salvar no sistema de aprendizado
-                            if paciente_info:
-                                learning_system.save_learning_data(
-                                    laudo_id=laudo["id"],
-                                    requisicao_id=req["id"],
-                                    contexto=paciente_info,
-                                    texto_gerado=laudo.get(
-                                        "texto_original_gerado", laudo.get("texto_original", "")),
-                                    texto_final=laudo_atualizado.get("texto", ""),
-                                    rating=rating,
-                                    metadata=metadata
-                                )
-                        except Exception as e:
-                            st.warning(f"⚠️ Erro ao salvar dados de aprendizado: {str(e)}")
+                with st.expander("✏️ Editar informações da requisição", expanded=False):
+                    with st.form(f"form_edit_req_{req['id']}"):
+                        e1, e2 = st.columns(2)
+                        with e1:
+                            epaciente = st.text_input("Paciente", value=req.get(
+                                "paciente") or "", key=f"req_edit_pac_{req['id']}")
+                            etutor = st.text_input("Tutor(a)", value=req.get(
+                                "tutor") or "", key=f"req_edit_tutor_{req['id']}")
+                            eespecie = st.text_input("Espécie", value=req.get(
+                                "especie") or "", key=f"req_edit_esp_{req['id']}")
+                            eidade = st.text_input("Idade", value=req.get(
+                                "idade") or "", key=f"req_edit_idade_{req['id']}")
+                            eraca = st.text_input("Raça", value=req.get(
+                                "raca") or "", key=f"req_edit_raca_{req['id']}")
+                            esexo = st.text_input("Sexo", value=req.get(
+                                "sexo") or "", key=f"req_edit_sexo_{req['id']}")
+                            eclinica_txt = st.text_input("Clínica (texto)", value=req.get(
+                                "clinica") or "", key=f"req_edit_clinica_{req['id']}", help="Texto da clínica; se a requisição tiver vínculo por ID, este campo é complementar.")
+                            evet_txt = st.text_input("Médico(a) veterinário(a) (texto)", value=req.get(
+                                "medico_veterinario_solicitante") or "", key=f"req_edit_vet_{req['id']}")
+                        with e2:
+                            eregiao = st.text_input("Região de estudo", value=req.get(
+                                "regiao_estudo") or "", key=f"req_edit_regiao_{req['id']}")
+                            esuspeita = st.text_input("Suspeita clínica", value=req.get(
+                                "suspeita_clinica") or "", key=f"req_edit_suspeita_{req['id']}")
+                            eplantao = st.text_input("Plantão", value=req.get(
+                                "plantao") or "", key=f"req_edit_plantao_{req['id']}")
+                            etipo = st.selectbox("Tipo de exame", ["raio-x", "ultrassom"], index=0 if (
+                                req.get("tipo_exame") or "raio-x") == "raio-x" else 1, key=f"req_edit_tipo_{req['id']}")
+                            ehistorico = st.text_area("Histórico clínico", value=(req.get("historico_clinico") or req.get(
+                                "observacoes") or ""), height=80, key=f"req_edit_hist_{req['id']}")
+                        if st.form_submit_button("💾 Salvar alterações na requisição"):
+                            updates = {
+                                "paciente": epaciente.strip(),
+                                "tutor": etutor.strip(),
+                                "especie": eespecie.strip(),
+                                "idade": eidade.strip(),
+                                "raca": eraca.strip(),
+                                "sexo": esexo.strip(),
+                                "clinica": eclinica_txt.strip(),
+                                "medico_veterinario_solicitante": evet_txt.strip(),
+                                "regiao_estudo": eregiao.strip(),
+                                "suspeita_clinica": esuspeita.strip(),
+                                "plantao": eplantao.strip(),
+                                "tipo_exame": etipo,
+                                "historico_clinico": ehistorico.strip(),
+                            }
+                            current_user = get_current_user()
+                            admin_id = (current_user or {}).get("id") or ""
+                            if requisicao_model.update_with_history(req["id"], updates, admin_id):
+                                st.success("Requisição atualizada. Alteração registrada no histórico.")
+                                st.rerun()
+                            else:
+                                st.warning("Nenhuma alteração aplicada.")
 
-                        st.success("✅ Laudo liberado para o usuário!")
+            # Botões (apenas quando já tem laudo): Fechar Editor / Editar, Aprovar, Rejeitar
+            if laudo:
+                col_btn_toggle, col_btn2, col_btn3, col_btn4 = st.columns(4)
+                with col_btn_toggle:
+                    if is_editing:
+                        if st.button("❌ Fechar Editor", key=f"close_edit_{req['id']}", use_container_width=True):
+                            st.session_state[editing_key] = False
+                            st.rerun()
+                    else:
+                        if st.button("✏️ Editar Laudo", key=f"edit_{req['id']}", use_container_width=True):
+                            st.session_state[editing_key] = True
+                            st.rerun()
+                with col_btn2:
+                    pass
+                with col_btn3:
+                    if laudo.get("status") in ("pendente", "validado") and not is_editing:
+                        if st.button("📤 Aprovar/Liberar", key=f"approve_{req['id']}", use_container_width=True):
+                            laudo_model.release(laudo["id"], calcular_rating=True)
+                            requisicao_model.update_status(req["id"], "liberado")
+                            try:
+                                from ai.learning_system import LearningSystem
+                                ls_rel = LearningSystem()
+                                metadata = st.session_state.get(f"laudo_metadata_{req['id']}", {})
+                                paciente_info = st.session_state.get(f"laudo_paciente_info_{req['id']}", {})
+                                laudo_atualizado = laudo_model.find_by_id(laudo["id"])
+                                rating = laudo_atualizado.get("rating", 3)
+                                if paciente_info:
+                                    ls_rel.save_learning_data(laudo_id=laudo["id"], requisicao_id=req["id"],
+                                        contexto=paciente_info, texto_gerado=laudo.get("texto_original_gerado", laudo.get("texto_original", "")),
+                                        texto_final=laudo_atualizado.get("texto", ""), rating=rating, metadata=metadata)
+                            except Exception:
+                                pass
+                            st.success("✅ Laudo liberado para o usuário!")
+                            st.rerun()
+                with col_btn4:
+                    if st.button("🗑️ Rejeitar", key=f"reject_{req['id']}", use_container_width=True):
+                        requisicao_model.update_status(req["id"], "rejeitado")
+                        st.success("Requisição rejeitada")
                         st.rerun()
-            with col_btn4:
-                if st.button("🗑️ Rejeitar", key=f"reject_{req['id']}", use_container_width=True):
-                    requisicao_model.update_status(req["id"], "rejeitado")
-                    st.success("Requisição rejeitada")
-                    st.rerun()
 
             # Editor inline de laudo (quando is_editing = True)
             if is_editing:
@@ -1430,11 +1372,11 @@ if page == "Exames":
                                 st.success(
                                     "✅ Laudo liberado para o usuário! Ele poderá visualizar e fazer download agora.")
                                 st.balloons()
-                                del st.session_state[editing_key]
+                                st.session_state[editing_key] = False
                                 st.rerun()
                         with col3:
                             if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_inline_{laudo['id']}"):
-                                del st.session_state[editing_key]
+                                st.session_state[editing_key] = False
                                 st.rerun()
 
                     # JavaScript para fixar a coluna do editor após renderização

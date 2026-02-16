@@ -426,22 +426,22 @@ if page == "Exames":
                   "Validado": "validado", "Liberados": "liberado"}
     status_val = status_map.get(status)
 
-    # Carregamento leve: quando "Apenas liberados", busca só laudos liberados (e suas reqs)
+    # Carregamento leve: batch queries para evitar N consultas
     if status == "Liberados":
         exames_liberados = laudo_model.find_by_user(_uid, status="liberado") if _uid else []
+        req_ids = [e.get("requisicao_id") for e in exames_liberados if e.get("requisicao_id")]
+        reqs_map = requisicao_model.find_by_ids(req_ids) if req_ids else {}
         items = []
         for exame in exames_liberados:
-            req = requisicao_model.find_by_id(exame.get("requisicao_id"))
+            req = reqs_map.get(exame.get("requisicao_id", ""))
             if req and req.get("status") != "rascunho":
                 items.append((req, exame))
         filtered = items
     else:
         all_reqs = [r for r in (requisicao_model.find_by_user(
             _uid) if _uid else []) if r.get("status") != "rascunho"]
-        items = []
-        for req in all_reqs:
-            exame = laudo_model.find_by_requisicao(req["id"])
-            items.append((req, exame))
+        laudos_map = laudo_model.find_by_requisicao_ids([r["id"] for r in all_reqs]) if all_reqs else {}
+        items = [(req, laudos_map.get(req["id"])) for req in all_reqs]
         if status_val == "pendente":
             filtered = [(r, l) for r, l in items if l is None or l.get("status") == "pendente"]
         elif status_val == "validado":
@@ -606,103 +606,108 @@ if page == "Exames":
                     st.success("✅ Este laudo foi liberado e está disponível para download!")
                     st.text_area("Conteúdo do Laudo", value=laudo.get("texto", ""),
                                  height=300, disabled=True, key=f"liberado_{laudo['id']}")
-                    try:
-                        from ai.analyzer import load_images_for_analysis
-                        imagens_paths = req.get("imagens", [])
-                        images = load_images_for_analysis(imagens_paths)
-                        # Resolver clínica e veterinário (requisição → usuário da requisição)
-                        _clinica_pdf = req.get("clinica") or ""
-                        if req.get("clinica_id"):
-                            c_obj = clinica_model.find_by_id(req["clinica_id"])
-                            if c_obj:
-                                _clinica_pdf = c_obj.get("nome", "") or _clinica_pdf
-                        if not (_clinica_pdf or "").strip() and req.get("user_id"):
-                            _user_req = user_model.find_by_id(req["user_id"])
-                            if _user_req and _user_req.get("clinica_id"):
-                                c_obj = clinica_model.find_by_id(_user_req["clinica_id"])
-                                _clinica_pdf = (c_obj or {}).get("nome", "") or _clinica_pdf
-                        _vet_pdf = req.get("medico_veterinario_solicitante") or ""
-                        if req.get("veterinario_id"):
-                            v_obj = veterinario_model.find_by_id(req["veterinario_id"])
-                            if v_obj:
-                                _vet_pdf = v_obj.get("nome", "") or _vet_pdf
-                        if not (_vet_pdf or "").strip() and req.get("user_id"):
-                            _user_req = user_model.find_by_id(req["user_id"])
-                            if _user_req and _user_req.get("clinica_id"):
-                                vets = veterinario_model.find_by_clinica(
-                                    _user_req["clinica_id"], apenas_ativos=True)
-                                _vet_pdf = (vets[0].get("nome") if vets else None) or _vet_pdf
-                        pdf = FPDF("P", "mm", "A4")
-                        pdf.set_auto_page_break(auto=True, margin=15)
-
-                        def _clean(t):
-                            t = str(t) if t is not None else ""
-                            for a, b in [("'", "'"), ("'", "'"), (""", '"'), (""", '"'), ("—", "-"), ("–", "-"), ("…", "..."), ("°", " graus")]:
-                                t = t.replace(a, b)
-                            t = t.replace("**", "")
+                    # Gerar PDF sob demanda (evita carregar imagens e fazer lookups para todos os exames)
+                    pdf_cache_key = f"pdf_cache_{req['id']}"
+                    dl_trigger_key = "user_dl_pdf_req_id"
+                    if st.session_state.get(dl_trigger_key) != req["id"]:
+                        if st.button("📥 Baixar PDF", key=f"btn_dl_{laudo['id']}", use_container_width=True):
+                            st.session_state[dl_trigger_key] = req["id"]
+                            st.rerun()
+                    # Só carrega imagens e gera PDF quando o usuário clicou em Baixar para este exame
+                    if st.session_state.get(dl_trigger_key) == req["id"]:
+                        pdf_bytes = st.session_state.get(pdf_cache_key)
+                        if pdf_bytes is None:
                             try:
-                                t.encode("latin-1")
-                            except UnicodeEncodeError:
-                                import unicodedata
-                                t = unicodedata.normalize("NFKD", t).encode(
-                                    "latin-1", "ignore").decode("latin-1")
-                            return t
-                        pdf.add_page()
-                        pdf.set_font("Arial", "B", 14)
-                        pdf.ln(5)
-                        pdf.set_font("Arial", "", 10)
-                        pdf.cell(
-                            0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(
-                            0, 6, f"Clinica Solicitante: {_clean(_clinica_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(
-                            0, 6, f"Medico(a) Veterinario(a): {_clean(_vet_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.ln(4)
-                        pdf.set_font("Arial", "B", 12)
-                        pdf.ln(2)
-                        pdf.set_font("Arial", "", 11)
-                        pdf.multi_cell(0, 5, _clean(laudo.get("texto", "")))
-                        if images:
-                            pdf.add_page()
-                            for i, img in enumerate(images):
-                                w_px, h_px = img.size
-                                ar = h_px / w_px
-                                w_mm, h_mm = 180, 180 * ar
-                                if pdf.get_y() + h_mm > 267:
-                                    pdf.add_page()
-                                buf = io.BytesIO()
-                                img.save(buf, format="PNG")
-                                buf.seek(0)
-                                pdf.image(buf, w=w_mm, h=h_mm)
-                                pdf.set_font("Arial", "I", 9)
-                                pdf.cell(0, 6, f"Imagem {i + 1}",
-                                         new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+                                from ai.analyzer import load_images_for_analysis
+                                imagens_paths = req.get("imagens", [])
+                                images = load_images_for_analysis(imagens_paths)
+                                _clinica_pdf = req.get("clinica") or ""
+                                if req.get("clinica_id"):
+                                    c_obj = clinica_model.find_by_id(req["clinica_id"])
+                                    if c_obj:
+                                        _clinica_pdf = c_obj.get("nome", "") or _clinica_pdf
+                                if not (_clinica_pdf or "").strip() and req.get("user_id"):
+                                    _user_req = user_model.find_by_id(req["user_id"])
+                                    if _user_req and _user_req.get("clinica_id"):
+                                        c_obj = clinica_model.find_by_id(_user_req["clinica_id"])
+                                        _clinica_pdf = (c_obj or {}).get("nome", "") or _clinica_pdf
+                                _vet_pdf = req.get("medico_veterinario_solicitante") or ""
+                                if req.get("veterinario_id"):
+                                    v_obj = veterinario_model.find_by_id(req["veterinario_id"])
+                                    if v_obj:
+                                        _vet_pdf = v_obj.get("nome", "") or _vet_pdf
+                                if not (_vet_pdf or "").strip() and req.get("user_id"):
+                                    _user_req = user_model.find_by_id(req["user_id"])
+                                    if _user_req and _user_req.get("clinica_id"):
+                                        vets = veterinario_model.find_by_clinica(
+                                            _user_req["clinica_id"], apenas_ativos=True)
+                                        _vet_pdf = (vets[0].get("nome") if vets else None) or _vet_pdf
+                                pdf = FPDF("P", "mm", "A4")
+                                pdf.set_auto_page_break(auto=True, margin=15)
+
+                                def _clean(t):
+                                    t = str(t) if t is not None else ""
+                                    for a, b in [("'", "'"), ("'", "'"), (""", '"'), (""", '"'), ("—", "-"), ("–", "-"), ("…", "..."), ("°", " graus")]:
+                                        t = t.replace(a, b)
+                                    t = t.replace("**", "")
+                                    try:
+                                        t.encode("latin-1")
+                                    except UnicodeEncodeError:
+                                        import unicodedata
+                                        t = unicodedata.normalize("NFKD", t).encode(
+                                            "latin-1", "ignore").decode("latin-1")
+                                    return t
+                                pdf.add_page()
+                                pdf.set_font("Arial", "B", 14)
+                                pdf.ln(5)
+                                pdf.set_font("Arial", "", 10)
+                                pdf.cell(0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                                pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                                pdf.cell(0, 6, f"Clinica Solicitante: {_clean(_clinica_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                                pdf.cell(0, 6, f"Medico(a) Veterinario(a): {_clean(_vet_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                                pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                                 pdf.ln(4)
-                        pdf.set_y(-35)
-                        pdf.set_font("Arial", "", 10)
-                        pdf.cell(0, 10, "_" * 60, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
-                        pdf.ln(2)
-                        pdf.set_font("Arial", "B", 10)
-                        pdf.cell(0, 5, "Dra. Laís Costa Muchiutti",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
-                        pdf.ln(2)
-                        pdf.set_font("Arial", "", 9)
-                        pdf.cell(0, 5, "Medica Veterinaria-CRMV SP32247",
-                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        out = pdf.output(dest="S")
-                        out = bytes(out) if isinstance(out, bytearray) else out
-                        st.download_button(
-                            "📥 Baixar como PDF", data=out, file_name=f"laudo_{req.get('paciente', 'exame').replace(' ', '_')}.pdf", mime="application/pdf", use_container_width=True, key=f"dl_pdf_{laudo['id']}")
-                    except Exception as e:
-                        st.error(f"Erro ao gerar PDF: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        st.download_button("📥 Baixar como PDF", data="", file_name="laudo.pdf", mime="application/pdf",
-                                           disabled=True, use_container_width=True, key=f"dl_pdf_err_{laudo['id']}")
+                                pdf.set_font("Arial", "B", 12)
+                                pdf.ln(2)
+                                pdf.set_font("Arial", "", 11)
+                                pdf.multi_cell(0, 5, _clean(laudo.get("texto", "")))
+                                if images:
+                                    pdf.add_page()
+                                    for i, img in enumerate(images):
+                                        w_px, h_px = img.size
+                                        ar = h_px / w_px
+                                        w_mm, h_mm = 180, 180 * ar
+                                        if pdf.get_y() + h_mm > 267:
+                                            pdf.add_page()
+                                        buf = io.BytesIO()
+                                        img.save(buf, format="PNG")
+                                        buf.seek(0)
+                                        pdf.image(buf, w=w_mm, h=h_mm)
+                                        pdf.set_font("Arial", "I", 9)
+                                        pdf.cell(0, 6, f"Imagem {i + 1}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+                                        pdf.ln(4)
+                                pdf.set_y(-35)
+                                pdf.set_font("Arial", "", 10)
+                                pdf.cell(0, 10, "_" * 60, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+                                pdf.ln(2)
+                                pdf.set_font("Arial", "B", 10)
+                                pdf.cell(0, 5, "Dra. Laís Costa Muchiutti", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+                                pdf.ln(2)
+                                pdf.set_font("Arial", "", 9)
+                                pdf.cell(0, 5, "Medica Veterinaria-CRMV SP32247", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                                out = pdf.output(dest="S")
+                                pdf_bytes = bytes(out) if isinstance(out, bytearray) else out
+                                st.session_state[pdf_cache_key] = pdf_bytes
+                            except Exception as e:
+                                st.error(f"Erro ao gerar PDF: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        pdf_bytes = st.session_state.get(pdf_cache_key)
+                        if pdf_bytes is not None:
+                            st.download_button(
+                                "📥 Baixar como PDF", data=pdf_bytes,
+                                file_name=f"laudo_{req.get('paciente', 'exame').replace(' ', '_')}.pdf",
+                                mime="application/pdf", use_container_width=True, key=f"dl_pdf_{laudo['id']}")
 
 elif page == "Nova Requisição":
     st.header("📤 Nova Requisição de Laudo")
