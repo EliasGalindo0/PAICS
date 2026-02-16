@@ -445,6 +445,14 @@ class Laudo(BaseModel):
         doc = self.collection.find_one({"requisicao_id": requisicao_id})
         return self.to_dict(doc) if doc else None
 
+    def find_by_requisicao_ids(self, requisicao_ids: List[str]) -> Dict[str, Dict]:
+        """Busca laudos por múltiplas requisições em uma única consulta.
+        Retorna dict mapeando requisicao_id -> laudo (ou vazio se não houver)."""
+        if not requisicao_ids:
+            return {}
+        docs = list(self.collection.find({"requisicao_id": {"$in": requisicao_ids}}))
+        return {str(d.get("requisicao_id")): self.to_dict(d) for d in docs if d.get("requisicao_id")}
+
     def find_by_user(self, user_id: str, status: Optional[str] = None) -> List[Dict]:
         """Busca laudos de um usuário através das requisições"""
         from database.connection import get_db
