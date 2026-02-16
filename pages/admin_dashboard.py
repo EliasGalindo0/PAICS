@@ -393,8 +393,9 @@ if page == "Exames":
         st.success(f"✅ Geração em massa concluída: {ok} laudo(s) gerado(s)." + (
             f" {err} erro(s)." if err else "") + " A lista abaixo foi atualizada.")
 
-    # Requisições sem laudo (elegíveis para geração em massa)
-    reqs_sem_laudo = [e for e in exames if not laudo_model.find_by_requisicao(e["id"]) and (e.get("imagens") or [])]
+    # Requisições sem laudo (elegíveis para geração em massa) - uma única consulta em batch
+    laudos_por_req = laudo_model.find_by_requisicao_ids([e["id"] for e in exames])
+    reqs_sem_laudo = [e for e in exames if e["id"] not in laudos_por_req and (e.get("imagens") or [])]
     n_sem_laudo = len(reqs_sem_laudo)
     if n_sem_laudo > 0:
         if st.button(f"🤖 Gerar laudos em massa ({n_sem_laudo} pendente(s))", type="primary", key="bulk_gen_btn", use_container_width=False):
@@ -473,18 +474,44 @@ if page == "Exames":
             return x_local.strftime("%d/%m/%Y %H:%M")
         return str(x)[:16]
 
-    # Lista de requisições (todas no período/filtro; role para ver todas)
+    # Lazy loading: carregar laudo, imagens e dados pesados apenas do exame ABERTO
+    exame_aberto_id = st.session_state.get("admin_exame_aberto_id")
+    exame_ids = [r["id"] for r in exames]
+    if exame_aberto_id and exame_aberto_id not in exame_ids:
+        exame_aberto_id = None
+        st.session_state["admin_exame_aberto_id"] = None
     if exames:
         st.caption(
-            f"Mostrando **{len(exames)}** exame(s). Role a página para ver todas e clique para expandir cada uma.")
+            f"Mostrando **{len(exames)}** exame(s). Clique em **Abrir** para carregar os detalhes de cada exame (imagens e laudos são carregados somente quando abertos).")
     for req in exames:
         status_req = req.get("status", "N/A")
         status_label = {"pendente": "⏳ Pendente", "em_analise": "🔍 Em análise", "validado": "✅ Validado",
                         "liberado": "✅ Concluída", "rejeitado": "❌ Rejeitada"}.get(status_req, status_req)
         n_imgs = len(req.get("imagens") or [])
 
-        with st.expander(f"📄 #{req['id'][:8]} · {(req.get('paciente') or 'Sem nome').upper()} · {status_label} · {n_imgs} IMAGEM(NS)"):
-            laudo = laudo_model.find_by_requisicao(req["id"])
+        # Lazy loading: exame NÃO aberto → mostrar card minimal (sem carregar laudo, imagens, etc.)
+        if req["id"] != exame_aberto_id:
+            with st.container():
+                card_col, btn_col = st.columns([4, 1])
+                with card_col:
+                    st.markdown(
+                        f"**📄 #{req['id'][:8]}** · {(req.get('paciente') or 'Sem nome').upper()} · "
+                        f"{status_label} · {n_imgs} imagem(ns) · "
+                        f"{_fmt_dt(req.get('created_at') or req.get('data_exame'))}"
+                    )
+                with btn_col:
+                    if st.button("📂 Abrir", key=f"abrir_exame_{req['id']}", use_container_width=True):
+                        st.session_state["admin_exame_aberto_id"] = req["id"]
+                        st.rerun()
+            st.divider()
+            continue
+
+        # Exame ABERTO: carregar e exibir apenas este (laudo, imagens, etc.)
+        with st.expander(f"📄 #{req['id'][:8]} · {(req.get('paciente') or 'Sem nome').upper()} · {status_label} · {n_imgs} IMAGEM(NS)", expanded=True):
+            if st.button("← Fechar e voltar à lista", key=f"fechar_exame_{req['id']}", use_container_width=True):
+                st.session_state["admin_exame_aberto_id"] = None
+                st.rerun()
+            laudo = laudos_por_req.get(req["id"])  # usa cache da consulta em batch
             user = user_model.find_by_id(req.get("user_id")) if req.get("user_id") else None
 
             if view_mode == "Rápida":
