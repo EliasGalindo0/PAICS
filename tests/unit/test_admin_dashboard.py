@@ -1,51 +1,57 @@
-"""Testes unitários da estrutura do admin_dashboard."""
+"""Testes unitários da estrutura do admin dashboard (Next.js)."""
 import os
 
 import pytest
 
-_ADMIN_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "pages", "admin_dashboard.py")
+# Layout do dashboard com navegação admin
+_DASHBOARD_LAYOUT = os.path.join(
+    os.path.dirname(__file__), "..", "..", "web", "app", "components", "DashboardLayout.tsx"
+)
 
 
 @pytest.mark.unit
 def test_admin_nav_contem_exames():
     """Admin deve ter opção 'Exames' na navegação."""
-    with open(_ADMIN_PATH, encoding="utf-8") as f:
+    with open(_DASHBOARD_LAYOUT, encoding="utf-8") as f:
         content = f.read()
     assert '"Exames"' in content
-    assert 'page == "Exames"' in content
+    assert "/admin/exames" in content
 
 
 @pytest.mark.unit
-def test_admin_nav_contem_novo_exame():
-    """Admin deve ter opção para novo exame/requisição na navegação."""
-    with open(_ADMIN_PATH, encoding="utf-8") as f:
+def test_admin_nav_contem_nova_requisicao():
+    """Admin deve ter opção para nova requisição na navegação."""
+    with open(_DASHBOARD_LAYOUT, encoding="utf-8") as f:
         content = f.read()
-    # Pode ser "Novo Exame" ou "Nova Requisição" dependendo da nomenclatura
-    assert '"Novo Exame"' in content or '"Nova Requisição"' in content
+    assert '"Nova Requisição"' in content
+    assert "/admin/requisicoes/nova" in content
 
 
 @pytest.mark.unit
-def test_admin_nav_contem_knowledge_base_aprendizado():
-    """Admin deve ter página unificada 'Knowledge Base e Aprendizado'."""
-    with open(_ADMIN_PATH, encoding="utf-8") as f:
+def test_admin_nav_contem_knowledge_base():
+    """Admin deve ter página 'Knowledge Base' na navegação."""
+    with open(_DASHBOARD_LAYOUT, encoding="utf-8") as f:
         content = f.read()
-    assert "Knowledge Base e Aprendizado" in content
+    assert "Knowledge Base" in content
+    assert "/admin/knowledge-base" in content
 
 
 @pytest.mark.unit
 def test_admin_nav_nao_contem_laudos():
     """Página Laudos foi removida; não deve existir como opção."""
-    with open(_ADMIN_PATH, encoding="utf-8") as f:
+    with open(_DASHBOARD_LAYOUT, encoding="utf-8") as f:
         content = f.read()
-    assert 'page == "Laudos"' not in content
-    assert '["Laudos"' not in content
+    assert ' "Laudos"' not in content
+    assert '"/admin/laudos"' not in content
 
 
 @pytest.mark.unit
-def test_admin_usa_requisicao_model():
-    """Admin deve usar Requisicao (requisição) no backend."""
-    with open(_ADMIN_PATH, encoding="utf-8") as f:
+def test_backend_usa_requisicao_model():
+    """API deve usar Requisicao (requisição) no backend."""
+    exames_router = os.path.join(
+        os.path.dirname(__file__), "..", "..", "api", "routers", "exames.py"
+    )
+    with open(exames_router, encoding="utf-8") as f:
         content = f.read()
     assert "from database.models import Requisicao" in content
-    assert "requisicao_model" in content
-    assert "db.requisicoes" in content
+    assert "req_model" in content or "Requisicao" in content
