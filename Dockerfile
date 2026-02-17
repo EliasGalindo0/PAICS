@@ -1,41 +1,37 @@
 # Stage 1: Build Next.js
 FROM node:20-alpine AS web-builder
 WORKDIR /app/web
+ENV NODE_OPTIONS=--max-old-space-size=4096
 COPY web/package*.json ./
-RUN npm ci 2>/dev/null || npm install
+RUN npm install
 COPY web/ ./
 RUN npm run build
 
-# Stage 2: Produção (Python full para OpenSSL/Atlas; Node para Next.js)
-FROM python:3.12
+# Stage 2: Base Node (evita NodeSource) + Python para API
+FROM node:20-bookworm-slim
 
-# build-essential para deps Python; curl para healthcheck; ca-certificates para TLS com Atlas; Node.js para Next.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl ca-certificates \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    python3 python3-pip python3-venv curl ca-certificates build-essential \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf python3 /usr/bin/python && ln -sf pip3 /usr/bin/pip
 
 WORKDIR /app
 
-# Python deps
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Código do projeto (web será sobrescrito pelo build)
 COPY . .
 
-# Next.js: sobrescrever com build de produção
+# Next.js build completo (para next start)
 COPY --from=web-builder /app/web ./web
 
-# Railway usa PORT em runtime; Next.js como processo principal
 ENV PORT=3000
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
 EXPOSE 3000
 
 RUN chmod +x docker-entrypoint.sh
 
-# Healthcheck: Next.js na raiz
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT:-3000}/ || exit 1
 
