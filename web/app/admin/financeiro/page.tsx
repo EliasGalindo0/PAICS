@@ -77,7 +77,7 @@ export default function AdminFinanceiroPage() {
       {error && <div className="paics-error" style={{ padding: 10, background: "#fef2f2", color: "#b91c1c", borderRadius: 6, marginBottom: 12 }}>{error}</div>}
       <div style={{ marginBottom: 24 }}>
         <h3 style={{ marginBottom: 8 }}>Gerar Fechamentos</h3>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div className="paics-filters" style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div>
             <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>Data Início</label>
             <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} style={{ padding: 8, borderRadius: 6, border: "1px solid #d1d5db" }} />
@@ -115,6 +115,7 @@ export default function AdminFinanceiroPage() {
         <h3 style={{ marginBottom: 8 }}>Faturas</h3>
         {loading ? <p>Carregando...</p> : (
           <div className="paics-card" style={{ background: "#fff", borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+            <div className="paics-table-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
@@ -192,6 +193,7 @@ export default function AdminFinanceiroPage() {
                 ))}
               </tbody>
             </table>
+            </div>
             {faturas.length === 0 && <p style={{ padding: 24, color: "#6b7280", textAlign: "center" }}>Nenhuma fatura.</p>}
           </div>
         )}

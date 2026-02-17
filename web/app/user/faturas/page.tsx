@@ -23,7 +23,7 @@ export default function UserFaturasPage() {
   return (
     <div>
       <h1 style={{ fontSize: "1.25rem", marginBottom: 16 }}>Minhas Faturas</h1>
-      <div style={{ display: "flex", gap: 24, marginBottom: 24 }}>
+      <div className="paics-filters" style={{ display: "flex", gap: 24, marginBottom: 24, flexWrap: "wrap" }}>
         <div className="paics-card" style={{ padding: 16, background: "#fff", borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.08)", minWidth: 140 }}>
           <p style={{ margin: 0, fontSize: "0.9rem", color: "#6b7280" }}>Total</p>
           <p style={{ margin: "4px 0 0", fontSize: "1.25rem", fontWeight: 600 }}>{faturas.length} fatura(s)</p>

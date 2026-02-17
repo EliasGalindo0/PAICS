@@ -1,12 +1,13 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/api";
 import { useTheme } from "./ThemeProvider";
 
 const SIDEBAR_WIDTH = 220;
+const MOBILE_BREAKPOINT = 768;
 
 const ADMIN_NAV = [
   { href: "/admin/exames", label: "Exames" },
@@ -31,7 +32,29 @@ export default function DashboardLayout({ user, children }: Props) {
   const pathname = usePathname();
   const nav = user.role === "admin" ? ADMIN_NAV : USER_NAV;
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const theme = useTheme();
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (sidebarOpen && isMobile) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+  }, [sidebarOpen, isMobile]);
+
+  const closeSidebar = () => isMobile && setSidebarOpen(false);
 
   const handleLogout = async () => {
     await logout();
@@ -43,26 +66,25 @@ export default function DashboardLayout({ user, children }: Props) {
       className="dashboard-wrapper"
       style={{ minHeight: "100vh", display: "flex" }}
     >
-      {/* Botão para abrir sidebar quando oculta */}
+      {/* Botão hamburger (mobile) ou abrir sidebar */}
       {!sidebarOpen && (
         <button
           onClick={() => setSidebarOpen(true)}
-          aria-label="Mostrar menu"
+          aria-label="Abrir menu"
           style={{
             position: "fixed",
             left: 0,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 28,
-            height: 48,
+            top: isMobile ? 12 : "50%",
+            transform: isMobile ? "none" : "translateY(-50%)",
+            width: isMobile ? 44 : 28,
+            height: isMobile ? 44 : 48,
             background: "#1a2d4a",
             color: "#fff",
             border: "none",
-            borderTopRightRadius: 6,
-            borderBottomRightRadius: 6,
+            borderRadius: isMobile ? 8 : "0 6px 6px 0",
             cursor: "pointer",
             zIndex: 1001,
-            fontSize: "1.1rem",
+            fontSize: "1.25rem",
             padding: 0,
             display: "flex",
             alignItems: "center",
@@ -70,16 +92,29 @@ export default function DashboardLayout({ user, children }: Props) {
             boxShadow: "2px 0 6px rgba(0,0,0,0.15)",
           }}
         >
-          ›
+          {isMobile ? "☰" : "›"}
         </button>
       )}
 
+      {(sidebarOpen || !isMobile) && (
+        <div
+          role="presentation"
+          onClick={closeSidebar}
+          style={{
+            display: isMobile && sidebarOpen ? "block" : "none",
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            zIndex: 999,
+          }}
+        />
+      )}
       <aside
         style={{
           position: "fixed",
           top: 0,
-          left: sidebarOpen ? 0 : -SIDEBAR_WIDTH,
-          width: SIDEBAR_WIDTH,
+          left: sidebarOpen ? 0 : isMobile ? "-100%" : -SIDEBAR_WIDTH,
+          width: isMobile ? "min(280px, 85vw)" : SIDEBAR_WIDTH,
           height: "100vh",
           background: "#1a2d4a",
           color: "#fff",
@@ -163,6 +198,7 @@ export default function DashboardLayout({ user, children }: Props) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={closeSidebar}
               style={{
                 display: "block",
                 padding: "0.5rem 1rem",
@@ -205,7 +241,7 @@ export default function DashboardLayout({ user, children }: Props) {
         className="paics-main"
         style={{
           flex: 1,
-          marginLeft: sidebarOpen ? SIDEBAR_WIDTH : 0,
+          marginLeft: isMobile ? 0 : sidebarOpen ? SIDEBAR_WIDTH : 0,
           padding: "1.5rem 2rem",
           overflow: "auto",
           minHeight: "100vh",

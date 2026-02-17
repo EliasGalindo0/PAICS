@@ -368,6 +368,11 @@ export async function criarVeterinario(clinicaId: string, data: { nome: string; 
     method: "POST",
     body: JSON.stringify(data),
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = typeof err?.detail === "string" ? err.detail : Array.isArray(err?.detail) ? err.detail.map((d: any) => d?.msg ?? d).join(", ") : "Erro ao cadastrar veterinário";
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -377,6 +382,17 @@ export async function atualizarClinica(clinicaId: string, data: Record<string, a
     body: JSON.stringify(data),
   });
   return res.json();
+}
+
+export async function excluirClinica(clinicaId: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/clinicas/${clinicaId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = typeof err?.detail === "string" ? err.detail : "Erro ao excluir clínica";
+    throw new Error(msg);
+  }
 }
 
 // --- Financeiro ---

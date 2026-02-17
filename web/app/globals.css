@@ -317,3 +317,118 @@ button {
   border-top: 1px solid var(--border);
   margin: 1em 0;
 }
+
+/* === Responsividade === */
+/* Container com overflow para tabelas em mobile */
+.paics-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -4px;
+}
+
+.paics-table-wrap table {
+  min-width: 640px;
+}
+
+/* Layout principal responsivo */
+@media (max-width: 768px) {
+  .paics-main {
+    padding: 1rem !important;
+  }
+
+  .paics-main h1 {
+    font-size: 1.1rem !important;
+  }
+
+  .paics-filters {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .paics-filters select,
+  .paics-filters input[type="text"],
+  .paics-filters input[type="date"] {
+    min-width: 100% !important;
+    width: 100%;
+  }
+
+  .paics-table-wrap {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding: 0 1rem;
+    border-radius: 0;
+  }
+
+  .paics-table-wrap table {
+    font-size: 0.85rem;
+  }
+
+  .paics-table-wrap th,
+  .paics-table-wrap td {
+    padding: 8px 10px !important;
+  }
+
+  .paics-table-wrap td[style*="display: flex"] {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .paics-table-wrap a,
+  .paics-table-wrap button {
+    font-size: 0.8rem !important;
+    padding: 6px 10px !important;
+  }
+
+  /* Cards em layout mobile (tabelas como cards) */
+  .paics-mobile-cards .paics-table-wrap table,
+  .paics-mobile-cards .paics-table-wrap thead,
+  .paics-mobile-cards .paics-table-wrap tbody,
+  .paics-mobile-cards .paics-table-wrap tr,
+  .paics-mobile-cards .paics-table-wrap th,
+  .paics-mobile-cards .paics-table-wrap td {
+    display: block;
+  }
+
+  .paics-mobile-cards .paics-table-wrap thead {
+    display: none;
+  }
+
+  .paics-mobile-cards .paics-table-wrap tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    padding: 12px;
+  }
+
+  .paics-mobile-cards .paics-table-wrap td {
+    padding: 6px 0 !important;
+    border: none;
+  }
+
+  .paics-mobile-cards .paics-table-wrap td:not(:last-child)::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 2px;
+  }
+}
+
+@media (max-width: 480px) {
+  .paics-main {
+    padding: 0.75rem !important;
+  }
+
+  .paics-table-wrap table {
+    min-width: 520px;
+  }
+}
+
+/* Modal/painel responsivo */
+@media (max-width: 640px) {
+  .paics-modal {
+    max-width: calc(100vw - 32px) !important;
+    margin: 0 8px !important;
+  }
+}

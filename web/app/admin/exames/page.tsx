@@ -7,7 +7,7 @@ import {
   gerarLaudo,
   type Exame,
 } from "@/lib/api";
-import { hojeISO } from "@/lib/dateUtils";
+import { hojeISO, diasAtrasISO } from "@/lib/dateUtils";
 
 const STATUS_ORDER: Record<string, number> = { pendente: 0, em_analise: 1, validado: 2, liberado: 3, rejeitado: 4 };
 
@@ -18,7 +18,8 @@ export default function AdminExamesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [tipoFilter, setTipoFilter] = useState("");
   const [search, setSearch] = useState("");
-  const [filterDate, setFilterDate] = useState(() => hojeISO());
+  const [startDate, setStartDate] = useState(() => diasAtrasISO(30));
+  const [endDate, setEndDate] = useState(() => hojeISO());
   const [showAllDates, setShowAllDates] = useState(false);
   const [sortBy, setSortBy] = useState("data_desc");
   const [gerandoId, setGerandoId] = useState<string | null>(null);
@@ -33,9 +34,9 @@ export default function AdminExamesPage() {
       search: search || undefined,
       limit: 100,
     };
-    if (!showAllDates && filterDate) {
-      params.start_date = filterDate;
-      params.end_date = filterDate;
+    if (!showAllDates && startDate && endDate) {
+      params.start_date = startDate;
+      params.end_date = endDate;
     }
     listExames(params)
       .then(setExames)
@@ -45,7 +46,7 @@ export default function AdminExamesPage() {
 
   useEffect(() => {
     load();
-  }, [statusFilter, tipoFilter, search, filterDate, showAllDates]);
+  }, [statusFilter, tipoFilter, search, startDate, endDate, showAllDates]);
 
   const examesOrdenados = useMemo(() => {
     const list = [...exames];
@@ -109,7 +110,7 @@ export default function AdminExamesPage() {
   return (
     <div>
       <h1 style={{ fontSize: "1.25rem", marginBottom: "1rem" }}>Exames</h1>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: "1rem" }}>
+      <div className="paics-filters" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: "1rem" }}>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -130,14 +131,24 @@ export default function AdminExamesPage() {
           <option value="raio-x">Raio-X</option>
           <option value="ultrassom">Ultrassom</option>
         </select>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <label style={{ fontSize: "0.9rem" }}>Data</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ fontSize: "0.9rem" }}>Período</label>
           <input
             type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
             disabled={showAllDates}
             style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #d1d5db" }}
+            title="Data inicial"
+          />
+          <span style={{ fontSize: "0.9rem", color: "#6b7280" }}>até</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            disabled={showAllDates}
+            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #d1d5db" }}
+            title="Data final"
           />
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.9rem" }}>
@@ -165,7 +176,8 @@ export default function AdminExamesPage() {
       </div>
       {!showAllDates && (
         <p style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: -8, marginBottom: 12 }}>
-          Exibindo requisições de {new Date(filterDate + "T12:00:00").toLocaleDateString("pt-BR")}.
+          Exibindo requisições de {new Date(startDate + "T12:00:00").toLocaleDateString("pt-BR")} até{" "}
+          {new Date(endDate + "T12:00:00").toLocaleDateString("pt-BR")}.
         </p>
       )}
       {error && <div className="paics-error" style={{ padding: 10, background: "#fef2f2", color: "#b91c1c", borderRadius: 6, marginBottom: 12 }}>{error}</div>}
@@ -198,6 +210,7 @@ export default function AdminExamesPage() {
         <p>Carregando...</p>
       ) : (
         <div className="paics-card" style={{ background: "#fff", borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+          <div className="paics-table-wrap">
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
@@ -223,7 +236,7 @@ export default function AdminExamesPage() {
                   <td style={{ padding: "10px 12px" }}>{ex.tipo_exame}</td>
                   <td style={{ padding: "10px 12px" }}>{ex.n_imagens}</td>
                   <td style={{ padding: "10px 12px" }}>{ex.tem_laudo ? "Sim" : "Não"}</td>
-                  <td style={{ padding: "10px 12px", display: "flex", gap: 8 }}>
+                  <td style={{ padding: "10px 12px", display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Link
                       href={`/admin/exames/${ex.id}`}
                       style={{ padding: "4px 10px", background: "#1a2d4a", color: "#fff", borderRadius: 6, textDecoration: "none", fontSize: "0.85rem" }}
@@ -244,6 +257,7 @@ export default function AdminExamesPage() {
               ))}
             </tbody>
           </table>
+          </div>
           {examesOrdenados.length === 0 && <p style={{ padding: 24, color: "#6b7280", textAlign: "center" }}>Nenhum exame encontrado.</p>}
         </div>
       )}

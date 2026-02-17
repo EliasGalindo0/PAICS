@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { listExames, type Exame } from "@/lib/api";
-import { hojeISO } from "@/lib/dateUtils";
+import { hojeISO, diasAtrasISO } from "@/lib/dateUtils";
 
 const STORAGE_KEY = "paics_last_meus_exames_visit";
 
@@ -12,7 +12,8 @@ export default function UserExamesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [filterDate, setFilterDate] = useState(() => hojeISO());
+  const [startDate, setStartDate] = useState(() => diasAtrasISO(30));
+  const [endDate, setEndDate] = useState(() => hojeISO());
   const [showAllDates, setShowAllDates] = useState(false);
   const [newlyLiberados, setNewlyLiberados] = useState(0);
 
@@ -21,9 +22,9 @@ export default function UserExamesPage() {
       status: statusFilter || undefined,
       limit: 100,
     };
-    if (!showAllDates && filterDate) {
-      params.start_date = filterDate;
-      params.end_date = filterDate;
+    if (!showAllDates && startDate && endDate) {
+      params.start_date = startDate;
+      params.end_date = endDate;
     }
     const nowIso = new Date().toISOString();
     const lastVisit = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
@@ -46,7 +47,7 @@ export default function UserExamesPage() {
         setLoading(false);
         if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, nowIso);
       });
-  }, [statusFilter, filterDate, showAllDates]);
+  }, [statusFilter, startDate, endDate, showAllDates]);
 
   const statusBadge = (s: string) => {
     const map: Record<string, { bg: string; color: string }> = {
@@ -61,7 +62,7 @@ export default function UserExamesPage() {
   return (
     <div>
       <h1 style={{ fontSize: "1.25rem", marginBottom: 16 }}>Meus Exames</h1>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+      <div className="paics-filters" style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -72,14 +73,24 @@ export default function UserExamesPage() {
           <option value="validado">Validado</option>
           <option value="liberado">Liberados</option>
         </select>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <label style={{ fontSize: "0.9rem" }}>Data</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ fontSize: "0.9rem" }}>Período</label>
           <input
             type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
             disabled={showAllDates}
             style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #d1d5db" }}
+            title="Data inicial"
+          />
+          <span style={{ fontSize: "0.9rem", color: "#6b7280" }}>até</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            disabled={showAllDates}
+            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #d1d5db" }}
+            title="Data final"
           />
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.9rem" }}>
@@ -107,7 +118,8 @@ export default function UserExamesPage() {
       )}
       {!showAllDates && (
         <p style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: -8, marginBottom: 12 }}>
-          Exibindo requisições de {new Date(filterDate + "T12:00:00").toLocaleDateString("pt-BR")}. Marque «Mostrar todas as datas» para ver o histórico.
+          Exibindo requisições de {new Date(startDate + "T12:00:00").toLocaleDateString("pt-BR")} até{" "}
+          {new Date(endDate + "T12:00:00").toLocaleDateString("pt-BR")}. Marque «Mostrar todas as datas» para ver o histórico.
         </p>
       )}
       {error && <div className="paics-error" style={{ padding: 10, background: "#fef2f2", color: "#b91c1c", borderRadius: 6, marginBottom: 12 }}>{error}</div>}
@@ -115,6 +127,7 @@ export default function UserExamesPage() {
         <p>Carregando...</p>
       ) : (
         <div className="paics-card" style={{ background: "#fff", borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+          <div className="paics-table-wrap">
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
@@ -139,6 +152,7 @@ export default function UserExamesPage() {
               ))}
             </tbody>
           </table>
+          </div>
           {exames.length === 0 && <p style={{ padding: 24, color: "#6b7280", textAlign: "center" }}>Nenhum exame encontrado.</p>}
         </div>
       )}

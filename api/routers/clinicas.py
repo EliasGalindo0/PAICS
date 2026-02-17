@@ -1,5 +1,5 @@
 """Rotas de clínicas e veterinários"""
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from database.connection import get_db
@@ -215,6 +215,22 @@ def criar_clinica_completa(
     }
 
 
+@router.delete("/clinicas/{clinica_id}")
+def excluir_clinica(
+    clinica_id: str,
+    user: dict = Depends(require_admin),
+):
+    """Exclui uma clínica (somente admin). Desvincula usuários e requisições, remove veterinários."""
+    db = get_db()
+    clinica_model = Clinica(db.clinicas)
+    c = clinica_model.find_by_id(clinica_id)
+    if not c:
+        raise HTTPException(404, "Clínica não encontrada")
+    if not clinica_model.delete(clinica_id):
+        raise HTTPException(500, "Erro ao excluir clínica")
+    return {"success": True}
+
+
 @router.patch("/clinicas/{clinica_id}")
 def atualizar_clinica(
     clinica_id: str,
@@ -244,7 +260,6 @@ def listar_veterinarios(
 ):
     """Lista veterinários de uma clínica."""
     db = get_db()
-    clinica_model = Clinica(db.clinicas)
     veterinario_model = Veterinario(db.veterinarios)
     if user["role"] != "admin":
         if user.get("clinica_id") != clinica_id:

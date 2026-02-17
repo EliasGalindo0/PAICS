@@ -14,6 +14,15 @@ export function hojeISO(): string {
 }
 
 /**
+ * Retorna a data de N dias atrás no formato YYYY-MM-DD no horário de Brasília.
+ */
+export function diasAtrasISO(dias: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - dias);
+  return d.toLocaleDateString("en-CA", { timeZone: TZ_BRASILIA });
+}
+
+/**
  * Converte um Date ou string ISO para YYYY-MM-DD no horário de Brasília.
  * Útil ao exibir datas vindas da API (que podem estar em UTC).
  */
