@@ -97,6 +97,20 @@ html[data-theme="dark"] .paics-main .paics-stats div {
   color: inherit !important;
 }
 
+.paics-main .paics-muted {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.paics-main .paics-kb-info {
+  background: #eff6ff;
+}
+
+html[data-theme="dark"] .paics-main .paics-kb-info {
+  background: var(--bg-thead) !important;
+  color: var(--text) !important;
+}
+
 html[data-theme="dark"] .paics-main .paics-muted {
   background: var(--bg-thead) !important;
   color: var(--text) !important;

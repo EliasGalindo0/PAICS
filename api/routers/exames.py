@@ -267,6 +267,19 @@ def obter_exame(exame_id: str, user: dict = Depends(get_current_user)):
     }
 
 
+@router.delete("/{exame_id}")
+def excluir_exame(exame_id: str, user: dict = Depends(require_admin)):
+    """Exclui uma requisição de exame (somente admin). Remove o laudo associado."""
+    db = get_db()
+    req_model = Requisicao(db.requisicoes)
+    req = req_model.find_by_id(exame_id)
+    if not req:
+        raise HTTPException(404, "Exame não encontrado")
+    if not req_model.delete(exame_id):
+        raise HTTPException(500, "Erro ao excluir exame")
+    return {"success": True}
+
+
 @router.get("/{exame_id}/imagens/{ref}")
 def obter_imagem(exame_id: str, ref: str, user: dict = Depends(get_current_user)):
     """Retorna imagem como PNG. Ref = ID GridFS da imagem."""

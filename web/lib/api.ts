@@ -162,6 +162,15 @@ export async function getExame(id: string): Promise<any> {
   return res.json();
 }
 
+export async function excluirExame(id: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/exames/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = typeof err?.detail === "string" ? err.detail : "Erro ao excluir exame";
+    throw new Error(msg);
+  }
+}
+
 export async function loadImageAsBlobUrl(exameId: string, ref: string): Promise<string> {
   const res = await fetchWithAuth(`/api/exames/${exameId}/imagens/${ref}`);
   if (!res.ok) throw new Error("Erro ao carregar imagem");

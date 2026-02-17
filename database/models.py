@@ -489,6 +489,15 @@ class Requisicao(BaseModel):
         )
         return result.modified_count > 0
 
+    def delete(self, req_id: str) -> bool:
+        """Exclui uma requisição (exame). Remove também o laudo associado."""
+        from database.connection import get_db
+        db = get_db()
+        laudo_model = Laudo(db.laudos)
+        laudo_model.delete_by_requisicao(req_id)
+        result = self.collection.delete_one({"_id": ObjectId(req_id)})
+        return result.deleted_count > 0
+
 
 class Laudo(BaseModel):
     """Modelo de laudo"""

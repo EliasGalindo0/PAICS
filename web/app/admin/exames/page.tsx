@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   listExames,
   gerarLaudo,
+  excluirExame,
   type Exame,
 } from "@/lib/api";
 import { hojeISO, diasAtrasISO } from "@/lib/dateUtils";
@@ -25,6 +26,8 @@ export default function AdminExamesPage() {
   const [gerandoId, setGerandoId] = useState<string | null>(null);
   const [gerandoMassa, setGerandoMassa] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<{ ok: number; err: number } | null>(null);
+  const [excluindoId, setExcluindoId] = useState<string | null>(null);
+  const [confirmExcluirId, setConfirmExcluirId] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -73,6 +76,24 @@ export default function AdminExamesPage() {
       setError((e as Error).message);
     } finally {
       setGerandoId(null);
+    }
+  };
+
+  const handleExcluir = async (id: string) => {
+    if (confirmExcluirId !== id) {
+      setConfirmExcluirId(id);
+      return;
+    }
+    setExcluindoId(id);
+    setError("");
+    try {
+      await excluirExame(id);
+      setConfirmExcluirId(null);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExcluindoId(null);
     }
   };
 
@@ -252,6 +273,14 @@ export default function AdminExamesPage() {
                         {gerandoId === ex.id ? "Gerando..." : "Gerar Laudo"}
                       </button>
                     )}
+                    <button
+                      onClick={() => handleExcluir(ex.id)}
+                      disabled={excluindoId === ex.id}
+                      style={{ padding: "4px 10px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 6, cursor: excluindoId === ex.id ? "not-allowed" : "pointer", fontSize: "0.85rem" }}
+                      title="Excluir requisição (exame solicitado por engano ou em duplicidade)"
+                    >
+                      {confirmExcluirId === ex.id ? "Confirma?" : excluindoId === ex.id ? "Excluindo..." : "Excluir"}
+                    </button>
                   </td>
                 </tr>
               ))}

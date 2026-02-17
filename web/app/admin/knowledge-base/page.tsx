@@ -259,7 +259,7 @@ export default function AdminKnowledgeBasePage() {
       {tab === "aprendizado" && (
         <div className="paics-card" style={{ background: "#fff", padding: 24, borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
           <h3 style={{ marginTop: 0, marginBottom: 16 }}>Sistema de Aprendizado Contínuo</h3>
-          <div style={{ padding: 12, background: "#eff6ff", borderRadius: 6, marginBottom: 20, fontSize: "0.9rem" }}>
+          <div className="paics-muted paics-kb-info" style={{ padding: 12, borderRadius: 6, marginBottom: 20, fontSize: "0.9rem" }}>
             <strong>Sistema de Aprendizado Contínuo</strong>
             <p style={{ margin: "8px 0 0" }}>
               O sistema aprende com cada laudo processado: <strong>Rating 5/5</strong> = aprovado sem edições; <strong>Rating 3/5</strong> = editado parcialmente; <strong>Rating 1/5</strong> = muito editado (API externa).
