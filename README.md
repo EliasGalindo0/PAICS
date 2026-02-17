@@ -68,11 +68,79 @@ Credenciais do admin dummy: **admin** / **admin**.
 ### 5. Iniciar
 
 ```bash
-just streamlit
-# ou: streamlit run streamlit_app.py
+just start
+# Ou em dois terminais: just api (8000) e just web (3000)
 ```
 
-Acesse `http://localhost:8501`.
+Frontend: `http://localhost:3000` | API: `http://localhost:8000/docs`
+
+---
+
+## Frontend Next.js (aplicação principal)
+
+O frontend principal é Next.js com API FastAPI, substituindo o Streamlit.
+
+### Pré-requisitos
+
+- Ambiente PAICS já configurado (Python, MongoDB, `.env`, seed admin)
+- Node.js 18+
+
+### 1. Iniciar a API (FastAPI)
+
+```bash
+cd PAICS
+pip install -r requirements.txt   # inclui fastapi, uvicorn
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+API em `http://localhost:8000`. Docs: `http://localhost:8000/docs`.
+
+### 2. Iniciar o frontend (Next.js)
+
+```bash
+cd PAICS/web
+npm install
+npm run dev
+```
+
+Frontend em `http://localhost:3000`.
+
+### 3. Uso
+
+1. Acesse `http://localhost:3000`
+2. Faça login com credenciais do PAICS (ex.: **admin** / **admin**)
+3. Visualize a lista de exames (requisições) com filtro por status
+
+O frontend guarda tokens em `localStorage` e renova o access token automaticamente via refresh token.
+
+### Estrutura da PoC
+
+```
+PAICS/
+├── api/
+│   ├── main.py           # FastAPI: auth, routers
+│   ├── dependencies.py   # Auth (get_current_user, require_admin)
+│   └── routers/
+│       ├── exames.py     # GET/POST exames, laudos, imagens, PDF
+│       ├── requisicoes.py # POST criar requisição (upload imagens)
+│       ├── clinicas.py   # GET clínicas, veterinários
+│       ├── usuarios.py   # CRUD usuários (admin)
+│       └── financeiro.py # Fechamentos, faturas
+└── web/
+    ├── app/
+    │   ├── login/
+    │   ├── admin/        # Exames, Nova Requisição, Clínicas, Financeiro
+    │   └── user/         # Meus Exames, Nova Requisição, Faturas
+    ├── components/       # DashboardLayout
+    └── lib/api.ts        # Cliente fetch com autenticação
+```
+
+### Variáveis do frontend e API
+
+| Variável | Descrição |
+|----------|-----------|
+| `NEXT_PUBLIC_API_URL` | URL da API no frontend (padrão: `http://localhost:8000`) |
+| `CORS_ORIGINS` | Origens permitidas no CORS da API. Em produção, liste as URLs do frontend separadas por vírgula (ex.: `https://paics.seudominio.com`) |
 
 ---
 
@@ -165,7 +233,7 @@ Os testes usam `paics_db_test`. O CI (`.github/workflows/ci.yml`) roda em push/P
 | Comando | Descrição |
 |---------|-----------|
 | `just init` | Setup completo (venv, deps) |
-| `just streamlit` | Inicia a aplicação web |
+| `just start` | Inicia API + frontend (setup completo) |
 | `just seed-admin` | Cria admin e clínica dummy |
 | `just docker-mongodb-start` | Sobe MongoDB em Docker |
 | `just docker-mongodb-stop` | Para MongoDB |
@@ -173,6 +241,8 @@ Os testes usam `paics_db_test`. O CI (`.github/workflows/ci.yml`) roda em push/P
 | `just test` | Executa todos os testes |
 | `just test-unit` | Testes unitários |
 | `just test-e2e` | Testes E2E |
+| `just api` | Inicia API FastAPI (PoC, porta 8000) |
+| `just web` | Inicia frontend Next.js (PoC, porta 3000) |
 | `just fix-grpc` | Corrige erro cygrpc |
 | `just fix-numpy` | Corrige erro numpy |
 | `just fix-rpds` | Corrige ChromaDB/rpds |
@@ -186,11 +256,8 @@ Mais: `just --list`.
 
 ```
 PAICS/
-├── streamlit_app.py      # Entrada web
-├── pages/
-│   ├── login.py
-│   ├── admin_dashboard.py
-│   └── user_dashboard.py
+├── api/                 # FastAPI (porta 8000)
+├── web/                 # Next.js (porta 3000)
 ├── auth/                 # Autenticação, JWT
 ├── database/             # MongoDB, modelos
 ├── vector_db/            # ChromaDB (laudos validados)

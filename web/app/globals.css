@@ -1,0 +1,319 @@
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+:root {
+  --bg-page: #f5f6f8;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --bg-muted: #f1f3f5;
+  --bg-thead: #f8f9fa;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+  --border: #e2e8f0;
+  --border-input: #cbd5e1;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --radius: 8px;
+  --radius-sm: 6px;
+  --error-bg: #fef2f2;
+  --error-text: #b91c1c;
+  --success-bg: #dcfce7;
+  --success-text: #166534;
+  --primary: #1a2d4a;
+  --primary-hover: #243a5c;
+  --accent: #16a34a;
+  --accent-hover: #15803d;
+}
+
+[data-theme="dark"] {
+  --bg-page: #0f172a;
+  --bg-card: #1e293b;
+  --bg-input: #334155;
+  --bg-muted: #1e293b;
+  --bg-thead: #334155;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-inverse: #ffffff;
+  --border: #334155;
+  --border-input: #475569;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --error-bg: #450a0a;
+  --error-text: #fca5a5;
+  --success-bg: #14532d;
+  --success-text: #86efac;
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --accent: #22c55e;
+  --accent-hover: #4ade80;
+}
+
+html,
+body {
+  max-width: 100vw;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen, Ubuntu, sans-serif;
+  background: var(--bg-page);
+  color: var(--text);
+  transition: background 0.2s, color 0.2s;
+}
+
+/* Dark mode: override inline styles on common patterns */
+html[data-theme="dark"] .paics-main input,
+html[data-theme="dark"] .paics-main select,
+html[data-theme="dark"] .paics-main textarea {
+  background: var(--bg-input) !important;
+  color: var(--text) !important;
+  border-color: var(--border-input) !important;
+}
+
+html[data-theme="dark"] .paics-main input::placeholder,
+html[data-theme="dark"] .paics-main textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+html[data-theme="dark"] .paics-main select option {
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .paics-main .paics-card,
+html[data-theme="dark"] .paics-main table {
+  background: var(--bg-card) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-stats {
+  background: var(--bg-thead) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-stats div {
+  color: inherit !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-muted {
+  background: var(--bg-thead) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .paics-main thead tr,
+html[data-theme="dark"] .paics-main th {
+  background: var(--bg-thead) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .paics-main tbody tr {
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .paics-main details {
+  background: var(--bg-muted) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .paics-main pre {
+  background: var(--bg-input) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-error {
+  background: var(--error-bg) !important;
+  color: var(--error-text) !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-success {
+  background: var(--success-bg) !important;
+  color: var(--success-text) !important;
+}
+
+html[data-theme="dark"] .paics-main a[href] {
+  color: var(--primary) !important;
+}
+
+html[data-theme="dark"] .paics-main label {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .paics-main code {
+  color: var(--text) !important;
+  background: var(--bg-muted) !important;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}
+
+/* Texto em parágrafos e títulos - garantir legibilidade no dark mode */
+html[data-theme="dark"] .paics-main p,
+html[data-theme="dark"] .paics-main h3,
+html[data-theme="dark"] .paics-main h4,
+html[data-theme="dark"] .paics-main strong,
+html[data-theme="dark"] .paics-main pre,
+html[data-theme="dark"] .paics-main span,
+html[data-theme="dark"] .paics-main small {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .paics-main span[style*="color"],
+html[data-theme="dark"] .paics-main small[style*="color"] {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .paics-auth-card {
+  background: var(--bg-card) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+[data-theme="dark"] .paics-auth-card input {
+  background: var(--bg-input) !important;
+  color: var(--text) !important;
+  border-color: var(--border-input) !important;
+}
+
+[data-theme="dark"] .paics-auth-card h1,
+[data-theme="dark"] .paics-auth-card label,
+[data-theme="dark"] .paics-auth-card p {
+  color: var(--text) !important;
+}
+
+[data-theme="dark"] .paics-auth-card .paics-error {
+  background: var(--error-bg) !important;
+  color: var(--error-text) !important;
+}
+
+.dashboard-wrapper {
+  background: var(--bg-page);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Utility: card container */
+.paics-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* Utility: form controls */
+.paics-input {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-input);
+  background: var(--bg-input);
+  color: var(--text);
+  width: 100%;
+}
+
+/* Todos os botões com negrito para melhor visibilidade */
+button {
+  font-weight: 600;
+}
+
+.paics-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+
+.paics-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.paics-btn-primary {
+  background: var(--primary);
+  color: var(--text-inverse);
+}
+
+.paics-btn-accent {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+/* Conteúdo do laudo – formatação markdown */
+.paics-laudo-conteudo {
+  border: 1px solid var(--border);
+}
+
+.paics-laudo-conteudo p {
+  margin: 0 0 0.75em;
+  color: var(--text);
+}
+
+.paics-laudo-conteudo p:last-child {
+  margin-bottom: 0;
+}
+
+.paics-laudo-conteudo h1,
+.paics-laudo-conteudo h2,
+.paics-laudo-conteudo h3 {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.paics-laudo-conteudo h1:first-child,
+.paics-laudo-conteudo h2:first-child,
+.paics-laudo-conteudo h3:first-child {
+  margin-top: 0;
+}
+
+.paics-laudo-conteudo ul,
+.paics-laudo-conteudo ol {
+  margin: 0.5em 0 0.75em;
+  padding-left: 1.5em;
+}
+
+.paics-laudo-conteudo li {
+  margin-bottom: 0.25em;
+}
+
+.paics-laudo-conteudo strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.paics-laudo-conteudo em {
+  font-style: italic;
+}
+
+.paics-laudo-conteudo code {
+  background: var(--bg-muted);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.paics-laudo-conteudo pre {
+  background: var(--bg-muted);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.paics-laudo-conteudo pre code {
+  background: none;
+  padding: 0;
+}
+
+.paics-laudo-conteudo hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}

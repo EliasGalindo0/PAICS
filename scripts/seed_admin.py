@@ -12,7 +12,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from auth.auth_utils import hash_password  # noqa: E402
+from auth.password import hash_password  # noqa: E402
 from database.models import User, Clinica, Veterinario  # noqa: E402
 from database.connection import get_db, init_db  # noqa: E402
 

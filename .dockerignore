@@ -48,6 +48,11 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Next.js (build feito no stage frontend)
+web/.next/
+web/node_modules/
+web/out/
+
 # Projeto
 laudos_com_ia/
 temp_laudos/
