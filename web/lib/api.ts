@@ -257,6 +257,17 @@ export async function downloadPdf(exameId: string): Promise<Blob> {
   return res.blob();
 }
 
+/** Abre preview do PDF em nova aba. Admin pode ver antes de liberar (preview=true). */
+export async function previewPdf(exameId: string, asAdmin = false): Promise<void> {
+  const url = `/api/exames/${exameId}/pdf${asAdmin ? "?preview=1" : ""}`;
+  const res = await fetchWithAuth(url);
+  if (!res.ok) throw new Error("Erro ao carregar preview do PDF");
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  window.open(objectUrl, "_blank", "noopener");
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+}
+
 // --- Requisições / Clínicas ---
 export async function listClinicas(apenasAtivas = true): Promise<{ id: string; nome: string; cnpj?: string }[]> {
   const res = await fetchWithAuth(`/api/clinicas?apenas_ativas=${apenasAtivas}`);

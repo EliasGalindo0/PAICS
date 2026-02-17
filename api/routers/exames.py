@@ -3,7 +3,7 @@ Rotas de exames (requisições + laudos) para admin e user
 """
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 import io
@@ -517,8 +517,13 @@ def liberar_laudo(exame_id: str, user: dict = Depends(require_admin)):
 
 
 @router.get("/{exame_id}/pdf")
-def baixar_pdf(exame_id: str, user: dict = Depends(get_current_user)):
-    """Gera e retorna PDF do laudo (apenas se liberado)."""
+def baixar_pdf(
+    exame_id: str,
+    preview: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+):
+    """Gera e retorna PDF do laudo. Liberado: todos; não liberado: apenas admin com preview=1."""
+    is_preview = str(preview or "").lower() in ("1", "true", "yes")
     db = get_db()
     req_model = Requisicao(db.requisicoes)
     laudo_model = Laudo(db.laudos)
@@ -532,7 +537,9 @@ def baixar_pdf(exame_id: str, user: dict = Depends(get_current_user)):
     if user["role"] != "admin" and req.get("user_id") != user["id"]:
         raise HTTPException(403, "Sem permissão")
     laudo = laudo_model.find_by_requisicao(exame_id)
-    if not laudo or laudo.get("status") != "liberado":
+    if not laudo:
+        raise HTTPException(404, "Laudo não encontrado")
+    if laudo.get("status") != "liberado" and not (is_preview and user.get("role") == "admin"):
         raise HTTPException(403, "Laudo ainda não liberado")
 
     try:

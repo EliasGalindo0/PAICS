@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   getExame,
   downloadPdf,
+  previewPdf,
   addObservacao,
   loadImageAsBlobUrl,
 } from "@/lib/api";
@@ -17,6 +20,8 @@ export default function UserExameDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [baixando, setBaixando] = useState(false);
+  const [previewPdfLoading, setPreviewPdfLoading] = useState(false);
+  const [mostrarFormatoImpressao, setMostrarFormatoImpressao] = useState(false);
   const [obs, setObs] = useState("");
   const [envObs, setEnvObs] = useState(false);
   const [imgUrls, setImgUrls] = useState<Record<string, string>>({});
@@ -59,6 +64,18 @@ export default function UserExameDetailPage() {
       setError((e as Error).message);
     } finally {
       setBaixando(false);
+    }
+  };
+
+  const handlePreviewPdf = async () => {
+    setPreviewPdfLoading(true);
+    setError("");
+    try {
+      await previewPdf(id, false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPreviewPdfLoading(false);
     }
   };
 
@@ -202,31 +219,73 @@ export default function UserExameDetailPage() {
               <p>
                 <strong>Laudo:</strong>
               </p>
-              <pre
+              <button
+                type="button"
+                onClick={() => setMostrarFormatoImpressao((v) => !v)}
                 style={{
-                  whiteSpace: "pre-wrap",
+                  marginBottom: 8,
+                  padding: "6px 12px",
+                  background: "transparent",
+                  color: "#6b7280",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: "0.85rem",
+                }}
+              >
+                {mostrarFormatoImpressao ? "Ver texto bruto" : "Ver como será impresso"}
+              </button>
+              <div
+                style={{
                   background: "#f9fafb",
                   padding: 16,
                   borderRadius: 6,
+                  fontSize: "0.95rem",
+                  lineHeight: 1.6,
                 }}
               >
-                {laudo.texto}
-              </pre>
+                {mostrarFormatoImpressao ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {laudo.texto || ""}
+                  </ReactMarkdown>
+                ) : (
+                  <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>
+                    {laudo.texto || ""}
+                  </pre>
+                )}
+              </div>
             </div>
-            <button
-              onClick={handleBaixarPdf}
-              disabled={baixando}
-              style={{
-                padding: "10px 20px",
-                background: "#16a34a",
-                color: "#fff",
-                border: "none",
-                borderRadius: 6,
-                cursor: "pointer",
-              }}
-            >
-              {baixando ? "Gerando PDF..." : "Baixar PDF"}
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={handlePreviewPdf}
+                disabled={previewPdfLoading}
+                style={{
+                  padding: "10px 20px",
+                  background: "#6b7280",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                }}
+                title="Visualizar como será impresso no PDF"
+              >
+                {previewPdfLoading ? "Abrindo..." : "Preview PDF"}
+              </button>
+              <button
+                onClick={handleBaixarPdf}
+                disabled={baixando}
+                style={{
+                  padding: "10px 20px",
+                  background: "#16a34a",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                }}
+              >
+                {baixando ? "Gerando PDF..." : "Baixar PDF"}
+              </button>
+            </div>
           </>
         )}
         {(laudo?.status === "pendente" ||

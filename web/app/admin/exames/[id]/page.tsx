@@ -14,6 +14,7 @@ import {
   regenerarLaudo,
   cancelarLaudo,
   loadImageAsBlobUrl,
+  previewPdf,
 } from "@/lib/api";
 
 const btn = {
@@ -46,6 +47,8 @@ export default function AdminExameDetailPage() {
   const [zoomRef, setZoomRef] = useState<string | null>(null);
   const [confirmCancelar, setConfirmCancelar] = useState(false);
   const [editandoRequisicao, setEditandoRequisicao] = useState(false);
+  const [previewPdfLoading, setPreviewPdfLoading] = useState(false);
+  const [mostrarFormatoImpressao, setMostrarFormatoImpressao] = useState(false);
   const [formRequisicao, setFormRequisicao] = useState<Record<string, string>>(
     {},
   );
@@ -178,6 +181,18 @@ export default function AdminExameDetailPage() {
       setError((e as Error).message);
     } finally {
       setRegenerando(false);
+    }
+  };
+
+  const handlePreviewPdf = async () => {
+    setPreviewPdfLoading(true);
+    setError("");
+    try {
+      await previewPdf(id, true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPreviewPdfLoading(false);
     }
   };
 
@@ -639,12 +654,21 @@ export default function AdminExameDetailPage() {
             }}
           >
             {!editando ? (
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   onClick={() => setEditando(true)}
                   style={{ ...btn, background: "#2563eb", color: "#fff" }}
+                  title="Editar o laudo"
                 >
                   Abrir edição
+                </button>
+                <button
+                  onClick={handlePreviewPdf}
+                  disabled={previewPdfLoading}
+                  style={{ ...btn, background: "#0369a1", color: "#fff" }}
+                  title="Visualizar como será impresso no PDF"
+                >
+                  {previewPdfLoading ? "Abrindo..." : "Preview PDF"}
                 </button>
               </div>
             ) : (
@@ -673,6 +697,7 @@ export default function AdminExameDetailPage() {
                       onClick={handleSalvarLaudo}
                       disabled={salvando}
                       style={{ ...btn, background: "#16a34a", color: "#fff" }}
+                      title="Salvar alterações no texto do laudo"
                     >
                       {salvando ? "Salvando..." : "Salvar alterações"}
                     </button>
@@ -680,11 +705,20 @@ export default function AdminExameDetailPage() {
                       laudo.status === "validado") && (
                       <button
                         onClick={handleLiberar}
-                        style={{ ...btn, background: "#16a34a", color: "#fff" }}
+                        style={{ ...btn, background: "#059669", color: "#fff" }}
+                        title="Liberar o exame para o usuário"
                       >
                         Liberar exame
                       </button>
                     )}
+                    <button
+                      onClick={handlePreviewPdf}
+                      disabled={previewPdfLoading}
+                      style={{ ...btn, background: "#0369a1", color: "#fff" }}
+                      title="Visualizar como será impresso no PDF"
+                    >
+                      {previewPdfLoading ? "Abrindo..." : "Preview PDF"}
+                    </button>
                     <button
                       onClick={() => {
                         setEditando(false);
@@ -692,7 +726,8 @@ export default function AdminExameDetailPage() {
                         setConfirmCancelar(false);
                         router.push("/admin/exames");
                       }}
-                      style={{ ...btn, background: "#6b7280", color: "#fff" }}
+                      style={{ ...btn, background: "#64748b", color: "#fff" }}
+                      title="Fechar sem salvar e voltar à lista"
                     >
                       Fechar edição
                     </button>
@@ -773,9 +808,10 @@ export default function AdminExameDetailPage() {
                   <textarea
                     value={textoLaudo}
                     onChange={(e) => setTextoLaudo(e.target.value)}
+                    placeholder="Edite o texto em markdown (**negrito**, *itálico*)..."
                     style={{
                       width: "100%",
-                      minHeight: 300,
+                      minHeight: 200,
                       padding: 12,
                       borderRadius: 8,
                       border: "1px solid #d1d5db",
@@ -784,23 +820,81 @@ export default function AdminExameDetailPage() {
                       boxSizing: "border-box",
                     }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setMostrarFormatoImpressao((v) => !v)}
+                    style={{
+                      marginTop: 12,
+                      marginBottom: 8,
+                      padding: "6px 12px",
+                      background: "transparent",
+                      color: "#6b7280",
+                      border: "1px solid #d1d5db",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    {mostrarFormatoImpressao ? "Ocultar visualização" : "Ver como será impresso"}
+                  </button>
+                  {mostrarFormatoImpressao && (
+                    <div
+                      className="paics-card paics-laudo-conteudo"
+                      style={{
+                        minHeight: 120,
+                        padding: 16,
+                        fontSize: "0.95rem",
+                        lineHeight: 1.6,
+                        background: "#fff",
+                        marginTop: 8,
+                      }}
+                    >
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {textoLaudo || ""}
+                      </ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               </>
             )}
             {!editando && laudo && (
-              <div
-                className="paics-card paics-laudo-conteudo"
-                style={{
-                  minHeight: 200,
-                  padding: 16,
-                  fontSize: "0.95rem",
-                  lineHeight: 1.6,
-                }}
-              >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {textoLaudo || ""}
-                </ReactMarkdown>
-              </div>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMostrarFormatoImpressao((v) => !v)}
+                  style={{
+                    marginBottom: 12,
+                    padding: "6px 12px",
+                    background: "transparent",
+                    color: "#6b7280",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  {mostrarFormatoImpressao ? "Ver texto bruto" : "Ver como será impresso"}
+                </button>
+                <div
+                  className="paics-card paics-laudo-conteudo"
+                  style={{
+                    minHeight: 200,
+                    padding: 16,
+                    fontSize: "0.95rem",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {mostrarFormatoImpressao ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {textoLaudo || ""}
+                    </ReactMarkdown>
+                  ) : (
+                    <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>
+                      {textoLaudo || ""}
+                    </pre>
+                  )}
+                </div>
+              </>
             )}
           </div>
         )}

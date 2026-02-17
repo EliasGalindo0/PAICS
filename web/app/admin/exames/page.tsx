@@ -235,28 +235,24 @@ export default function AdminExamesPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
-                <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>ID</th>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Paciente</th>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Tutor</th>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Clínica</th>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Status</th>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Tipo</th>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Imagens</th>
-                <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Laudo</th>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontSize: "0.8rem" }}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {examesOrdenados.map((ex) => (
                 <tr key={ex.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: "10px 12px", fontSize: "0.85rem" }}>{ex.id.slice(-8)}</td>
                   <td style={{ padding: "10px 12px" }}>{ex.paciente}</td>
                   <td style={{ padding: "10px 12px" }}>{ex.tutor}</td>
                   <td style={{ padding: "10px 12px", fontSize: "0.85rem" }}>{ex.clinica || "—"}</td>
                   <td style={{ padding: "10px 12px" }}>{statusBadge(ex.status)}</td>
                   <td style={{ padding: "10px 12px" }}>{ex.tipo_exame}</td>
                   <td style={{ padding: "10px 12px" }}>{ex.n_imagens}</td>
-                  <td style={{ padding: "10px 12px" }}>{ex.tem_laudo ? "Sim" : "Não"}</td>
                   <td style={{ padding: "10px 12px", display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Link
                       href={`/admin/exames/${ex.id}`}
