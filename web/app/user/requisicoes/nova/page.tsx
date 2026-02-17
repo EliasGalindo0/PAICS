@@ -11,6 +11,7 @@ import {
   listRascunhos,
 } from "@/lib/api";
 import { hojeISO, dateToISOLocal } from "@/lib/dateUtils";
+import { InputRacaAutocomplete } from "@/app/components/InputRacaAutocomplete";
 
 function formatRascunho(r: any): string {
   const dt = r.data_exame || r.created_at;
@@ -398,18 +399,11 @@ export default function UserNovaRequisicaoPage() {
             </div>
             <div>
               <label>Raça</label>
-              <input
+              <InputRacaAutocomplete
                 name="raca"
                 value={form.raca}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, raca: e.target.value }))
-                }
-                style={{
-                  width: "100%",
-                  padding: 8,
-                  borderRadius: 6,
-                  border: "1px solid #d1d5db",
-                }}
+                onChange={(v) => setForm((p) => ({ ...p, raca: v }))}
+                especie={form.especie || undefined}
               />
             </div>
             <div>

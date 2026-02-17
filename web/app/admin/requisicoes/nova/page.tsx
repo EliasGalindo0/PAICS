@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { listClinicas, listVeterinarios, criarRequisicao } from "@/lib/api";
 import { hojeISO } from "@/lib/dateUtils";
+import { InputRacaAutocomplete } from "@/app/components/InputRacaAutocomplete";
 
 export default function AdminNovaRequisicaoPage() {
   const router = useRouter();
@@ -11,6 +12,8 @@ export default function AdminNovaRequisicaoPage() {
   const [veterinarios, setVeterinarios] = useState<any[]>([]);
   const [clinicaId, setClinicaId] = useState("");
   const [vetPreSelecionado, setVetPreSelecionado] = useState("");
+  const [especie, setEspecie] = useState("");
+  const [raca, setRaca] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -54,6 +57,8 @@ export default function AdminNovaRequisicaoPage() {
       const res = await criarRequisicao(fd);
       setSuccess(true);
       form.reset();
+      setRaca("");
+      setEspecie("");
       setTimeout(() => router.push(`/admin/exames/${res.id}`), 1500);
     } catch (err) {
       setError((err as Error).message);
@@ -189,6 +194,8 @@ export default function AdminNovaRequisicaoPage() {
           <label>Espécie</label>
           <select
             name="especie"
+            value={especie}
+            onChange={(e) => setEspecie(e.target.value)}
             style={{
               width: "100%",
               padding: 8,
@@ -205,14 +212,11 @@ export default function AdminNovaRequisicaoPage() {
         </div>
         <div>
           <label>Raça</label>
-          <input
+          <InputRacaAutocomplete
             name="raca"
-            style={{
-              width: "100%",
-              padding: 8,
-              borderRadius: 6,
-              border: "1px solid #d1d5db",
-            }}
+            value={raca}
+            onChange={setRaca}
+            especie={especie || undefined}
           />
         </div>
         <div>

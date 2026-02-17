@@ -16,6 +16,7 @@ import {
   loadImageAsBlobUrl,
   previewPdf,
 } from "@/lib/api";
+import { InputRacaAutocomplete } from "@/app/components/InputRacaAutocomplete";
 
 const btn = {
   padding: "6px 12px",
@@ -349,18 +350,31 @@ export default function AdminExameDetailPage() {
                                 ? "Região de estudo"
                                 : "Suspeita clínica"}
                   </label>
-                  <input
-                    value={formRequisicao[f] || ""}
-                    onChange={(e) =>
-                      setFormRequisicao((p) => ({ ...p, [f]: e.target.value }))
-                    }
-                    style={{
-                      width: "100%",
-                      padding: 8,
-                      borderRadius: 6,
-                      border: "1px solid #d1d5db",
-                    }}
-                  />
+                  {f === "raca" ? (
+                    <InputRacaAutocomplete
+                      value={formRequisicao.raca || ""}
+                      onChange={(v) =>
+                        setFormRequisicao((p) => ({ ...p, raca: v }))
+                      }
+                      especie={formRequisicao.especie || undefined}
+                    />
+                  ) : (
+                    <input
+                      value={formRequisicao[f] || ""}
+                      onChange={(e) =>
+                        setFormRequisicao((p) => ({
+                          ...p,
+                          [f]: e.target.value,
+                        }))
+                      }
+                      style={{
+                        width: "100%",
+                        padding: 8,
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                      }}
+                    />
+                  )}
                 </div>
               ))}
               <div>
