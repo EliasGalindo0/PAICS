@@ -29,6 +29,10 @@ env/
 ENV/
 .venv
 
+# Manter web/lib/ (Next.js) - lib/ exclui tudo; exceção
+!web/lib/
+!web/lib/*
+
 # IDE
 .vscode/
 .idea/
