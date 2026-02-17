@@ -3,7 +3,7 @@ Script para criar usuário administrador inicial
 """
 from database.connection import get_db, init_db
 from database.models import User
-from auth.auth_utils import hash_password
+from auth.password import hash_password
 import sys
 import os
 

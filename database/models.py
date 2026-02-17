@@ -1,7 +1,7 @@
 """
 Modelos de dados para MongoDB
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 from bson import ObjectId
 from pymongo.collection import Collection
@@ -253,8 +253,49 @@ class Session(BaseModel):
         return result.deleted_count
 
 
+def _dt_to_iso(val):
+    """Converte datetime para string ISO usando apenas atributos (evita comparação naive/aware)."""
+    try:
+        if hasattr(val, "year") and hasattr(val, "month") and hasattr(val, "day"):
+            base = f"{val.year:04d}-{val.month:02d}-{val.day:02d}"
+            if hasattr(val, "hour") and hasattr(val, "minute") and hasattr(val, "second"):
+                return f"{base}T{val.hour:02d}:{val.minute:02d}:{val.second:02d}"
+            return base + "T00:00:00"
+        return repr(val)[:25]
+    except (TypeError, ValueError, AttributeError):
+        return repr(val)[:25]
+
+
+def _dict_dt_to_iso(d: Dict) -> Dict:
+    """Converte datetime em dict para string ISO, evitando naive/aware no Python."""
+    if not d:
+        return d
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, datetime):
+            out[k] = _dt_to_iso(v)
+        elif isinstance(v, dict):
+            out[k] = _dict_dt_to_iso(v)
+        elif isinstance(v, list):
+            out[k] = [
+                _dict_dt_to_iso(x) if isinstance(x, dict) else
+                _dt_to_iso(x) if isinstance(x, datetime) else x
+                for x in v
+            ]
+        else:
+            out[k] = v
+    return out
+
+
 class Requisicao(BaseModel):
     """Modelo de requisição de laudo"""
+
+    def to_dict(self, doc: Dict) -> Dict:
+        """Converte doc e normaliza datetime para string (evita naive/aware)."""
+        d = super().to_dict(doc)
+        if d:
+            d = _dict_dt_to_iso(d)
+        return d
 
     def create(self, user_id: str, imagens: List[str],
                paciente: str = "", tutor: str = "", clinica: str = "",
@@ -315,11 +356,31 @@ class Requisicao(BaseModel):
                 result[conv["id"]] = conv
         return result
 
-    def find_by_user(self, user_id: str, status: Optional[str] = None) -> List[Dict]:
-        """Busca requisições de um usuário"""
+    def find_by_user(
+        self, user_id: str, status: Optional[str] = None,
+        start_date: Optional[datetime] = None, end_date: Optional[datetime] = None,
+    ) -> List[Dict]:
+        """Busca requisições de um usuário, opcionalmente filtradas por data"""
         query = {"user_id": user_id}
         if status:
             query["status"] = status
+        if start_date or end_date:
+            try:
+                date_filter = {}
+                if start_date:
+                    sd = start_date
+                    if getattr(sd, "tzinfo", None):
+                        sd = sd.astimezone(timezone.utc).replace(tzinfo=None)
+                    date_filter["$gte"] = sd
+                if end_date:
+                    ed = end_date
+                    if getattr(ed, "tzinfo", None):
+                        ed = ed.astimezone(timezone.utc).replace(tzinfo=None)
+                    date_filter["$lte"] = ed
+                if date_filter:
+                    query["created_at"] = date_filter
+            except (TypeError, ValueError, AttributeError):
+                pass
         docs = self.collection.find(query).sort("created_at", -1)
         return [self.to_dict(doc) for doc in docs]
 
@@ -330,11 +391,22 @@ class Requisicao(BaseModel):
             query["status"] = status
 
         if start_date or end_date:
-            query["created_at"] = {}
-            if start_date:
-                query["created_at"]["$gte"] = start_date
-            if end_date:
-                query["created_at"]["$lte"] = end_date
+            try:
+                date_filter = {}
+                if start_date:
+                    sd = start_date
+                    if getattr(sd, "tzinfo", None):
+                        sd = sd.astimezone(timezone.utc).replace(tzinfo=None)
+                    date_filter["$gte"] = sd
+                if end_date:
+                    ed = end_date
+                    if getattr(ed, "tzinfo", None):
+                        ed = ed.astimezone(timezone.utc).replace(tzinfo=None)
+                    date_filter["$lte"] = ed
+                if date_filter:
+                    query["created_at"] = date_filter
+            except (TypeError, ValueError, AttributeError):
+                pass
 
         docs = self.collection.find(query).sort("created_at", -1)
         return [self.to_dict(doc) for doc in docs]
@@ -421,6 +493,13 @@ class Requisicao(BaseModel):
 class Laudo(BaseModel):
     """Modelo de laudo"""
 
+    def to_dict(self, doc: Dict) -> Dict:
+        """Converte doc e normaliza datetime para string (evita naive/aware)."""
+        d = super().to_dict(doc)
+        if d:
+            d = _dict_dt_to_iso(d)
+        return d
+
     def create(self, requisicao_id: str, texto: str,
                texto_original: str = "", status: str = "pendente",
                admin_id: Optional[str] = None,
@@ -462,6 +541,18 @@ class Laudo(BaseModel):
         """Busca laudo por requisição"""
         doc = self.collection.find_one({"requisicao_id": requisicao_id})
         return self.to_dict(doc) if doc else None
+
+    def delete(self, laudo_id: str) -> bool:
+        """Exclui um laudo (cancelar laudo)."""
+        result = self.collection.delete_one({"_id": ObjectId(laudo_id)})
+        return result.deleted_count > 0
+
+    def delete_by_requisicao(self, requisicao_id: str) -> bool:
+        """Exclui o laudo de uma requisição."""
+        doc = self.collection.find_one({"requisicao_id": requisicao_id})
+        if not doc:
+            return False
+        return self.delete(str(doc["_id"]))
 
     def find_by_requisicao_ids(self, requisicao_ids: List[str]) -> Dict[str, Dict]:
         """Busca laudos por múltiplas requisições em uma única consulta.

@@ -56,8 +56,16 @@ vector_db/chroma_data/
 vector_db/*.db
 vector_db/*.sqlite3
 
-# Streamlit
-.streamlit/secrets.toml
+# Next.js
+web/.next/
+web/out/
+.next/
+out/
+web/node_modules/
+web/.env*.local
+
+# Streamlit (removido - mantido para referência)
+# .streamlit/secrets.toml
 
 # Sistema operacional
 .DS_Store

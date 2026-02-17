@@ -458,7 +458,7 @@ test-unit:
         pytest tests/unit -v --tb=short
     fi
 
-# Rodar apenas testes E2E (inicia Streamlit em background). Requer playwright install chromium
+# Rodar apenas testes E2E (inicia Next.js + API em background). Requer playwright install chromium
 test-e2e:
     #!/usr/bin/env bash
     export MONGO_DB_NAME=paics_db_test
@@ -488,114 +488,39 @@ show-output-size:
         echo "⚠️  Diretório 'laudos_com_ia' não existe ainda."
     fi
 
-# --- Streamlit ---
+# --- Aplicação Web (Next.js + FastAPI) ---
+# Use `just start` para setup completo + API + Web, ou `just api` + `just web` em terminais separados
 
-# Executa a aplicação Streamlit
-streamlit:
-    #!/usr/bin/env bash
-    echo "🚀 Iniciando aplicação Streamlit..."
-    echo "A aplicação estará disponível em: http://localhost:8501"
-    if [ -d "{{venv_dir}}" ]; then
-        # Verificar se streamlit está instalado
-        if [ "{{os}}" = "windows" ]; then
-            if ! "{{python_venv_win}}" -m streamlit --version &> /dev/null; then
-                echo "❌ Streamlit não está instalado no ambiente virtual."
-                echo "📦 Instalando dependências..."
-                "{{python_venv_win}}" -m pip install --upgrade pip
-                "{{python_venv_win}}" -m pip install -r requirements.txt
-                echo "✅ Dependências instaladas!"
-            fi
-            "{{python_venv_win}}" -m streamlit run streamlit_app.py
-        else
-            if ! "{{python_venv}}" -m streamlit --version &> /dev/null; then
-                echo "❌ Streamlit não está instalado no ambiente virtual."
-                echo "📦 Instalando dependências..."
-                "{{python_venv}}" -m pip install --upgrade pip
-                "{{python_venv}}" -m pip install -r requirements.txt
-                echo "✅ Dependências instaladas!"
-            fi
-            "{{python_venv}}" -m streamlit run streamlit_app.py
-        fi
-    else
-        echo "⚠️  Ambiente virtual não encontrado. Usando Python do sistema..."
-        {{python}} -m streamlit run streamlit_app.py
-    fi
+start-dev:
+    @just start
 
-# Executa a aplicação Streamlit usando o ambiente virtual
-streamlit-venv:
+# Inicia a API FastAPI
+api:
     #!/usr/bin/env bash
-    if [ ! -d "{{venv_dir}}" ]; then
-        echo "❌ Ambiente virtual não encontrado. Execute 'just setup' primeiro."
-        exit 1
-    fi
-    echo "🚀 Iniciando aplicação Streamlit no ambiente virtual..."
-    echo "A aplicação estará disponível em: http://localhost:8501"
-    {{python_venv}} -m streamlit run streamlit_app.py
-
-# Executa a aplicação Streamlit em modo desenvolvimento (auto-reload)
-streamlit-dev:
-    #!/usr/bin/env bash
-    echo "🚀 Iniciando aplicação Streamlit em modo desenvolvimento..."
-    echo "A aplicação estará disponível em: http://localhost:8501"
+    echo "🚀 Iniciando API FastAPI..."
+    echo "API em: http://localhost:8000 | Docs: http://localhost:8000/docs"
     if [ -d "{{venv_dir}}" ]; then
         if [ "{{os}}" = "windows" ]; then
-            if ! "{{python_venv_win}}" -m streamlit --version &> /dev/null; then
-                echo "❌ Streamlit não está instalado no ambiente virtual."
-                echo "📦 Instalando dependências..."
-                "{{python_venv_win}}" -m pip install --upgrade pip
-                "{{python_venv_win}}" -m pip install -r requirements.txt
-                echo "✅ Dependências instaladas!"
-            fi
-            "{{python_venv_win}}" -m streamlit run streamlit_app.py --server.runOnSave true
+            "{{python_venv_win}}" -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
         else
-            if ! "{{python_venv}}" -m streamlit --version &> /dev/null; then
-                echo "❌ Streamlit não está instalado no ambiente virtual."
-                echo "📦 Instalando dependências..."
-                "{{python_venv}}" -m pip install --upgrade pip
-                "{{python_venv}}" -m pip install -r requirements.txt
-                echo "✅ Dependências instaladas!"
-            fi
-            "{{python_venv}}" -m streamlit run streamlit_app.py --server.runOnSave true
+            "{{python_venv}}" -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
         fi
     else
-        echo "⚠️  Ambiente virtual não encontrado. Usando Python do sistema..."
-        {{python}} -m streamlit run streamlit_app.py --server.runOnSave true
+        {{python}} -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
     fi
 
-# Executa a aplicação Streamlit em uma porta específica
-streamlit-port port="8501":
+# Inicia o frontend Next.js (PoC)
+web:
     #!/usr/bin/env bash
-    echo "🚀 Iniciando aplicação Streamlit na porta {{port}}..."
-    echo "A aplicação estará disponível em: http://localhost:{{port}}"
-    if [ -d "{{venv_dir}}" ]; then
-        if [ "{{os}}" = "windows" ]; then
-            if ! "{{python_venv_win}}" -m streamlit --version &> /dev/null; then
-                echo "❌ Streamlit não está instalado no ambiente virtual."
-                echo "📦 Instalando dependências..."
-                "{{python_venv_win}}" -m pip install --upgrade pip
-                "{{python_venv_win}}" -m pip install -r requirements.txt
-                echo "✅ Dependências instaladas!"
-            fi
-            "{{python_venv_win}}" -m streamlit run streamlit_app.py --server.port {{port}}
-        else
-            if ! "{{python_venv}}" -m streamlit --version &> /dev/null; then
-                echo "❌ Streamlit não está instalado no ambiente virtual."
-                echo "📦 Instalando dependências..."
-                "{{python_venv}}" -m pip install --upgrade pip
-                "{{python_venv}}" -m pip install -r requirements.txt
-                echo "✅ Dependências instaladas!"
-            fi
-            "{{python_venv}}" -m streamlit run streamlit_app.py --server.port {{port}}
-        fi
-    else
-        echo "⚠️  Ambiente virtual não encontrado. Usando Python do sistema..."
-        {{python}} -m streamlit run streamlit_app.py --server.port {{port}}
-    fi
+    echo "🚀 Iniciando frontend Next.js..."
+    echo "Frontend em: http://localhost:3000"
+    cd web && npm run dev
 
-streamlit-kill port="8501":
+# Encerra processo na porta (útil para liberar 3000 ou 8000)
+kill-port port="3000":
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "🛑 Encerrando Streamlit na porta {{port}}..."
+    echo "🛑 Encerrando processo na porta {{port}}..."
 
     if [ "{{os}}" = "windows" ]; then
         # Pega PID(s) LISTENING na porta e força encerramento
@@ -1353,7 +1278,6 @@ start:
                 echo "MONGO_URI=mongodb://localhost:27017/"
                 echo "MONGO_DB_NAME=paics_db"
                 echo "OUTPUT_DIR=laudos_com_ia"
-                echo "STREAMLIT_TEMP_DIR=temp_laudos"
             } > .env
             echo "   ✅ Arquivo .env criado com valores padrão"
             echo "   ⚠️  IMPORTANTE: Edite o arquivo .env e adicione sua GOOGLE_API_KEY"
@@ -1499,29 +1423,31 @@ start:
     fi
     echo ""
     
-    # 6. Iniciar Streamlit
-    echo "🚀 Passo 6/6: Iniciando aplicação Streamlit..."
+    # 6. Iniciar aplicação (Next.js + API)
+    echo "🚀 Passo 6/6: Iniciando aplicação (Next.js + FastAPI)..."
     echo ""
     echo "===================================="
     echo "✅ Setup completo!"
     echo "===================================="
     echo ""
-    echo "A aplicação será iniciada em: http://localhost:8501"
+    echo "  Frontend: http://localhost:3000"
+    echo "  API:      http://localhost:8000/docs"
     echo ""
-    echo "Pressione Ctrl+C para encerrar o servidor"
+    echo "Pressione Ctrl+C para encerrar"
     echo ""
     
-    # Aguardar um pouco antes de iniciar
     sleep 2
     
-    # Iniciar Streamlit
+    # Iniciar API em background e Next.js em foreground
     if [ -d "{{venv_dir}}/Scripts" ] || [ -f "{{venv_dir}}/Scripts/activate" ]; then
-        {{python_venv_win}} -m streamlit run streamlit_app.py
+        {{python_venv_win}} -m uvicorn api.main:app --host 0.0.0.0 --port 8000 &
     elif [ -d "{{venv_dir}}/bin" ] || [ -f "{{venv_dir}}/bin/activate" ]; then
-        {{python_venv}} -m streamlit run streamlit_app.py
+        {{python_venv}} -m uvicorn api.main:app --host 0.0.0.0 --port 8000 &
     else
-        {{python}} -m streamlit run streamlit_app.py
+        {{python}} -m uvicorn api.main:app --host 0.0.0.0 --port 8000 &
     fi
+    sleep 2
+    cd web && npm run dev
 
 # Limpa o banco de dados e cria admin e usuário dummy
 reset-db:

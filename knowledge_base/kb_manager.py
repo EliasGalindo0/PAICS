@@ -141,3 +141,16 @@ class KnowledgeBaseManager:
     def get_by_id(self, kb_id: str) -> Optional[Dict]:
         """Busca item por ID"""
         return self.kb_model.find_by_id(kb_id)
+
+    def delete(self, kb_id: str) -> bool:
+        """Remove item da knowledge base (MongoDB + ChromaDB)"""
+        item = self.kb_model.find_by_id(kb_id)
+        if not item:
+            return False
+        try:
+            self.vector_store.collection.delete(ids=[f"kb_{kb_id}"])
+        except Exception:
+            pass  # Pode não existir no Chroma se foi criado antes
+        from bson import ObjectId
+        result = self.kb_model.collection.delete_one({"_id": ObjectId(kb_id)})
+        return result.deleted_count > 0
