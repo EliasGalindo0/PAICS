@@ -23,4 +23,4 @@ sleep 3
 # Iniciar Next.js na porta exposta (Railway usa PORT)
 echo ">>> Iniciando frontend Next.js na porta ${PORT:-3000}..."
 cd /app/web
-exec node node_modules/next/dist/bin/next start -p "${PORT:-3000}"
+exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p "${PORT:-3000}"

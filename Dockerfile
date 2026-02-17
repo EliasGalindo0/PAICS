@@ -6,10 +6,10 @@ RUN npm ci 2>/dev/null || npm install
 COPY web/ ./
 RUN npm run build
 
-# Stage 2: Produção (Python + Node para next start)
-FROM python:3.12-slim
+# Stage 2: Produção (Python full para OpenSSL/Atlas; Node para Next.js)
+FROM python:3.12
 
-# build-essential para deps Python; curl para healthcheck; Node.js para Next.js
+# build-essential para deps Python; curl para healthcheck; ca-certificates para TLS com Atlas; Node.js para Next.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl ca-certificates \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -22,24 +22,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Código da API e assets
-COPY logo/ logo/
-COPY api/ api/
-COPY auth/ auth/
-COPY database/ database/
-COPY scripts/ scripts/
-COPY utils/ utils/
-COPY main.py .
-COPY docker-entrypoint.sh .
+# Código do projeto (web será sobrescrito pelo build)
+COPY . .
 
-# Next.js: copiar build e node_modules do stage anterior
-COPY --from=web-builder /app/web/.next ./web/.next
-COPY --from=web-builder /app/web/node_modules ./web/node_modules
-COPY --from=web-builder /app/web/package.json ./web/package.json
-COPY web/public ./web/public
+# Next.js: sobrescrever com build de produção
+COPY --from=web-builder /app/web ./web
 
 # Railway usa PORT em runtime; Next.js como processo principal
 ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE 3000
 
 RUN chmod +x docker-entrypoint.sh
