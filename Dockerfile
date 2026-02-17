@@ -7,13 +7,12 @@ RUN npm install
 COPY web/ ./
 RUN npm run build
 
-# Stage 2: Base Node (evita NodeSource) + Python para API
-FROM node:20-bookworm-slim
+# Stage 2: Base Python (pip funciona) + Node via apt
+FROM python:3.12
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv curl ca-certificates build-essential \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf python3 /usr/bin/python && ln -sf pip3 /usr/bin/pip
+    build-essential curl ca-certificates nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -22,7 +21,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Next.js build completo (para next start)
 COPY --from=web-builder /app/web ./web
 
 ENV PORT=3000
