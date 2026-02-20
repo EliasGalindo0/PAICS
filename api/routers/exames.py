@@ -436,7 +436,7 @@ def atualizar_laudo(exame_id: str, body: LaudoUpdateRequest, user: dict = Depend
     laudo = laudo_model.find_by_requisicao(exame_id)
     if not laudo:
         raise HTTPException(404, "Laudo não encontrado")
-    laudo_model.update(laudo["id"], {"texto": body.texto})
+    laudo_model.registrar_edicao(laudo["id"], body.texto, user.get("id"))
     return {"success": True}
 
 
@@ -513,6 +513,38 @@ def liberar_laudo(exame_id: str, user: dict = Depends(require_admin)):
         raise HTTPException(404, "Laudo não encontrado")
     laudo_model.release(laudo["id"])
     req_model.update_status(exame_id, "liberado")
+    # Salvar dados de aprendizado (learning_history + vector_store)
+    laudo_atualizado = laudo_model.find_by_id(laudo["id"])
+    if laudo_atualizado and laudo_atualizado.get("rating"):
+        try:
+            from ai.learning_system import LearningSystem
+            contexto = {
+                "especie": req.get("especie", ""),
+                "raca": req.get("raca", ""),
+                "idade": req.get("idade", ""),
+                "sexo": req.get("sexo", ""),
+                "historico_clinico": req.get("historico_clinico", "") or req.get("observacoes", ""),
+                "suspeita_clinica": req.get("suspeita_clinica", ""),
+                "regiao_estudo": req.get("regiao_estudo", ""),
+            }
+            metadata = {
+                "modelo_usado": laudo_atualizado.get("modelo_usado", "api_externa"),
+                "usado_api_externa": laudo_atualizado.get("usado_api_externa", True),
+                "similaridade_casos": laudo_atualizado.get("similaridade_casos"),
+                "casos_similares": laudo_atualizado.get("casos_similares") or [],
+            }
+            ls = LearningSystem()
+            ls.save_learning_data(
+                laudo_id=laudo["id"],
+                requisicao_id=exame_id,
+                contexto=contexto,
+                texto_gerado=laudo_atualizado.get("texto_original_gerado") or laudo_atualizado.get("texto", ""),
+                texto_final=laudo_atualizado.get("texto", ""),
+                rating=laudo_atualizado["rating"],
+                metadata=metadata,
+            )
+        except Exception:
+            pass  # Não falhar liberação se save_learning_data falhar
     return {"success": True}
 
 

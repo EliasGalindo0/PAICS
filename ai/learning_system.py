@@ -241,6 +241,22 @@ class LearningSystem:
                 "⚠️ ALERTA: Em casos similares houve correção de severidade (leve/moderado/grave). Avaliar grau com cuidado.")
         return alertas
 
+    def get_exemplos_correcoes(self, contexto: Dict[str, str], limit: int = 3) -> List[Dict]:
+        """
+        Busca exemplos concretos de correções (laudo_original, correção, laudo_corrigido)
+        para injetar no prompt como few-shot e evitar erros recorrentes.
+        """
+        correcoes = self.correcao_model.find_by_contexto(contexto, limit=limit)
+        return [
+            {
+                "laudo_original": c.get("laudo_original", "")[:400],
+                "texto_correcao": c.get("texto_correcao", ""),
+                "laudo_corrigido": c.get("laudo_corrigido", "")[:400],
+                "contexto": c.get("contexto", {}),
+            }
+            for c in correcoes
+        ]
+
     def regenerate_with_corrections(
         self,
         laudo_id: str,
@@ -272,9 +288,37 @@ class LearningSystem:
         images = load_images_for_analysis(paths) if paths else []
         if not images:
             raise ValueError("Nenhuma imagem disponível para gerar o laudo")
-        novo_texto = self.external_analyzer.generate_diagnosis_with_corrections(
-            images, paciente_info, correcoes_texto, laudo_anterior
-        )
+        # Obter rating original do laudo (quando disponível) para priorizar pares ruims no aprendizado
+        rating_original = laudo.get("rating") if laudo.get("rating") is not None else 2
+
+        # Decidir entre modelo local e API externa (mesma lógica de generate_laudo)
+        similar_cases = self._find_similar_cases(paciente_info)
+        similarity_score = (similar_cases.get("similarity", 0.0) if similar_cases else 0.0)
+        use_local, use_external = self._decide_model_usage(similar_cases, similarity_score)
+
+        novo_texto = ""
+        if use_local and self.local_model:
+            try:
+                prompt = self._build_prompt_regeneracao(
+                    paciente_info, correcoes_texto, laudo_anterior, similar_cases
+                )
+                novo_texto = self.local_model.generate_text(prompt, images)
+                if use_external and self.use_external_fallback:
+                    novo_texto = self.external_analyzer.generate_diagnosis_with_corrections(
+                        images, paciente_info, correcoes_texto, novo_texto
+                    )
+            except Exception:
+                if use_external or self.use_external_fallback:
+                    novo_texto = self.external_analyzer.generate_diagnosis_with_corrections(
+                        images, paciente_info, correcoes_texto, laudo_anterior
+                    )
+                else:
+                    raise
+        else:
+            novo_texto = self.external_analyzer.generate_diagnosis_with_corrections(
+                images, paciente_info, correcoes_texto, laudo_anterior
+            )
+
         categoria = self.categorizar_correcao(correcoes_texto)
         self.correcao_model.create(
             requisicao_id=requisicao_id,
@@ -284,7 +328,7 @@ class LearningSystem:
             contexto=paciente_info,
             laudo_original=laudo_anterior,
             laudo_corrigido=novo_texto,
-            rating=2,
+            rating=rating_original,
             aprovado=True,
         )
         return novo_texto, categoria
@@ -315,6 +359,23 @@ OBSERVAÇÕES ADICIONAIS DO SOLICITANTE (considerar para melhorar a assertividad
         alertas = self.get_alertas_correcoes(paciente_info)
         if alertas:
             base_prompt += "\n\n" + "\n".join(alertas) + "\n"
+
+        # Exemplificar erros e correções em casos similares (few-shot)
+        exemplos = self.get_exemplos_correcoes(paciente_info, limit=3)
+        if exemplos:
+            base_prompt += "\n\nEVITE ESTES ERROS (exemplos reais em casos similares):\n"
+            for i, ex in enumerate(exemplos, 1):
+                ctx = ex.get("contexto", {})
+                ctx_str = ", ".join(
+                    f"{k}: {v}" for k, v in ctx.items()
+                    if v and k in ("especie", "raca", "regiao_estudo")
+                ) or "Similar"
+                base_prompt += f"\n--- Exemplo {i} ({ctx_str}) ---\n"
+                base_prompt += f"- Erro no laudo: \"{ex.get('laudo_original', '')[:200]}...\"\n"
+                base_prompt += f"- Correção do especialista: \"{ex.get('texto_correcao', '')}\"\n"
+                base_prompt += f"- Laudo corrigido: \"{ex.get('laudo_corrigido', '')[:200]}...\"\n"
+                base_prompt += "Use isso para evitar o mesmo erro.\n"
+            base_prompt += "\n"
 
         # Adicionar casos similares como referência
         if similar_cases and similar_cases.get("cases_data"):
@@ -347,6 +408,48 @@ Sua resposta DEVE começar imediatamente com "**Descrição dos Achados:**". Ter
 """
 
         return base_prompt
+
+    def _build_prompt_regeneracao(
+        self,
+        paciente_info: Dict[str, str],
+        correcoes_texto: str,
+        laudo_anterior: str,
+        similar_cases: Optional[Dict] = None,
+    ) -> str:
+        """Constrói prompt para regeneração com correções (modelo local)."""
+        base = f"""
+Você é um radiologista veterinário especialista. O especialista revisou um laudo e forneceu correções. 
+Gere um NOVO laudo corrigido em português (Brasil) incorporando as correções.
+
+CORREÇÕES DO ESPECIALISTA:
+{correcoes_texto}
+
+LAUDO ANTERIOR (tinha erros):
+{laudo_anterior}
+
+CONTEXTO DO PACIENTE:
+- Espécie: {paciente_info.get("especie", "Não informado")}
+- Raça: {paciente_info.get("raca", "Não informado")}
+- Idade: {paciente_info.get("idade", "Não informado")}
+- Sexo: {paciente_info.get("sexo", "Não informado")}
+- Histórico Clínico: {paciente_info.get("historico_clinico", "Não informado")}
+- Suspeita Clínica: {paciente_info.get("suspeita_clinica", "Não informado")}
+- Região de Estudo: {paciente_info.get("regiao_estudo", "Não informado")}
+"""
+        # Incluir exemplos de correções similares como few-shot
+        exemplos = self.get_exemplos_correcoes(paciente_info, limit=2)
+        if exemplos:
+            base += "\n\nEXEMPLOS DE ERROS E CORREÇÕES EM CASOS SIMILARES:\n"
+            for i, ex in enumerate(exemplos, 1):
+                base += f"\nExemplo {i}:\n"
+                base += f"- Erro: {ex.get('texto_correcao', '')}\n"
+                base += f"- Laudo corrigido: {ex.get('laudo_corrigido', '')[:300]}...\n"
+
+        base += """
+Gere um novo laudo que corrija os erros indicados. Mantenha formato em tópicos (Descrição dos Achados, Impressão Diagnóstica, Conclusão). 
+Inicie pelas alterações mais relevantes. Sua resposta DEVE começar com "**Descrição dos Achados:**"
+"""
+        return base.strip()
 
     def _build_search_query(self, paciente_info: Dict[str, str]) -> str:
         """Constrói query para busca vetorial"""
