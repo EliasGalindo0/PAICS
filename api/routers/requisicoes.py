@@ -15,6 +15,13 @@ from api.dependencies import get_current_user
 router = APIRouter(prefix="/api/requisicoes", tags=["requisicoes"])
 
 
+@router.get("/regioes-estudo")
+def listar_regioes_estudo(user: dict = Depends(get_current_user)):
+    """Lista regiões de estudo com máscaras disponíveis para o select no formulário."""
+    from utils.template_mascaras import list_regioes_estudo
+    return {"regioes": list_regioes_estudo()}
+
+
 def _upper(s):
     return (s or "").strip().upper() if isinstance(s, str) else s
 

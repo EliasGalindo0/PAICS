@@ -9,6 +9,7 @@ import {
   criarRequisicao,
   salvarRascunho,
   listRascunhos,
+  listRegioesEstudo,
 } from "@/lib/api";
 import { hojeISO, dateToISOLocal } from "@/lib/dateUtils";
 import { InputRacaAutocomplete } from "@/app/components/InputRacaAutocomplete";
@@ -26,6 +27,7 @@ const initialForm = {
   raca: "",
   idade: "",
   regiao_estudo: "",
+  regiao_estudo_outra: "",
   suspeita_clinica: "",
   historico_clinico: "",
   tipo_exame: "raio-x",
@@ -38,6 +40,7 @@ export default function UserNovaRequisicaoPage() {
   const router = useRouter();
   const [clinicas, setClinicas] = useState<any[]>([]);
   const [veterinarios, setVeterinarios] = useState<any[]>([]);
+  const [regioesEstudo, setRegioesEstudo] = useState<{ value: string; label: string }[]>([]);
   const [clinicaId, setClinicaId] = useState("");
   const [vetPreSelecionado, setVetPreSelecionado] = useState("");
   const [form, setForm] = useState(initialForm);
@@ -66,6 +69,7 @@ export default function UserNovaRequisicaoPage() {
         setPageLoading(false);
       })
       .catch(() => setPageLoading(false));
+    listRegioesEstudo().then(setRegioesEstudo).catch(() => setRegioesEstudo([]));
     loadRascunhos();
   }, [loadRascunhos]);
 
@@ -83,13 +87,17 @@ export default function UserNovaRequisicaoPage() {
   }, [clinicaId]);
 
   const loadRascunho = (r: any) => {
+    const regiao = r.regiao_estudo || "";
+    const regioesValores = regioesEstudo.map((x) => x.value).filter(Boolean);
+    const isPredefinida = regioesValores.includes(regiao);
     setForm({
       paciente: r.paciente || "",
       tutor: r.tutor || "",
       especie: r.especie || "",
       raca: r.raca || "",
       idade: r.idade || "",
-      regiao_estudo: r.regiao_estudo || "",
+      regiao_estudo: isPredefinida ? regiao : (regiao ? "__outra__" : ""),
+      regiao_estudo_outra: isPredefinida ? "" : regiao,
       suspeita_clinica: r.suspeita_clinica || "",
       historico_clinico: r.historico_clinico || r.observacoes || "",
       tipo_exame: r.tipo_exame || "raio-x",
@@ -115,6 +123,8 @@ export default function UserNovaRequisicaoPage() {
     setError("");
   };
 
+  const regiaoEstudoFinal = form.regiao_estudo === "__outra__" ? form.regiao_estudo_outra : form.regiao_estudo;
+
   const buildRascunhoFormData = (): FormData => {
     const fd = new FormData();
     fd.set("paciente", form.paciente.trim());
@@ -123,7 +133,7 @@ export default function UserNovaRequisicaoPage() {
     fd.set("especie", form.especie);
     fd.set("raca", form.raca);
     fd.set("idade", form.idade);
-    fd.set("regiao_estudo", form.regiao_estudo);
+    fd.set("regiao_estudo", regiaoEstudoFinal);
     fd.set("suspeita_clinica", form.suspeita_clinica);
     fd.set("sexo", form.sexo);
     fd.set("plantao", form.plantao);
@@ -424,21 +434,42 @@ export default function UserNovaRequisicaoPage() {
               />
             </div>
             <div>
-              <label>Região de estudo</label>
-              <input
-                name="regiao_estudo"
+              <label>Região de estudo (máscara para o laudo)</label>
+              <select
                 value={form.regiao_estudo}
                 onChange={(e) =>
                   setForm((p) => ({ ...p, regiao_estudo: e.target.value }))
                 }
-                placeholder="Ex: Tórax, Abdômen, Membros"
                 style={{
                   width: "100%",
                   padding: 8,
                   borderRadius: 6,
                   border: "1px solid #d1d5db",
                 }}
-              />
+              >
+                {regioesEstudo.map((r) => (
+                  <option key={r.value || "vazio"} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+              {form.regiao_estudo === "__outra__" && (
+                <input
+                  type="text"
+                  value={form.regiao_estudo_outra}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, regiao_estudo_outra: e.target.value }))
+                  }
+                  placeholder="Informe a região"
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                    marginTop: 6,
+                  }}
+                />
+              )}
             </div>
             <div>
               <label>Suspeita clínica</label>

@@ -193,6 +193,15 @@ class VetAIAnalyzer:
         regiao_estudo = (paciente_info or {}).get("regiao_estudo", "Não informado")
         obs_adicionais = (paciente_info or {}).get("observacoes_adicionais_usuario", "").strip()
 
+        # Máscara (template) da região de estudo - guia a estrutura do laudo
+        template_mascara = ""
+        if regiao_estudo and regiao_estudo.strip():
+            try:
+                from utils.template_mascaras import get_template_content
+                template_mascara = get_template_content(regiao_estudo) or ""
+            except Exception:
+                pass
+
         prompt = f"""
 You are a specialist veterinary radiologist. Generate a direct, concise technical report in Portuguese (Brazil).
 
@@ -205,15 +214,21 @@ PATIENT CONTEXT:
 - Clinical Suspicion: {suspeita_clinica}
 - Study Region: {regiao_estudo}
 """
-        if obs_adicionais:
+        if template_mascara:
             prompt += f"""
-ADDITIONAL NOTES FROM THE REFERRING CLIENT (consider these to improve report accuracy; the client may have sent corrections or remembered important details):
-{obs_adicionais}
+REPORT STRUCTURE (MANDATORY – your response MUST follow this template exactly):
+
+{template_mascara}
+
+INSTRUCTIONS:
+- Use the EXACT section names and structure from the template above (e.g. ANÁLISE RADIOGRÁFICA, IMPRESSÃO RADIOGRÁFICA/DIAGNÓSTICA).
+- For each bullet item in the template, describe the finding according to the images. Adapt to actual findings (normal/abnormal).
+- Your response MUST start IMMEDIATELY with the first section header from the template (e.g. "REGIÃO:" or "ANÁLISE RADIOGRÁFICA:").
+- Write in bullet points, one finding per line. Be objective and brief. Use veterinary radiological terminology in Portuguese (Brazil).
 
 """
-        prompt += """
-STYLE: Be objective and brief. Do NOT write long paragraphs describing normal anatomy or normal findings in detail. For structures within normal limits, state briefly (e.g. "Dentro dos limites da normalidade" or one short line). Focus detail only on relevant or abnormal findings. Use veterinary radiological terminology in Portuguese (Brazil).
-
+        else:
+            prompt += """
 REPORT STRUCTURE (MANDATORY – all sections in BULLET/TOPIC format, one item per line):
 
 **Descrição dos Achados:**
@@ -232,14 +247,20 @@ REPORT STRUCTURE (MANDATORY – all sections in BULLET/TOPIC format, one item pe
 **Recomendações:**
 - Bullet points only, if applicable (additional exams, follow-up). Omit if none.
 
-**Referências:**
-- Only if citing specific criteria or standards; otherwise omit.
-
 CRITICAL:
 - Your response MUST start IMMEDIATELY with "**Descrição dos Achados:**"
 - No preamble or introduction.
-- Descrição dos Achados, Impressão Diagnóstica and Conclusão MUST be in topic/bullet format (lines starting with "-" or similar), not long paragraphs.
 - Keep the report short: avoid lengthy descriptions of normal findings.
+
+"""
+        if obs_adicionais:
+            prompt += f"""
+ADDITIONAL NOTES FROM THE REFERRING CLIENT (consider these to improve report accuracy; the client may have sent corrections or remembered important details):
+{obs_adicionais}
+
+"""
+        prompt += """
+STYLE: Be objective and brief. Do NOT write long paragraphs. For structures within normal limits, state briefly. Focus detail only on relevant or abnormal findings. Use veterinary radiological terminology in Portuguese (Brazil).
 
 """
         _safe_print("Enviando imagens para análise da IA (isso pode levar alguns segundos)...")
@@ -248,14 +269,15 @@ CRITICAL:
             response = self.model.generate_content(content)
             text = response.text.strip()
 
-            pattern = r"\*\*Descri[çc][ãa]o dos Achados:?\*\*"
+            # Aceitar início por Descrição dos Achados, ANÁLISE RADIOGRÁFICA ou REGIÃO (template/máscara)
+            pattern = r"(\*\*Descri[çc][ãa]o dos Achados:?\*\*|AN[ÁA]LISE RADIOGR[ÁA]FICA:?|REGI[ÁA]O:?)"
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                text = text[match.start() :]
+                text = text[match.start():]
             else:
-                simple = re.search(r"\*\*Descri[çc][ãa]o", text, re.IGNORECASE)
+                simple = re.search(r"(\*\*Descri[çc][ãa]o|AN[ÁA]LISE RADIOGR[ÁA]FICA|REGI[ÁA]O)", text, re.IGNORECASE)
                 if simple:
-                    text = text[simple.start() :]
+                    text = text[simple.start():]
 
             lines = text.split("\n")
             cleaned: List[str] = []

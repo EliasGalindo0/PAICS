@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { listClinicas, listVeterinarios, criarRequisicao } from "@/lib/api";
+import { listClinicas, listVeterinarios, criarRequisicao, listRegioesEstudo } from "@/lib/api";
 import { hojeISO } from "@/lib/dateUtils";
 import { InputRacaAutocomplete } from "@/app/components/InputRacaAutocomplete";
 
@@ -10,6 +10,9 @@ export default function AdminNovaRequisicaoPage() {
   const router = useRouter();
   const [clinicas, setClinicas] = useState<any[]>([]);
   const [veterinarios, setVeterinarios] = useState<any[]>([]);
+  const [regioesEstudo, setRegioesEstudo] = useState<{ value: string; label: string }[]>([]);
+  const [regiaoEstudo, setRegiaoEstudo] = useState("");
+  const [regiaoEstudoOutra, setRegiaoEstudoOutra] = useState("");
   const [clinicaId, setClinicaId] = useState("");
   const [vetPreSelecionado, setVetPreSelecionado] = useState("");
   const [especie, setEspecie] = useState("");
@@ -20,6 +23,7 @@ export default function AdminNovaRequisicaoPage() {
 
   useEffect(() => {
     listClinicas(false).then(setClinicas);
+    listRegioesEstudo().then(setRegioesEstudo).catch(() => setRegioesEstudo([]));
   }, []);
 
   useEffect(() => {
@@ -40,6 +44,8 @@ export default function AdminNovaRequisicaoPage() {
     setError("");
     const form = e.currentTarget;
     const fd = new FormData(form);
+    const regiaoFinal = regiaoEstudo === "__outra__" ? regiaoEstudoOutra.trim() : regiaoEstudo;
+    fd.set("regiao_estudo", regiaoFinal);
     if (!fd.get("paciente") || !fd.get("tutor")) {
       setError("Paciente e tutor são obrigatórios");
       return;
@@ -262,16 +268,38 @@ export default function AdminNovaRequisicaoPage() {
           </select>
         </div>
         <div>
-          <label>Região de estudo</label>
-          <input
-            name="regiao_estudo"
+          <label>Região de estudo (máscara para o laudo)</label>
+          <select
+            value={regiaoEstudo}
+            onChange={(e) => setRegiaoEstudo(e.target.value)}
             style={{
               width: "100%",
               padding: 8,
               borderRadius: 6,
               border: "1px solid #d1d5db",
             }}
-          />
+          >
+            {regioesEstudo.map((r) => (
+              <option key={r.value || "vazio"} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          {regiaoEstudo === "__outra__" && (
+            <input
+              type="text"
+              value={regiaoEstudoOutra}
+              onChange={(e) => setRegiaoEstudoOutra(e.target.value)}
+              placeholder="Informe a região"
+              style={{
+                width: "100%",
+                padding: 8,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+                marginTop: 6,
+              }}
+            />
+          )}
         </div>
         <div>
           <label>Suspeita clínica</label>

@@ -335,6 +335,15 @@ class LearningSystem:
 
     def _build_prompt(self, paciente_info: Dict[str, str], similar_cases: Optional[Dict] = None) -> str:
         """Constrói prompt para modelo local incluindo casos similares e alertas de correções"""
+        regiao_estudo = paciente_info.get("regiao_estudo", "Não informado")
+        template_mascara = ""
+        if regiao_estudo and str(regiao_estudo).strip():
+            try:
+                from utils.template_mascaras import get_template_content
+                template_mascara = get_template_content(regiao_estudo) or ""
+            except Exception:
+                pass
+
         base_prompt = f"""
 Você é um radiologista veterinário especialista analisando imagens diagnósticas. 
 Gere um laudo técnico completo em português (Brasil).
@@ -346,7 +355,43 @@ CONTEXTO DO PACIENTE:
 - Sexo: {paciente_info.get("sexo", "Não informado")}
 - Histórico Clínico: {paciente_info.get("historico_clinico", "Não informado")}
 - Suspeita Clínica: {paciente_info.get("suspeita_clinica", "Não informado")}
-- Região de Estudo: {paciente_info.get("regiao_estudo", "Não informado")}
+- Região de Estudo: {regiao_estudo}
+"""
+        if template_mascara:
+            base_prompt += f"""
+ESTRUTURA DO LAUDO (OBRIGATÓRIA – sua resposta DEVE seguir este template exatamente):
+
+{template_mascara}
+
+INSTRUÇÕES:
+- Use os nomes e a estrutura EXATOS do template acima (ex.: ANÁLISE RADIOGRÁFICA, IMPRESSÃO RADIOGRÁFICA/DIAGNÓSTICA).
+- Para cada item em tópicos do template, descreva o achado conforme as imagens. Adapte aos achados reais (normal/alterado).
+- Sua resposta DEVE começar IMEDIATAMENTE com o primeiro cabeçalho do template (ex.: "REGIÃO:" ou "ANÁLISE RADIOGRÁFICA:").
+- Escreva em tópicos, um achado por linha. Seja objetivo e breve. Terminologia veterinária em português (Brasil).
+
+"""
+        else:
+            base_prompt += """
+ESTRUTURA DO LAUDO (OBRIGATÓRIA – todas as seções em tópicos, um item por linha):
+
+**Descrição dos Achados:**
+- Inicie pelas alterações mais relevantes ou importantes (achados anormais ou que impactem o diagnóstico); em seguida descreva o restante, incluindo estruturas dentro da normalidade.
+- Apenas em tópicos (bullets), um achado por linha.
+- Achados normais: uma linha curta (ex.: "- Sistema esquelético: dentro da normalidade").
+- Achados alterados ou relevantes: um tópico cada com o essencial.
+- NÃO escreva parágrafos longos; seja direto e resumido.
+
+**Impressão Diagnóstica:**
+- Apenas em tópicos (diagnósticos diferenciais ou impressão principal).
+
+**Conclusão:**
+- Apenas em tópicos (conclusões principais).
+
+**Recomendações:**
+- Em tópicos, se houver; omita se não houver.
+
+Sua resposta DEVE começar imediatamente com "**Descrição dos Achados:**". Terminologia veterinária em português (Brasil).
+
 """
         obs_adic = (paciente_info.get("observacoes_adicionais_usuario") or "").strip()
         if obs_adic:
@@ -384,28 +429,7 @@ OBSERVAÇÕES ADICIONAIS DO SOLICITANTE (considerar para melhorar a assertividad
                 base_prompt += f"\n--- Caso {i} (Rating: {case.get('rating', 'N/A')}) ---\n"
                 base_prompt += f"{case.get('texto', '')[:500]}...\n"
 
-        base_prompt += """
-ESTRUTURA DO LAUDO (OBRIGATÓRIA – todas as seções em tópicos, um item por linha):
-
-**Descrição dos Achados:**
-- Inicie pelas alterações mais relevantes ou importantes (achados anormais ou que impactem o diagnóstico); em seguida descreva o restante, incluindo estruturas dentro da normalidade.
-- Apenas em tópicos (bullets), um achado por linha.
-- Achados normais: uma linha curta (ex.: "- Sistema esquelético: dentro da normalidade").
-- Achados alterados ou relevantes: um tópico cada com o essencial.
-- NÃO escreva parágrafos longos; seja direto e resumido.
-
-**Impressão Diagnóstica:**
-- Apenas em tópicos (diagnósticos diferenciais ou impressão principal).
-
-**Conclusão:**
-- Apenas em tópicos (conclusões principais).
-
-**Recomendações:**
-- Em tópicos, se houver; omita se não houver.
-
-Estilo: objetivo e breve. Não descreva em detalhe estruturas normais; para o que estiver dentro da normalidade, indique em uma linha. Detalhe apenas achados relevantes ou alterados.
-Sua resposta DEVE começar imediatamente com "**Descrição dos Achados:**". Terminologia veterinária em português (Brasil).
-"""
+        base_prompt += "\nEstilo: objetivo e breve. Não descreva em detalhe estruturas normais; para o que estiver dentro da normalidade, indique em uma linha. Detalhe apenas achados relevantes ou alterados.\n"
 
         return base_prompt
 
