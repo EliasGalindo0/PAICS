@@ -304,6 +304,13 @@ export async function listRascunhos(): Promise<any[]> {
   return res.json();
 }
 
+export async function listRegioesEstudo(): Promise<{ value: string; label: string }[]> {
+  const res = await fetchWithAuth("/api/requisicoes/regioes-estudo");
+  if (!res.ok) throw new Error("Erro ao listar regiões de estudo");
+  const data = await res.json();
+  return data.regioes || [];
+}
+
 // --- CEP (público) ---
 export async function buscarCep(cep: string): Promise<any> {
   const cepLimpo = cep.replace(/\D/g, "");
