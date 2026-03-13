@@ -140,6 +140,29 @@ def get_template_content(regiao_estudo: str) -> Optional[str]:
         return None
 
 
+def get_template_content_multi(regiao_estudo: str, separador: str = ", ") -> Optional[str]:
+    """
+    Extrai e concatena o texto dos templates para múltiplas regiões de estudo.
+    Aceita string com regiões separadas por vírgula (ex: "PELVE, REGIÃO TÓRAX").
+
+    Returns:
+        Texto concatenado dos templates ou None se nenhum template for encontrado
+    """
+    if not regiao_estudo or not regiao_estudo.strip():
+        return None
+    partes = [p.strip() for p in regiao_estudo.split(separador) if p.strip()]
+    if not partes:
+        return None
+    contents: List[str] = []
+    seen: set = set()  # evita templates duplicados
+    for regiao in partes:
+        c = get_template_content(regiao)
+        if c and c not in seen:
+            contents.append(c)
+            seen.add(c)
+    return "\n\n---\n\n".join(contents) if contents else None
+
+
 def list_regioes_estudo() -> List[dict]:
     """
     Retorna lista de regiões de estudo disponíveis para o select no formulário.

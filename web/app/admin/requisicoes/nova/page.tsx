@@ -11,7 +11,7 @@ export default function AdminNovaRequisicaoPage() {
   const [clinicas, setClinicas] = useState<any[]>([]);
   const [veterinarios, setVeterinarios] = useState<any[]>([]);
   const [regioesEstudo, setRegioesEstudo] = useState<{ value: string; label: string }[]>([]);
-  const [regiaoEstudo, setRegiaoEstudo] = useState("");
+  const [regioesEstudoSelecionadas, setRegioesEstudoSelecionadas] = useState<string[]>([]);
   const [regiaoEstudoOutra, setRegiaoEstudoOutra] = useState("");
   const [clinicaId, setClinicaId] = useState("");
   const [vetPreSelecionado, setVetPreSelecionado] = useState("");
@@ -44,7 +44,10 @@ export default function AdminNovaRequisicaoPage() {
     setError("");
     const form = e.currentTarget;
     const fd = new FormData(form);
-    const regiaoFinal = regiaoEstudo === "__outra__" ? regiaoEstudoOutra.trim() : regiaoEstudo;
+    const regiaoFinal = [
+      ...regioesEstudoSelecionadas,
+      ...(regiaoEstudoOutra.trim() ? [regiaoEstudoOutra.trim()] : []),
+    ].join(", ");
     fd.set("regiao_estudo", regiaoFinal);
     if (!fd.get("paciente") || !fd.get("tutor")) {
       setError("Paciente e tutor são obrigatórios");
@@ -65,6 +68,8 @@ export default function AdminNovaRequisicaoPage() {
       form.reset();
       setRaca("");
       setEspecie("");
+      setRegioesEstudoSelecionadas([]);
+      setRegiaoEstudoOutra("");
       setTimeout(() => router.push(`/admin/exames/${res.id}`), 1500);
     } catch (err) {
       setError((err as Error).message);
@@ -268,38 +273,60 @@ export default function AdminNovaRequisicaoPage() {
           </select>
         </div>
         <div>
-          <label>Região de estudo (máscara para o laudo)</label>
-          <select
-            value={regiaoEstudo}
-            onChange={(e) => setRegiaoEstudo(e.target.value)}
+          <label>Regiões de estudo (máscara para o laudo) – selecione uma ou mais</label>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 8,
+              marginTop: 8,
+              padding: 12,
+              background: "#f9fafb",
+              borderRadius: 6,
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            {regioesEstudo
+              .filter((r) => r.value && r.value !== "__outra__")
+              .map((r) => (
+                <label
+                  key={r.value}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={regioesEstudoSelecionadas.includes(r.value)}
+                    onChange={(e) => {
+                      setRegioesEstudoSelecionadas((prev) =>
+                        e.target.checked
+                          ? [...prev, r.value]
+                          : prev.filter((v) => v !== r.value)
+                      );
+                    }}
+                  />
+                  {r.label}
+                </label>
+              ))}
+          </div>
+          <input
+            type="text"
+            value={regiaoEstudoOutra}
+            onChange={(e) => setRegiaoEstudoOutra(e.target.value)}
+            placeholder="Outra região (opcional – digite para adicionar)"
             style={{
               width: "100%",
               padding: 8,
               borderRadius: 6,
               border: "1px solid #d1d5db",
+              marginTop: 10,
             }}
-          >
-            {regioesEstudo.map((r) => (
-              <option key={r.value || "vazio"} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-          {regiaoEstudo === "__outra__" && (
-            <input
-              type="text"
-              value={regiaoEstudoOutra}
-              onChange={(e) => setRegiaoEstudoOutra(e.target.value)}
-              placeholder="Informe a região"
-              style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 6,
-                border: "1px solid #d1d5db",
-                marginTop: 6,
-              }}
-            />
-          )}
+          />
         </div>
         <div>
           <label>Suspeita clínica</label>

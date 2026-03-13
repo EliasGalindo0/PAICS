@@ -339,8 +339,8 @@ class LearningSystem:
         template_mascara = ""
         if regiao_estudo and str(regiao_estudo).strip():
             try:
-                from utils.template_mascaras import get_template_content
-                template_mascara = get_template_content(regiao_estudo) or ""
+                from utils.template_mascaras import get_template_content_multi
+                template_mascara = get_template_content_multi(str(regiao_estudo)) or ""
             except Exception:
                 pass
 

@@ -26,7 +26,7 @@ const initialForm = {
   especie: "",
   raca: "",
   idade: "",
-  regiao_estudo: "",
+  regioes_estudo: [] as string[],
   regiao_estudo_outra: "",
   suspeita_clinica: "",
   historico_clinico: "",
@@ -35,6 +35,8 @@ const initialForm = {
   sexo: "Macho",
   plantao: "Não",
 };
+
+const SEPARADOR_REGIOES = ", ";
 
 export default function UserNovaRequisicaoPage() {
   const router = useRouter();
@@ -87,17 +89,23 @@ export default function UserNovaRequisicaoPage() {
   }, [clinicaId]);
 
   const loadRascunho = (r: any) => {
-    const regiao = r.regiao_estudo || "";
-    const regioesValores = regioesEstudo.map((x) => x.value).filter(Boolean);
-    const isPredefinida = regioesValores.includes(regiao);
+    const regiaoStr = (r.regiao_estudo || "").trim();
+    const regioesValores = regioesEstudo.map((x) => x.value).filter((v) => v && v !== "__outra__");
+    const partes = regiaoStr ? regiaoStr.split(SEPARADOR_REGIOES).map((s: string) => s.trim()).filter(Boolean) : [];
+    const regioesSelecionadas: string[] = [];
+    let outra = "";
+    for (const p of partes) {
+      if (regioesValores.includes(p)) regioesSelecionadas.push(p);
+      else if (p) outra = outra ? `${outra}${SEPARADOR_REGIOES}${p}` : p;
+    }
     setForm({
       paciente: r.paciente || "",
       tutor: r.tutor || "",
       especie: r.especie || "",
       raca: r.raca || "",
       idade: r.idade || "",
-      regiao_estudo: isPredefinida ? regiao : (regiao ? "__outra__" : ""),
-      regiao_estudo_outra: isPredefinida ? "" : regiao,
+      regioes_estudo: regioesSelecionadas,
+      regiao_estudo_outra: outra,
       suspeita_clinica: r.suspeita_clinica || "",
       historico_clinico: r.historico_clinico || r.observacoes || "",
       tipo_exame: r.tipo_exame || "raio-x",
@@ -123,7 +131,10 @@ export default function UserNovaRequisicaoPage() {
     setError("");
   };
 
-  const regiaoEstudoFinal = form.regiao_estudo === "__outra__" ? form.regiao_estudo_outra : form.regiao_estudo;
+  const regiaoEstudoFinal = [
+    ...form.regioes_estudo,
+    ...(form.regiao_estudo_outra.trim() ? [form.regiao_estudo_outra.trim()] : []),
+  ].join(SEPARADOR_REGIOES);
 
   const buildRascunhoFormData = (): FormData => {
     const fd = new FormData();
@@ -434,42 +445,63 @@ export default function UserNovaRequisicaoPage() {
               />
             </div>
             <div>
-              <label>Região de estudo (máscara para o laudo)</label>
-              <select
-                value={form.regiao_estudo}
+              <label>Regiões de estudo (máscara para o laudo) – selecione uma ou mais</label>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                  gap: 8,
+                  marginTop: 8,
+                  padding: 12,
+                  background: "#f9fafb",
+                  borderRadius: 6,
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                {regioesEstudo
+                  .filter((r) => r.value && r.value !== "__outra__")
+                  .map((r) => (
+                    <label
+                      key={r.value}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.regioes_estudo.includes(r.value)}
+                        onChange={(e) => {
+                          setForm((p) => ({
+                            ...p,
+                            regioes_estudo: e.target.checked
+                              ? [...p.regioes_estudo, r.value]
+                              : p.regioes_estudo.filter((v) => v !== r.value),
+                          }));
+                        }}
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+              </div>
+              <input
+                type="text"
+                value={form.regiao_estudo_outra}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, regiao_estudo: e.target.value }))
+                  setForm((p) => ({ ...p, regiao_estudo_outra: e.target.value }))
                 }
+                placeholder="Outra região (opcional – digite para adicionar)"
                 style={{
                   width: "100%",
                   padding: 8,
                   borderRadius: 6,
                   border: "1px solid #d1d5db",
+                  marginTop: 10,
                 }}
-              >
-                {regioesEstudo.map((r) => (
-                  <option key={r.value || "vazio"} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-              {form.regiao_estudo === "__outra__" && (
-                <input
-                  type="text"
-                  value={form.regiao_estudo_outra}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, regiao_estudo_outra: e.target.value }))
-                  }
-                  placeholder="Informe a região"
-                  style={{
-                    width: "100%",
-                    padding: 8,
-                    borderRadius: 6,
-                    border: "1px solid #d1d5db",
-                    marginTop: 6,
-                  }}
-                />
-              )}
+              />
             </div>
             <div>
               <label>Suspeita clínica</label>

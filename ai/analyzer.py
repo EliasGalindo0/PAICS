@@ -194,11 +194,12 @@ class VetAIAnalyzer:
         obs_adicionais = (paciente_info or {}).get("observacoes_adicionais_usuario", "").strip()
 
         # Máscara (template) da região de estudo - guia a estrutura do laudo
+        # Suporta múltiplas regiões separadas por vírgula
         template_mascara = ""
         if regiao_estudo and regiao_estudo.strip():
             try:
-                from utils.template_mascaras import get_template_content
-                template_mascara = get_template_content(regiao_estudo) or ""
+                from utils.template_mascaras import get_template_content_multi
+                template_mascara = get_template_content_multi(regiao_estudo) or ""
             except Exception:
                 pass
 
