@@ -274,31 +274,11 @@ export default function AdminNovaRequisicaoPage() {
         </div>
         <div>
           <label>Regiões de estudo (máscara para o laudo) – selecione uma ou mais</label>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-              gap: 8,
-              marginTop: 8,
-              padding: 12,
-              background: "#f9fafb",
-              borderRadius: 6,
-              border: "1px solid #e5e7eb",
-            }}
-          >
+          <div className="paics-regioes-grid" style={{ marginTop: 8 }}>
             {regioesEstudo
               .filter((r) => r.value && r.value !== "__outra__")
               .map((r) => (
-                <label
-                  key={r.value}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    cursor: "pointer",
-                    fontSize: "0.9rem",
-                  }}
-                >
+                <label key={r.value}>
                   <input
                     type="checkbox"
                     checked={regioesEstudoSelecionadas.includes(r.value)}
@@ -319,11 +299,9 @@ export default function AdminNovaRequisicaoPage() {
             value={regiaoEstudoOutra}
             onChange={(e) => setRegiaoEstudoOutra(e.target.value)}
             placeholder="Outra região (opcional – digite para adicionar)"
+            className="paics-input"
             style={{
               width: "100%",
-              padding: 8,
-              borderRadius: 6,
-              border: "1px solid #d1d5db",
               marginTop: 10,
             }}
           />
