@@ -152,7 +152,7 @@ PAICS/
 | `MONGO_URI` | Connection string do MongoDB (ex.: `mongodb://localhost:27017/`) |
 | `MONGO_DB_NAME` | Nome do banco (padrão: `paics_db`) |
 | `JWT_SECRET_KEY` | Chave para tokens (opcional; gerada se ausente) |
-| `GEMINI_MODEL_NAME` | Modelo Gemini (ex.: `gemini-2.5-pro`) |
+| `GEMINI_MODEL_NAME` | Modelo Gemini (ex.: `gemini-1.5-pro-latest`) |
 
 ---
 

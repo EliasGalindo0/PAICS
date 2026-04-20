@@ -23,7 +23,7 @@ with warnings.catch_warnings():
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 API_KEY = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
-MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
 genai.configure(api_key=API_KEY)
 
 

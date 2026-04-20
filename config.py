@@ -18,7 +18,7 @@ if os.path.exists(env_path):
 
 # API Configuration
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
 
 # Directories
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "laudos_com_ia")
