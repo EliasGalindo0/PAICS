@@ -5,17 +5,19 @@ Expõe autenticação e dados (exames) para consumo pelo React.
 import os
 import sys
 from contextlib import asynccontextmanager
+from typing import Optional
 
 # Garantir que o projeto raiz está no path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional
 
 # Importações do projeto PAICS
 from database.connection import get_db
@@ -48,6 +50,20 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc: Exception):
+    """
+    Garante que erros não tratados retornem JSON (evita o frontend quebrar ao fazer res.json()).
+    """
+    try:
+        from utils.observability import log_api_error
+
+        log_api_error("api.unhandled", exc, context=f"{request.method} {request.url.path}")
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
 # CORS: em produção, defina CORS_ORIGINS no .env (ex.: https://paics.seudominio.com,https://vm-ip:3000)
 _cors_origins = os.getenv("CORS_ORIGINS", "").strip()

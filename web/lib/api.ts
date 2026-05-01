@@ -39,6 +39,34 @@ export interface LoginResponse {
   user?: User;
 }
 
+async function safeJson<T = any>(res: Response): Promise<T | null> {
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) return null;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function responseErrorMessage(res: Response): Promise<string> {
+  const data = await safeJson<any>(res);
+  const detail =
+    typeof data?.detail === "string"
+      ? data.detail
+      : Array.isArray(data?.detail)
+        ? data.detail.map((d: any) => d?.msg ?? d).join(", ")
+        : null;
+  if (detail) return detail;
+  try {
+    const text = (await res.text())?.trim();
+    if (text) return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+  } catch {
+    // ignore
+  }
+  return `Erro HTTP ${res.status}`;
+}
+
 async function getTokens(): Promise<{ access: string; refresh: string } | null> {
   if (typeof window === "undefined") return null;
   const access = localStorage.getItem("paics_access_token");
@@ -111,7 +139,10 @@ export async function login(
       remember_me: rememberMe,
     }),
   });
-  const data = await res.json();
+  const data = await safeJson<LoginResponse>(res);
+  if (!data) {
+    return { success: false, message: await responseErrorMessage(res) };
+  }
   if (data.success && data.access_token && data.refresh_token) {
     await setTokens(data.access_token, data.refresh_token);
   }
@@ -133,7 +164,9 @@ export async function alterarSenha(senhaAtual: string, novaSenha: string): Promi
     method: "POST",
     body: JSON.stringify({ senha_atual: senhaAtual, nova_senha: novaSenha }),
   });
-  return res.json();
+  const data = await safeJson<{ success: boolean; message?: string }>(res);
+  if (data) return data;
+  return { success: false, message: await responseErrorMessage(res) };
 }
 
 // --- Exames ---
@@ -211,7 +244,9 @@ export async function gerarLaudo(exameId: string, imagensRefs?: string[]): Promi
     method: "POST",
     body: JSON.stringify(imagensRefs ? { imagens_refs: imagensRefs } : {}),
   });
-  return res.json();
+  const data = await safeJson<{ success: boolean; laudo_id?: string; detail?: any }>(res);
+  if (data) return data;
+  return { success: false };
 }
 
 export async function atualizarLaudo(exameId: string, texto: string): Promise<void> {
@@ -241,7 +276,9 @@ export async function regenerarLaudo(exameId: string, correcoes: string): Promis
     method: "POST",
     body: JSON.stringify({ correcoes }),
   });
-  return res.json();
+  const data = await safeJson<{ success: boolean; texto?: string; detail?: any }>(res);
+  if (data) return data;
+  return { success: false };
 }
 
 export async function cancelarLaudo(exameId: string): Promise<void> {
