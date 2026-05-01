@@ -21,10 +21,8 @@ with warnings.catch_warnings():
     import google.generativeai as genai
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"), override=True)
 API_KEY = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
-MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
-FALLBACK_MODEL_NAME = os.getenv("GEMINI_FALLBACK_MODEL_NAME", "").strip() or None
 genai.configure(api_key=API_KEY)
 
 
@@ -168,9 +166,12 @@ class VetAIAnalyzer:
     """Classe responsável pela comunicação com a LLM (Gemini) para laudos."""
 
     def __init__(self) -> None:
-        self.model = genai.GenerativeModel(MODEL_NAME)
+        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
+        self.fallback_model_name = os.getenv("GEMINI_FALLBACK_MODEL_NAME", "").strip() or None
+
+        self.model = genai.GenerativeModel(self.model_name)
         self.fallback_model = (
-            genai.GenerativeModel(FALLBACK_MODEL_NAME) if FALLBACK_MODEL_NAME else None
+            genai.GenerativeModel(self.fallback_model_name) if self.fallback_model_name else None
         )
 
     def _generate_content_with_fallback(self, content: list, context: str) -> str:
@@ -187,14 +188,18 @@ class VetAIAnalyzer:
                 try:
                     log_api.warning(
                         "Gemini OK | model=%s | context=%s",
-                        MODEL_NAME,
+                        self.model_name,
                         context or "(nenhum)",
                     )
                 except Exception:
                     pass
             return text
         except Exception as e:
-            log_api_error("Gemini.generate_content", e, context=f"{context} | model={MODEL_NAME}")
+            log_api_error(
+                "Gemini.generate_content",
+                e,
+                context=f"{context} | model={self.model_name}",
+            )
             if not self.fallback_model:
                 raise
             try:
@@ -204,7 +209,7 @@ class VetAIAnalyzer:
                     try:
                         log_api.warning(
                             "Gemini fallback OK | model=%s | context=%s",
-                            FALLBACK_MODEL_NAME,
+                            self.fallback_model_name,
                             context or "(nenhum)",
                         )
                     except Exception:
@@ -214,7 +219,7 @@ class VetAIAnalyzer:
                 log_api_error(
                     "Gemini.generate_content.fallback",
                     e2,
-                    context=f"{context} | model={FALLBACK_MODEL_NAME}",
+                    context=f"{context} | model={self.fallback_model_name}",
                 )
                 raise
 
