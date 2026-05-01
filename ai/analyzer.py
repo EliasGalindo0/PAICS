@@ -24,6 +24,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 API_KEY = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
 MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
+FALLBACK_MODEL_NAME = os.getenv("GEMINI_FALLBACK_MODEL_NAME", "").strip() or None
 genai.configure(api_key=API_KEY)
 
 
@@ -168,6 +169,54 @@ class VetAIAnalyzer:
 
     def __init__(self) -> None:
         self.model = genai.GenerativeModel(MODEL_NAME)
+        self.fallback_model = (
+            genai.GenerativeModel(FALLBACK_MODEL_NAME) if FALLBACK_MODEL_NAME else None
+        )
+
+    def _generate_content_with_fallback(self, content: list, context: str) -> str:
+        """
+        Gera conteúdo com modelo principal; em falha, tenta fallback (se configurado).
+        Retorna texto bruto (sem limpeza/validação de formato).
+        """
+        from utils.observability import log_api_error, log_api
+
+        try:
+            response = self.model.generate_content(content)
+            text = (response.text or "").strip()
+            if text:
+                try:
+                    log_api.warning(
+                        "Gemini OK | model=%s | context=%s",
+                        MODEL_NAME,
+                        context or "(nenhum)",
+                    )
+                except Exception:
+                    pass
+            return text
+        except Exception as e:
+            log_api_error("Gemini.generate_content", e, context=f"{context} | model={MODEL_NAME}")
+            if not self.fallback_model:
+                raise
+            try:
+                response = self.fallback_model.generate_content(content)
+                text = (response.text or "").strip()
+                if text:
+                    try:
+                        log_api.warning(
+                            "Gemini fallback OK | model=%s | context=%s",
+                            FALLBACK_MODEL_NAME,
+                            context or "(nenhum)",
+                        )
+                    except Exception:
+                        pass
+                return text
+            except Exception as e2:
+                log_api_error(
+                    "Gemini.generate_content.fallback",
+                    e2,
+                    context=f"{context} | model={FALLBACK_MODEL_NAME}",
+                )
+                raise
 
     def generate_diagnosis(
         self,
@@ -179,7 +228,7 @@ class VetAIAnalyzer:
 
         Args:
             images: Lista de imagens PIL para análise
-            paciente_info: Dicionário com informações do paciente (especie, raca, idade, sexo, 
+            paciente_info: Dicionário com informações do paciente (especie, raca, idade, sexo,
                           historico_clinico, suspeita_clinica, regiao_estudo)
         """
         # Extrair informações do paciente ou usar valores padrão
@@ -267,8 +316,7 @@ STYLE: Be objective and brief. Do NOT write long paragraphs. For structures with
         _safe_print("Enviando imagens para análise da IA (isso pode levar alguns segundos)...")
         try:
             content: list = [prompt] + images
-            response = self.model.generate_content(content)
-            text = response.text.strip()
+            text = self._generate_content_with_fallback(content, context="laudo principal")
 
             # Aceitar início por Descrição dos Achados, ANÁLISE RADIOGRÁFICA ou REGIÃO (template/máscara)
             pattern = r"(\*\*Descri[çc][ãa]o dos Achados:?\*\*|AN[ÁA]LISE RADIOGR[ÁA]FICA:?|REGI[ÁA]O:?)"
@@ -362,8 +410,7 @@ Generate a new report that fixes the errors indicated by the specialist. Keep th
         _safe_print("Gerando laudo com correções do especialista...")
         try:
             content: list = [prompt] + images
-            response = self.model.generate_content(content)
-            text = response.text.strip()
+            text = self._generate_content_with_fallback(content, context="laudo com correções")
             pattern = r"\*\*Descri[çc][ãa]o dos Achados:?\*\*"
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
