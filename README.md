@@ -1,13 +1,13 @@
 # PAICS - Sistema de Análise de Imagens Veterinárias
 
-Sistema completo de gestão de laudos veterinários com autenticação, dashboards, IA (Google Gemini), MongoDB e ChromaDB.
+Sistema completo de gestão de laudos veterinários com autenticação, dashboards, IA (OpenAI), MongoDB e ChromaDB.
 
 ## Visão Geral
 
 - **Usuários**: Enviar requisições com imagens (JPG, PNG, DICOM), acompanhar status e baixar laudos em PDF quando liberados.
 - **Administradores**: Criar usuários e clínicas, revisar requisições, gerar/editar/validar/liberar laudos com IA, gerenciar financeiro e Knowledge Base.
 
-**Stack**: Python, Streamlit, MongoDB, ChromaDB, Google Gemini, fpdf2.
+**Stack**: Python, FastAPI, Next.js, MongoDB, ChromaDB, OpenAI, fpdf2.
 
 ---
 
@@ -15,7 +15,7 @@ Sistema completo de gestão de laudos veterinários com autenticação, dashboar
 
 - Python 3.11 ou 3.12
 - MongoDB (Docker ou local)
-- Chave da API Google Gemini
+- Chave da API OpenAI (modelo com visão, ex.: gpt-4o)
 - Just (opcional, recomendado) – [Instalar Just](https://github.com/casey/just)
 
 ---
@@ -40,7 +40,8 @@ copy .env.example .env # Windows
 
 Edite `.env`:
 ```
-GOOGLE_API_KEY=sua_chave_aqui
+OPENAI_API_KEY=sua_chave_aqui
+OPENAI_MODEL_NAME=gpt-4o
 MONGO_URI=mongodb://localhost:27017/
 MONGO_DB_NAME=paics_db
 ```
@@ -148,15 +149,14 @@ PAICS/
 
 | Variável | Descrição |
 |----------|-----------|
-| `GOOGLE_API_KEY` | Chave da API Gemini (obrigatória para laudos) |
+| `OPENAI_API_KEY` | Chave da API OpenAI (obrigatória para laudos) |
+| `OPENAI_MODEL_NAME` | Modelo OpenAI com visão (ex.: `gpt-4o`, `gpt-4o-mini`) |
 | `MONGO_URI` | Connection string do MongoDB (ex.: `mongodb://localhost:27017/`) |
 | `MONGO_DB_NAME` | Nome do banco (padrão: `paics_db`) |
 | `JWT_SECRET_KEY` | Chave para tokens (opcional; gerada se ausente) |
-| `GEMINI_MODEL_NAME` | Modelo Gemini (ex.: `gemini-1.5-pro-latest`) |
+| `OPENAI_FALLBACK_MODEL_NAME` | Modelo fallback opcional se o principal falhar |
 
 ---
-
-## MongoDB Atlas no Railway
 
 Se usar **MongoDB Atlas** (em vez do MongoDB do Railway):
 
@@ -291,7 +291,7 @@ Laudos validados são indexados no ChromaDB. O sistema pode buscar casos similar
 | Erro | Solução |
 |------|---------|
 | MongoDB não conecta | `just docker-mongodb-start` ou `just start-mongodb`; conferir `MONGO_URI` |
-| API Key não configurada | Preencher `GOOGLE_API_KEY` no `.env` |
+| API Key não configurada | Preencher `OPENAI_API_KEY` no `.env` ou Railway |
 | `cygrpc` / grpc | `just fix-grpc` |
 | `numpy._core._multiarray_umath` | `just fix-numpy` ou usar Python 3.11/3.12 |
 | `rpds.rpds` / ChromaDB | `just fix-rpds` |

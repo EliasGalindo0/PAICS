@@ -10,7 +10,8 @@ env:
   MONGO_URI: mongodb://localhost:27017/
   MONGO_DB_NAME: paics_db_test
   JWT_SECRET_KEY: ci-secret-key-for-tests
-  GOOGLE_API_KEY: dummy-key-for-ci-tests
+  OPENAI_API_KEY: dummy-key-for-ci-tests
+  OPENAI_MODEL_NAME: gpt-4o
 
 jobs:
   test:

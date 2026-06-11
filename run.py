@@ -29,9 +29,9 @@ def main():
     print()
 
     # Verificar API Key
-    if "SUA_API_KEY_AQUI" in API_KEY or not API_KEY:
+    if not API_KEY or API_KEY in ("SUA_API_KEY_AQUI", "sua_chave_aqui"):
         print("⚠️  AVISO: API Key não configurada!")
-        print("Configure a variável de ambiente GOOGLE_API_KEY ou edite main.py")
+        print("Configure a variável de ambiente OPENAI_API_KEY ou edite o .env")
         print()
         response = input(
             "Deseja continuar mesmo assim? (s/N): ").strip().lower()

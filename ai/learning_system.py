@@ -83,7 +83,7 @@ class LearningSystem:
         if texto_gerado and "[ERRO NA IA" in texto_gerado:
             try:
                 from utils.observability import log_api_response_unexpected
-                log_api_response_unexpected("Gemini", texto_gerado[:300], context="learning_system")
+                log_api_response_unexpected("OpenAI", texto_gerado[:300], context="learning_system")
             except Exception:
                 pass
         return texto_gerado, metadata

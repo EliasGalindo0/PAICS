@@ -16,9 +16,12 @@ else:
 if os.path.exists(env_path):
     load_dotenv(env_path)
 
-# API Configuration
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
+# API Configuration (OpenAI — laudos com visão)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
+OPENAI_FALLBACK_MODEL_NAME = os.getenv("OPENAI_FALLBACK_MODEL_NAME", "")
+OPENAI_MAX_TOKENS = int(os.getenv("OPENAI_MAX_TOKENS", "8192"))
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "180"))
 
 # Directories
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "laudos_com_ia")

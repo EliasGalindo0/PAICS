@@ -42,6 +42,7 @@ def _safe_print(*args, **kwargs):
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "laudos_com_ia")
 PDF_ZOOM_FACTOR = float(os.getenv("PDF_ZOOM_FACTOR", "2.0"))
 IMAGE_WIDTH_INCHES = float(os.getenv("IMAGE_WIDTH_INCHES", "5.5"))
+API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 
 class VetReportGenerator:
@@ -220,8 +221,8 @@ if __name__ == "__main__":
 
     path = sys.argv[1]
     generator = VetReportGenerator()
-    api_key = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
-    if not api_key or api_key == "SUA_API_KEY_AQUI":
-        _safe_print("AVISO: Configure a GOOGLE_API_KEY no .env ou variável de ambiente.")
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key or api_key in ("SUA_API_KEY_AQUI", "sua_chave_aqui"):
+        _safe_print("AVISO: Configure a OPENAI_API_KEY no .env ou variável de ambiente.")
     else:
         generator.create_report(path)

@@ -150,9 +150,9 @@ init:
     echo ""
     echo "🎉 Ambiente configurado com sucesso!"
     echo ""
-    echo "⚠️  Não esqueça de configurar a GOOGLE_API_KEY:"
-    echo "   export GOOGLE_API_KEY='sua_chave_aqui'"
-    echo "   Ou no Windows: set GOOGLE_API_KEY=sua_chave_aqui"
+    echo "⚠️  Não esqueça de configurar a OPENAI_API_KEY:"
+    echo "   export OPENAI_API_KEY='sua_chave_aqui'"
+    echo "   Ou no Windows: set OPENAI_API_KEY=sua_chave_aqui"
 
 # Atualiza todas as dependências para as versões mais recentes
 update:
@@ -216,31 +216,31 @@ check-deps:
     
     echo "🔍 Verificando dependências..."
     $PYTHON_CMD -c "import fitz; print('✅ PyMuPDF instalado')" || echo "❌ PyMuPDF não instalado"
-    $PYTHON_CMD -c "import google.generativeai; print('✅ google-generativeai instalado')" || echo "❌ google-generativeai não instalado"
+    $PYTHON_CMD -c "import openai; print('✅ openai instalado')" || echo "❌ openai não instalado"
     $PYTHON_CMD -c "import docx; print('✅ python-docx instalado')" || echo "❌ python-docx não instalado"
     $PYTHON_CMD -c "from PIL import Image; print('✅ Pillow instalado')" || echo "❌ Pillow não instalado"
 
 # Verifica se a API Key está configurada (arquivo .env ou variável de ambiente)
 check-api-key:
     #!/usr/bin/env bash
-    echo "🔍 Verificando GOOGLE_API_KEY..."
+    echo "🔍 Verificando OPENAI_API_KEY..."
     
     # Testar carregamento do .env
     api_key_from_env=""
     if [ -f ".env" ]; then
         echo "📄 Arquivo .env encontrado"
         # Carregar do .env usando Python
-        api_key_from_env=$({{python}} -c "from dotenv import load_dotenv; import os; load_dotenv(); print(os.getenv('GOOGLE_API_KEY', ''))" 2>/dev/null)
+        api_key_from_env=$({{python}} -c "from dotenv import load_dotenv; import os; load_dotenv(); print(os.getenv('OPENAI_API_KEY', ''))" 2>/dev/null)
     else
         echo "⚠️  Arquivo .env não encontrado"
         echo "   Criando .env.example se não existir..."
         if [ ! -f ".env.example" ]; then
-            echo "GOOGLE_API_KEY=sua_chave_api_aqui" > .env.example
+            echo "OPENAI_API_KEY=sua_chave_api_aqui" > .env.example
         fi
     fi
     
     # Verificar variável de ambiente do sistema
-    api_key_from_system="$GOOGLE_API_KEY"
+    api_key_from_system="$OPENAI_API_KEY"
     
     # Usar a primeira que estiver configurada
     if [ -n "$api_key_from_env" ] && [ "$api_key_from_env" != "sua_chave_api_aqui" ] && [ -n "$api_key_from_env" ]; then
@@ -250,7 +250,7 @@ check-api-key:
         api_key="$api_key_from_system"
         source="variável de ambiente do sistema"
     else
-        echo "❌ GOOGLE_API_KEY não configurada"
+        echo "❌ OPENAI_API_KEY não configurada"
         echo ""
         echo "Configure usando uma das opções:"
         echo "  1. Arquivo .env (recomendado):"
@@ -258,20 +258,20 @@ check-api-key:
         echo "     # Edite .env e adicione sua chave"
         echo ""
         echo "  2. Variável de ambiente:"
-        echo "     export GOOGLE_API_KEY='sua_chave_aqui'  # Linux/Mac"
-        echo "     set GOOGLE_API_KEY=sua_chave_aqui       # Windows CMD"
-        echo "     \$env:GOOGLE_API_KEY='sua_chave_aqui'    # Windows PowerShell"
+        echo "     export OPENAI_API_KEY='sua_chave_aqui'  # Linux/Mac"
+        echo "     set OPENAI_API_KEY=sua_chave_aqui       # Windows CMD"
+        echo "     \$env:OPENAI_API_KEY='sua_chave_aqui'    # Windows PowerShell"
         exit 1
     fi
     
     # Verificar se é a chave padrão
     if [ "$api_key" = "sua_chave_api_aqui" ] || [ "$api_key" = "SUA_API_KEY_AQUI" ]; then
-        echo "⚠️  GOOGLE_API_KEY encontrada, mas com valor padrão!"
+        echo "⚠️  OPENAI_API_KEY encontrada, mas com valor padrão!"
         echo "   Edite o arquivo .env ou configure a variável de ambiente com sua chave real."
         exit 1
     fi
     
-    echo "✅ GOOGLE_API_KEY configurada (fonte: $source)"
+    echo "✅ OPENAI_API_KEY configurada (fonte: $source)"
     # Mostra apenas os primeiros e últimos caracteres da chave por segurança
     if [ ${#api_key} -gt 8 ]; then
         masked="${api_key:0:4}...${api_key: -4}"
@@ -430,7 +430,7 @@ test-env:
     else
         echo "❌ Arquivo test_env.py não encontrado"
         echo "Testando manualmente..."
-        $PYTHON_CMD -c "from dotenv import load_dotenv; import os; load_dotenv(); key = os.getenv('GOOGLE_API_KEY', 'NÃO_ENCONTRADA'); print('✅ .env carregado!' if key != 'NÃO_ENCONTRADA' else '❌ GOOGLE_API_KEY não encontrada no .env')"
+        $PYTHON_CMD -c "from dotenv import load_dotenv; import os; load_dotenv(); key = os.getenv('OPENAI_API_KEY', 'NÃO_ENCONTRADA'); print('✅ .env carregado!' if key != 'NÃO_ENCONTRADA' else '❌ OPENAI_API_KEY não encontrada no .env')"
     fi
 
 # Rodar todos os testes (unit + E2E). Requer MongoDB e playwright install chromium
@@ -1267,33 +1267,33 @@ start:
         if [ -f ".env.example" ]; then
             cp .env.example .env
             echo "   ✅ Arquivo .env criado"
-            echo "   ⚠️  IMPORTANTE: Edite o arquivo .env e adicione sua GOOGLE_API_KEY"
+            echo "   ⚠️  IMPORTANTE: Edite o arquivo .env e adicione sua OPENAI_API_KEY"
             echo "   Pressione ENTER para continuar ou Ctrl+C para editar o .env agora..."
             read -r
         else
             echo "   ⚠️  .env.example não encontrado. Criando .env básico..."
             {
-                echo "GOOGLE_API_KEY=sua_chave_api_aqui"
-                echo "GEMINI_MODEL_NAME=gemini-1.5-pro-latest"
+                echo "OPENAI_API_KEY=sua_chave_api_aqui"
+                echo "OPENAI_MODEL_NAME=gpt-4o"
                 echo "MONGO_URI=mongodb://localhost:27017/"
                 echo "MONGO_DB_NAME=paics_db"
                 echo "OUTPUT_DIR=laudos_com_ia"
             } > .env
             echo "   ✅ Arquivo .env criado com valores padrão"
-            echo "   ⚠️  IMPORTANTE: Edite o arquivo .env e adicione sua GOOGLE_API_KEY"
+            echo "   ⚠️  IMPORTANTE: Edite o arquivo .env e adicione sua OPENAI_API_KEY"
             echo "   Pressione ENTER para continuar ou Ctrl+C para editar o .env agora..."
             read -r
         fi
     else
         echo "   ✅ Arquivo .env encontrado"
-        # Verificar se GOOGLE_API_KEY está configurada
-        if grep -q "GOOGLE_API_KEY=sua_chave_api_aqui" .env 2>/dev/null || grep -q "GOOGLE_API_KEY=$" .env 2>/dev/null; then
-            echo "   ⚠️  GOOGLE_API_KEY não está configurada no .env"
+        # Verificar se OPENAI_API_KEY está configurada
+        if grep -q "OPENAI_API_KEY=sua_chave_api_aqui" .env 2>/dev/null || grep -q "OPENAI_API_KEY=$" .env 2>/dev/null; then
+            echo "   ⚠️  OPENAI_API_KEY não está configurada no .env"
             echo "   Edite o arquivo .env e adicione sua chave antes de continuar"
             echo "   Pressione ENTER para continuar ou Ctrl+C para editar o .env agora..."
             read -r
         else
-            echo "   ✅ GOOGLE_API_KEY parece estar configurada"
+            echo "   ✅ OPENAI_API_KEY parece estar configurada"
         fi
     fi
     echo ""

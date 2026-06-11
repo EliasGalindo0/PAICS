@@ -1,29 +1,23 @@
 """
-Analisador de imagens veterinárias com Gemini (LLM).
-Usado pelo user_dashboard, admin_dashboard e main sem depender de PyMuPDF/docx.
-Suporta imagens por path (filesystem) ou por ID do GridFS (persistência no MongoDB).
+Analisador de imagens veterinárias com OpenAI (visão + texto).
+Usado pela API FastAPI, learning system e scripts CLI.
+Suporta imagens por path (filesystem) ou por ID do GridFS (MongoDB).
 """
 from __future__ import annotations
 
+import base64
 import io
 import os
 import re
 import sys
-from typing import List, Optional, Dict
-
-import warnings
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
+from openai import OpenAI
 from PIL import Image
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
-    import google.generativeai as genai
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_PROJECT_ROOT, ".env"), override=True)
-API_KEY = os.getenv("GOOGLE_API_KEY", "SUA_API_KEY_AQUI")
-genai.configure(api_key=API_KEY)
 
 
 def _safe_print(*args, **kwargs) -> None:
@@ -48,6 +42,14 @@ def _safe_print(*args, **kwargs) -> None:
             sys.stdout.write(buf)
 
 
+def _pil_to_data_url(img: Image.Image) -> str:
+    """Converte PIL Image RGB para data URL PNG (OpenAI vision)."""
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64 = base64.standard_b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def load_dicom_image(dicom_path: str) -> Optional[Image.Image]:
     """Converte arquivo DICOM em imagem PIL."""
     try:
@@ -61,7 +63,6 @@ def load_dicom_image(dicom_path: str) -> Optional[Image.Image]:
         try:
             data = apply_voi_lut(arr, dcm)
         except Exception:
-            # VOI LUT ausente ou (0028,1056) não suportado: usar pixel_array com normalização
             data = np.asarray(arr, dtype=np.float64)
 
         data = data - data.min()
@@ -81,7 +82,6 @@ def _load_image_from_bytes(data: bytes, filename_hint: str = "imagem") -> Option
     try:
         ext = os.path.splitext(filename_hint)[1].lower()
         dicom_ext = {".dcm", ".dicom"}
-        raster_ext = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
         buf = io.BytesIO(data)
         if ext in dicom_ext:
             try:
@@ -125,8 +125,7 @@ def load_images_for_analysis(refs: List[str]) -> List[Image.Image]:
         if not ref:
             continue
         try:
-            # GridFS: ref é ObjectId (24 hex)
-            from database.image_storage import is_gridfs_ref, get_image_bytes_and_filename
+            from database.image_storage import get_image_bytes_and_filename, is_gridfs_ref
             if is_gridfs_ref(ref):
                 result = get_image_bytes_and_filename(ref)
                 if result:
@@ -135,7 +134,6 @@ def load_images_for_analysis(refs: List[str]) -> List[Image.Image]:
                     if img is not None:
                         images.append(img)
                 continue
-            # Legacy: path no filesystem
             p = ref
             if not os.path.isabs(p):
                 p = os.path.join(_PROJECT_ROOT, p)
@@ -163,80 +161,72 @@ def load_images_for_analysis(refs: List[str]) -> List[Image.Image]:
 
 
 class VetAIAnalyzer:
-    """Classe responsável pela comunicação com a LLM (Gemini) para laudos."""
+    """Comunicação com a API OpenAI (visão) para geração de laudos."""
 
     def __init__(self) -> None:
-        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro-latest")
-        self.fallback_model_name = os.getenv("GEMINI_FALLBACK_MODEL_NAME", "").strip() or None
-
-        self.model = genai.GenerativeModel(self.model_name)
-        self.fallback_model = (
-            genai.GenerativeModel(self.fallback_model_name) if self.fallback_model_name else None
-        )
-
-    def _generate_content_with_fallback(self, content: list, context: str) -> str:
-        """
-        Gera conteúdo com modelo principal; em falha, tenta fallback (se configurado).
-        Retorna texto bruto (sem limpeza/validação de formato).
-        """
-        from utils.observability import log_api_error, log_api
-
-        try:
-            response = self.model.generate_content(content)
-            text = (response.text or "").strip()
-            if text:
-                try:
-                    log_api.warning(
-                        "Gemini OK | model=%s | context=%s",
-                        self.model_name,
-                        context or "(nenhum)",
-                    )
-                except Exception:
-                    pass
-            return text
-        except Exception as e:
-            log_api_error(
-                "Gemini.generate_content",
-                e,
-                context=f"{context} | model={self.model_name}",
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not api_key or api_key in ("SUA_API_KEY_AQUI", "sua_chave_aqui"):
+            raise RuntimeError(
+                "OPENAI_API_KEY não configurada. Defina a variável de ambiente no Railway ou .env."
             )
-            if not self.fallback_model:
-                raise
+        timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "180"))
+        self.client = OpenAI(api_key=api_key, timeout=timeout)
+        self.model_name = os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
+        self.fallback_model_name = os.getenv("OPENAI_FALLBACK_MODEL_NAME", "").strip() or None
+        self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "8192"))
+
+    def _build_message_content(self, prompt: str, images: List[Image.Image]) -> list:
+        content: list = [{"type": "text", "text": prompt}]
+        for img in images:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": _pil_to_data_url(img), "detail": "high"},
+            })
+        return content
+
+    def _generate_with_fallback(self, prompt: str, images: List[Image.Image], context: str) -> str:
+        """Chama OpenAI com modelo principal; em falha, tenta fallback (se configurado)."""
+        from utils.observability import log_api, log_api_error
+
+        models = [self.model_name]
+        if self.fallback_model_name and self.fallback_model_name != self.model_name:
+            models.append(self.fallback_model_name)
+
+        last_error: Optional[Exception] = None
+        message_content = self._build_message_content(prompt, images)
+
+        for idx, model in enumerate(models):
             try:
-                response = self.fallback_model.generate_content(content)
-                text = (response.text or "").strip()
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": message_content}],
+                    max_tokens=self.max_tokens,
+                )
+                text = (response.choices[0].message.content or "").strip()
                 if text:
+                    label = "OpenAI fallback OK" if idx > 0 else "OpenAI OK"
                     try:
-                        log_api.warning(
-                            "Gemini fallback OK | model=%s | context=%s",
-                            self.fallback_model_name,
-                            context or "(nenhum)",
-                        )
+                        log_api.warning("%s | model=%s | context=%s", label, model, context or "(nenhum)")
                     except Exception:
                         pass
                 return text
-            except Exception as e2:
-                log_api_error(
-                    "Gemini.generate_content.fallback",
-                    e2,
-                    context=f"{context} | model={self.fallback_model_name}",
-                )
-                raise
+            except Exception as e:
+                last_error = e
+                src = "OpenAI.chat.completions.fallback" if idx > 0 else "OpenAI.chat.completions"
+                log_api_error(src, e, context=f"{context} | model={model}")
+
+        if last_error:
+            raise last_error
+        return ""
 
     def generate_diagnosis(
         self,
         images: List[Image.Image],
-        paciente_info: Optional[Dict[str, str]] = None
+        paciente_info: Optional[Dict[str, str]] = None,
     ) -> str:  # noqa: C901
         """
-        Envia imagens para o Gemini e retorna o laudo técnico em português.
-
-        Args:
-            images: Lista de imagens PIL para análise
-            paciente_info: Dicionário com informações do paciente (especie, raca, idade, sexo,
-                          historico_clinico, suspeita_clinica, regiao_estudo)
+        Envia imagens para a OpenAI e retorna o laudo técnico em português.
         """
-        # Extrair informações do paciente ou usar valores padrão
         especie = (paciente_info or {}).get("especie", "Não informado")
         raca = (paciente_info or {}).get("raca", "Não informado")
         idade = (paciente_info or {}).get("idade", "Não informado")
@@ -247,8 +237,6 @@ class VetAIAnalyzer:
         regiao_estudo = (paciente_info or {}).get("regiao_estudo", "Não informado")
         obs_adicionais = (paciente_info or {}).get("observacoes_adicionais_usuario", "").strip()
 
-        # Máscara (template) da região de estudo - guia a estrutura do laudo
-        # Suporta múltiplas regiões separadas por vírgula
         template_mascara = ""
         if regiao_estudo and regiao_estudo.strip():
             try:
@@ -320,16 +308,16 @@ STYLE: Be objective and brief. Do NOT write long paragraphs. For structures with
 """
         _safe_print("Enviando imagens para análise da IA (isso pode levar alguns segundos)...")
         try:
-            content: list = [prompt] + images
-            text = self._generate_content_with_fallback(content, context="laudo principal")
+            text = self._generate_with_fallback(prompt, images, context="laudo principal")
 
-            # Aceitar início por Descrição dos Achados, ANÁLISE RADIOGRÁFICA ou REGIÃO (template/máscara)
             pattern = r"(\*\*Descri[çc][ãa]o dos Achados:?\*\*|AN[ÁA]LISE RADIOGR[ÁA]FICA:?|REGI[ÁA]O:?)"
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 text = text[match.start():]
             else:
-                simple = re.search(r"(\*\*Descri[çc][ãa]o|AN[ÁA]LISE RADIOGR[ÁA]FICA|REGI[ÁA]O)", text, re.IGNORECASE)
+                simple = re.search(
+                    r"(\*\*Descri[çc][ãa]o|AN[ÁA]LISE RADIOGR[ÁA]FICA|REGI[ÁA]O)", text, re.IGNORECASE
+                )
                 if simple:
                     text = text[simple.start():]
 
@@ -366,12 +354,11 @@ STYLE: Be objective and brief. Do NOT write long paragraphs. For structures with
 
         except Exception as e:
             from utils.observability import log_api_error
-            log_api_error("Gemini.generate_diagnosis", e, context="laudo principal")
-            err_msg = (
+            log_api_error("OpenAI.generate_diagnosis", e, context="laudo principal")
+            return (
                 "[ERRO NA IA: Não foi possível gerar o laudo automático. "
                 f"Detalhe: {str(e)}]"
             )
-            return err_msg
 
     def generate_diagnosis_with_corrections(
         self,
@@ -380,10 +367,7 @@ STYLE: Be objective and brief. Do NOT write long paragraphs. For structures with
         correcoes_texto: str,
         laudo_anterior: str,
     ) -> str:
-        """
-        Gera novo laudo considerando correções do especialista e o laudo anterior.
-        Usado no fluxo 'Gerar Laudo c/ Correções'.
-        """
+        """Gera novo laudo incorporando correções do especialista."""
         especie = (paciente_info or {}).get("especie", "Não informado")
         raca = (paciente_info or {}).get("raca", "Não informado")
         idade = (paciente_info or {}).get("idade", "Não informado")
@@ -395,7 +379,7 @@ STYLE: Be objective and brief. Do NOT write long paragraphs. For structures with
 
         prompt = f"""You are a specialist veterinary radiologist. The specialist has reviewed a previous report and provided corrections. Generate a NEW corrected report in Portuguese (Brazil) that incorporates these corrections.
 
-🚨 CORREÇÕES DO ESPECIALISTA:
+CORREÇÕES DO ESPECIALISTA:
 {correcoes_texto}
 
 LAUDO ANTERIOR (tinha erros):
@@ -414,8 +398,7 @@ Generate a new report that fixes the errors indicated by the specialist. Keep th
 """
         _safe_print("Gerando laudo com correções do especialista...")
         try:
-            content: list = [prompt] + images
-            text = self._generate_content_with_fallback(content, context="laudo com correções")
+            text = self._generate_with_fallback(prompt, images, context="laudo com correções")
             pattern = r"\*\*Descri[çc][ãa]o dos Achados:?\*\*"
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
@@ -423,7 +406,7 @@ Generate a new report that fixes the errors indicated by the specialist. Keep th
             return re.sub(r"\n{3,}", "\n\n", text).strip() or text
         except Exception as e:
             from utils.observability import log_api_error
-            log_api_error("Gemini.generate_diagnosis_with_corrections", e, context="laudo com correções")
+            log_api_error("OpenAI.generate_diagnosis_with_corrections", e, context="laudo com correções")
             return (
                 "[ERRO NA IA: Não foi possível gerar o laudo. "
                 f"Detalhe: {str(e)}]"

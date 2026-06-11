@@ -33,7 +33,7 @@ a = Analysis(
         'streamlit.runtime.state',
         'streamlit.runtime.state.session_state',
         'streamlit.components.v1',
-        'google.generativeai',
+        'openai',
         'google.ai.generativelanguage',
         'google.api_core',
         'PIL',
