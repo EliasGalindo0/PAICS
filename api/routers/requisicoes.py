@@ -10,7 +10,7 @@ from database.models import Requisicao, Clinica, Veterinario
 from database.image_storage import save_image
 from utils.timezone import now, combine_date_local
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/requisicoes", tags=["requisicoes"])
 
@@ -20,6 +20,20 @@ def listar_regioes_estudo(user: dict = Depends(get_current_user)):
     """Lista regiões de estudo com máscaras disponíveis para o select no formulário."""
     from utils.template_mascaras import list_regioes_estudo
     return {"regioes": list_regioes_estudo()}
+
+
+class ParseTemplateRequest(BaseModel):
+    texto: str
+
+
+@router.post("/parse-template")
+def parse_template(body: ParseTemplateRequest, user: dict = Depends(require_admin)):
+    """Extrai campos do template de requisição colado pela administradora."""
+    from utils.requisicao_template_parser import parse_requisicao_template
+
+    if not (body.texto or "").strip():
+        raise HTTPException(400, "Cole o texto do template antes de extrair")
+    return parse_requisicao_template(body.texto)
 
 
 def _upper(s):

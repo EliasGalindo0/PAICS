@@ -363,6 +363,39 @@ export async function listRegioesEstudo(): Promise<{ value: string; label: strin
   return data.regioes || [];
 }
 
+export type RequisicaoTemplateParsed = {
+  paciente: string;
+  tutor: string;
+  especie: string;
+  idade: string;
+  raca: string;
+  medico_veterinario_solicitante: string;
+  regioes_estudo: string[];
+  regiao_estudo_outra: string;
+  suspeita_clinica: string;
+  data_exame: string;
+  plantao: string;
+  historico_clinico: string;
+  campos_encontrados: string[];
+};
+
+export async function parseRequisicaoTemplate(
+  texto: string
+): Promise<RequisicaoTemplateParsed> {
+  const res = await fetchWithAuth("/api/requisicoes/parse-template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ texto }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      typeof err?.detail === "string" ? err.detail : "Erro ao extrair template"
+    );
+  }
+  return res.json();
+}
+
 // --- CEP (público) ---
 export async function buscarCep(cep: string): Promise<any> {
   const cepLimpo = cep.replace(/\D/g, "");

@@ -576,8 +576,7 @@ def baixar_pdf(
 
     try:
         from ai.analyzer import load_images_for_analysis
-        from fpdf import FPDF
-        from fpdf.enums import XPos, YPos
+        from utils.laudo_pdf import gerar_pdf_laudo
 
         imagens_paths = req.get("imagens", [])
         images = load_images_for_analysis(imagens_paths) if imagens_paths else []
@@ -602,60 +601,15 @@ def baixar_pdf(
                 vets = veterinario_model.find_by_clinica(_user_req["clinica_id"], apenas_ativos=True)
                 _vet_pdf = (vets[0].get("nome") if vets else None) or _vet_pdf
 
-        def _clean(t):
-            t = str(t) if t is not None else ""
-            for a, b in [("'", "'"), ("'", "'"), (""", '"'), (""", '"'), ("—", "-"), ("–", "-"), ("…", "..."), ("°", " graus")]:
-                t = t.replace(a, b)
-            t = t.replace("**", "")
-            try:
-                t.encode("latin-1")
-            except UnicodeEncodeError:
-                import unicodedata
-                t = unicodedata.normalize("NFKD", t).encode("latin-1", "ignore").decode("latin-1")
-            return t
-
-        pdf = FPDF("P", "mm", "A4")
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 14)
-        pdf.ln(5)
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 6, f"Paciente: {_clean(req.get('paciente', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(0, 6, f"Tutor: {_clean(req.get('tutor', 'N/A'))}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(0, 6, f"Clinica Solicitante: {_clean(_clinica_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(0, 6, f"Medico(a) Veterinario(a): {_clean(_vet_pdf or 'N/A')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(0, 6, f"Data: {now().strftime('%d/%m/%Y')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(4)
-        pdf.set_font("Arial", "B", 12)
-        pdf.ln(2)
-        pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 5, _clean(laudo.get("texto", "")))
-        if images:
-            pdf.add_page()
-            for i, img in enumerate(images):
-                w_px, h_px = img.size
-                ar = h_px / w_px
-                h_mm = 180 * ar
-                if pdf.get_y() + h_mm > 267:
-                    pdf.add_page()
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                buf.seek(0)
-                pdf.image(buf, w=180, h=h_mm)
-                pdf.set_font("Arial", "I", 9)
-                pdf.cell(0, 6, f"Imagem {i + 1}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-                pdf.ln(4)
-        pdf.set_y(-35)
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 10, "_" * 60, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
-        pdf.ln(2)
-        pdf.set_font("Arial", "B", 10)
-        pdf.cell(0, 5, "Dra. Lais Costa Muchiutti", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
-        pdf.ln(2)
-        pdf.set_font("Arial", "", 9)
-        pdf.cell(0, 5, "Medica Veterinaria-CRMV SP32247", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        out = pdf.output(dest="S")
-        pdf_bytes = bytes(out) if isinstance(out, bytearray) else out
+        pdf_bytes = gerar_pdf_laudo(
+            paciente=req.get("paciente", "N/A"),
+            tutor=req.get("tutor", "N/A"),
+            clinica=_clinica_pdf or "N/A",
+            veterinario=_vet_pdf or "N/A",
+            data_str=now().strftime("%d/%m/%Y"),
+            texto_laudo=laudo.get("texto", ""),
+            images=images,
+        )
         fn = f"laudo_{req.get('paciente', 'exame').replace(' ', '_')}.pdf"
         return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{fn}"'})
     except Exception as e:

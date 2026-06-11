@@ -1,43 +1,172 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { listClinicas, listVeterinarios, criarRequisicao, listRegioesEstudo } from "@/lib/api";
+import {
+  listClinicas,
+  listVeterinarios,
+  criarRequisicao,
+  listRegioesEstudo,
+  parseRequisicaoTemplate,
+} from "@/lib/api";
 import { hojeISO } from "@/lib/dateUtils";
 import { InputRacaAutocomplete } from "@/app/components/InputRacaAutocomplete";
 
+function normNome(s: string) {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function matchVeterinarioId(
+  nome: string,
+  vets: { id: string; nome: string }[]
+): string {
+  const n = normNome(nome);
+  if (!n || !vets.length) return "";
+  const exact = vets.find((v) => normNome(v.nome) === n);
+  if (exact) return exact.id;
+  const partial = vets.find(
+    (v) => normNome(v.nome).includes(n) || n.includes(normNome(v.nome))
+  );
+  return partial?.id || "";
+}
+
+function setFormField(form: HTMLFormElement, name: string, value: string) {
+  const el = form.elements.namedItem(name);
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    el.value = value || "";
+  }
+}
+
 export default function AdminNovaRequisicaoPage() {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [clinicas, setClinicas] = useState<any[]>([]);
   const [veterinarios, setVeterinarios] = useState<any[]>([]);
-  const [regioesEstudo, setRegioesEstudo] = useState<{ value: string; label: string }[]>([]);
-  const [regioesEstudoSelecionadas, setRegioesEstudoSelecionadas] = useState<string[]>([]);
+  const [regioesEstudo, setRegioesEstudo] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [regioesEstudoSelecionadas, setRegioesEstudoSelecionadas] = useState<
+    string[]
+  >([]);
   const [regiaoEstudoOutra, setRegiaoEstudoOutra] = useState("");
   const [clinicaId, setClinicaId] = useState("");
   const [vetPreSelecionado, setVetPreSelecionado] = useState("");
   const [especie, setEspecie] = useState("");
   const [raca, setRaca] = useState("");
+  const [plantao, setPlantao] = useState("Não");
+  const [templateTexto, setTemplateTexto] = useState("");
+  const [parseMsg, setParseMsg] = useState("");
+  const [parsing, setParsing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [vetPendente, setVetPendente] = useState("");
+  const vetPendenteRef = useRef("");
 
   useEffect(() => {
     listClinicas(false).then(setClinicas);
-    listRegioesEstudo().then(setRegioesEstudo).catch(() => setRegioesEstudo([]));
+    listRegioesEstudo()
+      .then(setRegioesEstudo)
+      .catch(() => setRegioesEstudo([]));
   }, []);
 
   useEffect(() => {
     if (clinicaId) {
       listVeterinarios(clinicaId).then((vets) => {
         setVeterinarios(vets);
-        if (vets.length === 1) setVetPreSelecionado(vets[0].id);
-        else setVetPreSelecionado("");
+        const pendente = vetPendenteRef.current;
+        if (pendente) {
+          setVetPreSelecionado(matchVeterinarioId(pendente, vets) || "");
+          vetPendenteRef.current = "";
+          setVetPendente("");
+        } else if (vets.length === 1) {
+          setVetPreSelecionado(vets[0].id);
+        } else if (!vetPreSelecionado) {
+          setVetPreSelecionado("");
+        }
       });
     } else {
       setVeterinarios([]);
       setVetPreSelecionado("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicaId]);
+
+  const handleExtrairTemplate = async () => {
+    setParseMsg("");
+    setError("");
+    if (!templateTexto.trim()) {
+      setParseMsg("Cole o texto do template antes de extrair.");
+      return;
+    }
+    setParsing(true);
+    try {
+      const dados = await parseRequisicaoTemplate(templateTexto);
+      const form = formRef.current;
+      if (!form) return;
+
+      setFormField(form, "paciente", dados.paciente);
+      setFormField(form, "tutor", dados.tutor);
+      setFormField(form, "idade", dados.idade);
+      setFormField(form, "suspeita_clinica", dados.suspeita_clinica);
+      setFormField(form, "historico_clinico", dados.historico_clinico);
+      if (dados.data_exame) {
+        setFormField(form, "data_exame", dados.data_exame);
+      }
+
+      if (dados.especie) setEspecie(dados.especie);
+      if (dados.raca) setRaca(dados.raca);
+      if (dados.plantao) setPlantao(dados.plantao);
+      setRegioesEstudoSelecionadas(dados.regioes_estudo || []);
+      setRegiaoEstudoOutra(dados.regiao_estudo_outra || "");
+
+      if (dados.medico_veterinario_solicitante) {
+        if (clinicaId && veterinarios.length) {
+          setVetPreSelecionado(
+            matchVeterinarioId(
+              dados.medico_veterinario_solicitante,
+              veterinarios
+            )
+          );
+        } else {
+          vetPendenteRef.current = dados.medico_veterinario_solicitante;
+          setVetPendente(dados.medico_veterinario_solicitante);
+          if (clinicaId) {
+            listVeterinarios(clinicaId).then((vets) => {
+              setVeterinarios(vets);
+              setVetPreSelecionado(
+                matchVeterinarioId(
+                  dados.medico_veterinario_solicitante,
+                  vets
+                )
+              );
+              vetPendenteRef.current = "";
+              setVetPendente("");
+            });
+          }
+        }
+      }
+
+      const n = dados.campos_encontrados?.length || 0;
+      const avisoVet =
+        dados.medico_veterinario_solicitante && !clinicaId
+          ? " Selecione a clínica para vincular o M.V. solicitante."
+          : "";
+      setParseMsg(
+        n > 0
+          ? `${n} campo(s) preenchido(s). Revise os dados antes de enviar.${avisoVet}`
+          : "Nenhum campo reconhecido. Verifique o formato do template."
+      );
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setParsing(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -49,6 +178,7 @@ export default function AdminNovaRequisicaoPage() {
       ...(regiaoEstudoOutra.trim() ? [regiaoEstudoOutra.trim()] : []),
     ].join(", ");
     fd.set("regiao_estudo", regiaoFinal);
+    fd.set("plantao", plantao);
     if (!fd.get("paciente") || !fd.get("tutor")) {
       setError("Paciente e tutor são obrigatórios");
       return;
@@ -68,8 +198,11 @@ export default function AdminNovaRequisicaoPage() {
       form.reset();
       setRaca("");
       setEspecie("");
+      setPlantao("Não");
       setRegioesEstudoSelecionadas([]);
       setRegiaoEstudoOutra("");
+      setTemplateTexto("");
+      setParseMsg("");
       setTimeout(() => router.push(`/admin/exames/${res.id}`), 1500);
     } catch (err) {
       setError((err as Error).message);
@@ -119,7 +252,76 @@ export default function AdminNovaRequisicaoPage() {
           Requisição enviada! Redirecionando...
         </div>
       )}
+
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 900,
+          margin: "0 auto 20px",
+          padding: 16,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          borderRadius: 8,
+        }}
+      >
+        <h2 style={{ fontSize: "1rem", margin: "0 0 8px" }}>
+          Colar template da clínica
+        </h2>
+        <p style={{ fontSize: "0.875rem", color: "#64748b", margin: "0 0 10px" }}>
+          Cole abaixo a mensagem que a clínica envia (WhatsApp, e-mail etc.) e
+          clique em extrair para preencher o formulário automaticamente.
+        </p>
+        <textarea
+          value={templateTexto}
+          onChange={(e) => setTemplateTexto(e.target.value)}
+          rows={10}
+          placeholder={`Exemplo:\nDados para laudo\n\nData: 10/06/2026\n🔹 Nome do paciente: ...\n🔹 Espécie: Canino\n...`}
+          style={{
+            width: "100%",
+            padding: 10,
+            borderRadius: 6,
+            border: "1px solid #d1d5db",
+            fontFamily: "inherit",
+            fontSize: "0.875rem",
+            boxSizing: "border-box",
+            resize: "vertical",
+          }}
+        />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginTop: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleExtrairTemplate}
+            disabled={parsing}
+            style={{
+              padding: "8px 16px",
+              background: "#0f766e",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              cursor: parsing ? "wait" : "pointer",
+              fontSize: "0.9rem",
+            }}
+          >
+            {parsing ? "Extraindo..." : "Extrair e preencher"}
+          </button>
+          {parseMsg && (
+            <span style={{ fontSize: "0.875rem", color: "#166534" }}>
+              {parseMsg}
+            </span>
+          )}
+        </div>
+      </div>
+
       <form
+        ref={formRef}
         onSubmit={handleSubmit}
         style={{
           width: "100%",
@@ -273,7 +475,9 @@ export default function AdminNovaRequisicaoPage() {
           </select>
         </div>
         <div>
-          <label>Regiões de estudo (máscara para o laudo) – selecione uma ou mais</label>
+          <label>
+            Regiões de estudo (máscara para o laudo) – selecione uma ou mais
+          </label>
           <div className="paics-regioes-grid" style={{ marginTop: 8 }}>
             {regioesEstudo
               .filter((r) => r.value && r.value !== "__outra__")
