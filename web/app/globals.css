@@ -166,6 +166,7 @@ html[data-theme="dark"] .paics-main code {
 
 /* Texto em parágrafos e títulos - garantir legibilidade no dark mode */
 html[data-theme="dark"] .paics-main p,
+html[data-theme="dark"] .paics-main h2,
 html[data-theme="dark"] .paics-main h3,
 html[data-theme="dark"] .paics-main h4,
 html[data-theme="dark"] .paics-main strong,
@@ -445,6 +446,50 @@ button {
     max-width: calc(100vw - 32px) !important;
     margin: 0 8px !important;
   }
+}
+
+/* Colar template de requisição (admin) */
+.paics-template-paste {
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.paics-template-paste h2 {
+  color: var(--text);
+}
+
+.paics-template-paste .paics-template-desc {
+  color: var(--text-muted);
+}
+
+.paics-template-paste .paics-template-msg {
+  color: var(--success-text);
+}
+
+html[data-theme="dark"] .paics-main .paics-template-paste {
+  background: var(--bg-muted) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-template-paste h2 {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-template-paste .paics-template-desc {
+  color: var(--text-muted) !important;
+}
+
+html[data-theme="dark"] .paics-main .paics-template-paste .paics-template-msg {
+  color: var(--success-text) !important;
+}
+
+.paics-template-paste textarea {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border-input);
 }
 
 /* Regiões de estudo – grid de checkboxes */

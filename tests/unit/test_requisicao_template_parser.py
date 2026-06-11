@@ -31,8 +31,8 @@ def test_parse_template_completo():
     assert "metástase pulmonar" in r["suspeita_clinica"]
     assert r["data_exame"] == "2026-06-10"
     assert r["plantao"] == "Não"
-    assert "Plantão: Não" in r["historico_clinico"]
-    assert "Sedação: Não" in r["historico_clinico"]
+    assert r["sedacao"] == "Não"
+    assert r["historico_clinico"] == ""
     assert len(r["campos_encontrados"]) >= 8
 
 

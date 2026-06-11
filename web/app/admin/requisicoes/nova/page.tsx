@@ -58,6 +58,7 @@ export default function AdminNovaRequisicaoPage() {
   const [especie, setEspecie] = useState("");
   const [raca, setRaca] = useState("");
   const [plantao, setPlantao] = useState("Não");
+  const [sedacao, setSedacao] = useState("Não");
   const [templateTexto, setTemplateTexto] = useState("");
   const [parseMsg, setParseMsg] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -113,7 +114,9 @@ export default function AdminNovaRequisicaoPage() {
       setFormField(form, "tutor", dados.tutor);
       setFormField(form, "idade", dados.idade);
       setFormField(form, "suspeita_clinica", dados.suspeita_clinica);
-      setFormField(form, "historico_clinico", dados.historico_clinico);
+      if (dados.historico_clinico) {
+        setFormField(form, "historico_clinico", dados.historico_clinico);
+      }
       if (dados.data_exame) {
         setFormField(form, "data_exame", dados.data_exame);
       }
@@ -121,6 +124,7 @@ export default function AdminNovaRequisicaoPage() {
       if (dados.especie) setEspecie(dados.especie);
       if (dados.raca) setRaca(dados.raca);
       if (dados.plantao) setPlantao(dados.plantao);
+      if (dados.sedacao) setSedacao(dados.sedacao);
       setRegioesEstudoSelecionadas(dados.regioes_estudo || []);
       setRegiaoEstudoOutra(dados.regiao_estudo_outra || "");
 
@@ -179,6 +183,7 @@ export default function AdminNovaRequisicaoPage() {
     ].join(", ");
     fd.set("regiao_estudo", regiaoFinal);
     fd.set("plantao", plantao);
+    fd.set("sedacao", sedacao);
     if (!fd.get("paciente") || !fd.get("tutor")) {
       setError("Paciente e tutor são obrigatórios");
       return;
@@ -199,6 +204,7 @@ export default function AdminNovaRequisicaoPage() {
       setRaca("");
       setEspecie("");
       setPlantao("Não");
+      setSedacao("Não");
       setRegioesEstudoSelecionadas([]);
       setRegiaoEstudoOutra("");
       setTemplateTexto("");
@@ -254,20 +260,21 @@ export default function AdminNovaRequisicaoPage() {
       )}
 
       <div
+        className="paics-template-paste"
         style={{
           width: "100%",
           maxWidth: 900,
           margin: "0 auto 20px",
           padding: 16,
-          background: "#f8fafc",
-          border: "1px solid #e2e8f0",
-          borderRadius: 8,
         }}
       >
         <h2 style={{ fontSize: "1rem", margin: "0 0 8px" }}>
           Colar template da clínica
         </h2>
-        <p style={{ fontSize: "0.875rem", color: "#64748b", margin: "0 0 10px" }}>
+        <p
+          className="paics-template-desc"
+          style={{ fontSize: "0.875rem", margin: "0 0 10px" }}
+        >
           Cole abaixo a mensagem que a clínica envia (WhatsApp, e-mail etc.) e
           clique em extrair para preencher o formulário automaticamente.
         </p>
@@ -280,7 +287,6 @@ export default function AdminNovaRequisicaoPage() {
             width: "100%",
             padding: 10,
             borderRadius: 6,
-            border: "1px solid #d1d5db",
             fontFamily: "inherit",
             fontSize: "0.875rem",
             boxSizing: "border-box",
@@ -313,7 +319,7 @@ export default function AdminNovaRequisicaoPage() {
             {parsing ? "Extraindo..." : "Extrair e preencher"}
           </button>
           {parseMsg && (
-            <span style={{ fontSize: "0.875rem", color: "#166534" }}>
+            <span className="paics-template-msg" style={{ fontSize: "0.875rem" }}>
               {parseMsg}
             </span>
           )}
@@ -521,6 +527,40 @@ export default function AdminNovaRequisicaoPage() {
               border: "1px solid #d1d5db",
             }}
           />
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 140px" }}>
+            <label>Plantão</label>
+            <select
+              value={plantao}
+              onChange={(e) => setPlantao(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+              }}
+            >
+              <option value="Não">Não</option>
+              <option value="Sim">Sim</option>
+            </select>
+          </div>
+          <div style={{ flex: "1 1 140px" }}>
+            <label>Sedação</label>
+            <select
+              value={sedacao}
+              onChange={(e) => setSedacao(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+              }}
+            >
+              <option value="Não">Não</option>
+              <option value="Sim">Sim</option>
+            </select>
+          </div>
         </div>
         <div>
           <label>Histórico clínico</label>

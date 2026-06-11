@@ -39,6 +39,13 @@ _FIELD_PATTERNS: List[Tuple[str, re.Pattern]] = [
         re.compile(r"^regi[aã]o\s*(?:de\s+estudo)?\s*:\s*(.+)$", re.I),
     ),
     ("suspeita_clinica", re.compile(r"^suspeita\s*(?:cl[ií]nica)?\s*:\s*(.+)$", re.I)),
+    (
+        "historico_clinico",
+        re.compile(
+            r"^(?:hist[oó]rico\s*(?:cl[ií]nico)?|observa[cç][oõ]es?\s*(?:cl[ií]nicas?)?)\s*:\s*(.+)$",
+            re.I,
+        ),
+    ),
     ("plantao", re.compile(r"^plant[aã]o\s*:\s*(.+)$", re.I)),
     ("sedacao", re.compile(r"^seda[cç][aã]o\s*:\s*(.+)$", re.I)),
 ]
@@ -123,15 +130,6 @@ def _resolve_regioes(regiao_text: str) -> Tuple[List[str], str]:
     return matched, ", ".join(unmatched)
 
 
-def _build_historico(plantao: str, sedacao: str) -> str:
-    parts: List[str] = []
-    if plantao:
-        parts.append(f"Plantão: {_normalize_sim_nao(plantao)}")
-    if sedacao:
-        parts.append(f"Sedação: {_normalize_sim_nao(sedacao)}")
-    return "\n".join(parts)
-
-
 def parse_requisicao_template(texto: str) -> Dict[str, Any]:
     """
     Extrai campos do template de requisição colado pela administradora.
@@ -171,8 +169,9 @@ def parse_requisicao_template(texto: str) -> Dict[str, Any]:
         "regioes_estudo": regioes,
         "regiao_estudo_outra": regiao_outra,
         "suspeita_clinica": raw.get("suspeita_clinica", ""),
+        "historico_clinico": raw.get("historico_clinico", ""),
         "data_exame": data_iso or "",
         "plantao": plantao,
-        "historico_clinico": _build_historico(raw.get("plantao", ""), raw.get("sedacao", "")),
+        "sedacao": sedacao,
         "campos_encontrados": campos_encontrados,
     }

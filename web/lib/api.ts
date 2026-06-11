@@ -375,6 +375,7 @@ export type RequisicaoTemplateParsed = {
   suspeita_clinica: string;
   data_exame: string;
   plantao: string;
+  sedacao: string;
   historico_clinico: string;
   campos_encontrados: string[];
 };

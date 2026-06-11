@@ -302,7 +302,8 @@ class Requisicao(BaseModel):
                tipo_exame: str = "raio-x", observacoes: str = "",
                especie: str = "", idade: str = "", raca: str = "", sexo: str = "",
                medico_veterinario_solicitante: str = "", regiao_estudo: str = "",
-               suspeita_clinica: str = "", plantao: str = "", historico_clinico: str = "",
+               suspeita_clinica: str = "", plantao: str = "", sedacao: str = "",
+               historico_clinico: str = "",
                data_exame: Optional[datetime] = None, status: str = "pendente",
                clinica_id: Optional[str] = None, veterinario_id: Optional[str] = None) -> str:
         """Cria uma nova requisição"""
@@ -322,6 +323,7 @@ class Requisicao(BaseModel):
             "regiao_estudo": regiao_estudo,
             "suspeita_clinica": suspeita_clinica,
             "plantao": plantao,
+            "sedacao": sedacao,
             "historico_clinico": historico_clinico,
             "data_exame": data_exame or now(),
             "status": status,
