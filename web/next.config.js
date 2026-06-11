@@ -1,11 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Em DEV, proxy para a FastAPI local. Em PROD (Railway), use NEXT_PUBLIC_API_URL no browser.
+  // Monolith (Docker/Railway): Next.js proxy /api → FastAPI em 127.0.0.1:8000.
+  // Serviços separados: DISABLE_API_REWRITE=1 e NEXT_PUBLIC_API_URL na build apontando para a API.
   async rewrites() {
-    if (process.env.NODE_ENV === "production") return [];
+    if (process.env.DISABLE_API_REWRITE === "1") return [];
+    const apiOrigin = process.env.API_INTERNAL_URL || "http://127.0.0.1:8000";
     return [
-      { source: "/api/:path*", destination: "http://127.0.0.1:8000/api/:path*" },
+      { source: "/api/:path*", destination: `${apiOrigin}/api/:path*` },
     ];
   },
 };

@@ -1,11 +1,15 @@
 /**
  * Cliente API para o backend PAICS (FastAPI)
- * No browser: usa origem atual se env não definido (produção).
- * No server (SSR): usa localhost:8000.
+ *
+ * Browser (monolith Docker/Railway): use URLs relativas (/api/...) — Next rewrites para FastAPI.
+ * Browser (API externa): defina NEXT_PUBLIC_API_URL na build do Next.
+ * SSR: API_INTERNAL_URL ou localhost:8000.
  */
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ??
-  (typeof window !== "undefined" ? "" : "http://localhost:8000");
+  (typeof window !== "undefined"
+    ? ""
+    : process.env.API_INTERNAL_URL || "http://127.0.0.1:8000");
 
 export interface User {
   id: string;
@@ -60,7 +64,16 @@ async function responseErrorMessage(res: Response): Promise<string> {
   if (detail) return detail;
   try {
     const text = (await res.text())?.trim();
-    if (text) return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+    if (text) {
+      if (text.startsWith("<!DOCTYPE") || text.startsWith("<html") || text.startsWith("<!doctype")) {
+        return (
+          "A API não respondeu em JSON (retornou página HTML). " +
+          "No Railway com Docker monolith, não defina NEXT_PUBLIC_API_URL ou use a mesma origem; " +
+          "confirme que FastAPI está na porta 8000 no mesmo container."
+        );
+      }
+      return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+    }
   } catch {
     // ignore
   }
@@ -109,10 +122,12 @@ async function fetchWithAuth(
       body: JSON.stringify({ refresh_token: tokens.refresh }),
     });
     if (refreshRes.ok) {
-      const data = await refreshRes.json();
-      await setTokens(data.access_token, data.refresh_token);
-      (headers as Record<string, string>)["Authorization"] = `Bearer ${data.access_token}`;
-      res = await fetch(`${API_BASE}${url}`, { ...options, headers });
+      const data = await safeJson<{ access_token: string; refresh_token: string }>(refreshRes);
+      if (data?.access_token && data?.refresh_token) {
+        await setTokens(data.access_token, data.refresh_token);
+        (headers as Record<string, string>)["Authorization"] = `Bearer ${data.access_token}`;
+        res = await fetch(`${API_BASE}${url}`, { ...options, headers });
+      }
     }
   }
   return res;

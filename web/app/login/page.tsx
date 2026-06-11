@@ -24,7 +24,7 @@ export default function LoginPage() {
         setError(res.message || "Erro ao fazer login");
       }
     } catch (err) {
-      setError("Erro de conexão. Verifique se a API está rodando em http://localhost:8000");
+      setError("Erro de conexão com a API. Verifique se o serviço está no ar.");
     } finally {
       setLoading(false);
     }
