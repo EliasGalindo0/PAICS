@@ -82,6 +82,31 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept", "Origin"],
 )
 
+_SCANNER_PATHS = frozenset({
+    "/api/.env",
+    "/api/env",
+    "/api/graphql",
+    "/api/keys.json",
+    "/api/.aws/credentials",
+    "/api/v1/config",
+    "/api/v2/config",
+    "/api/config",
+    "/api/settings",
+    "/api/v1/settings",
+    "/api/v2/settings",
+    "/api/account",
+    "/api/openapi.json",
+    "/api/v1/env",
+})
+
+
+@app.middleware("http")
+async def drop_scanner_noise(request, call_next):
+    """Evita gastar CPU/log em probes de scanners."""
+    if request.url.path in _SCANNER_PATHS:
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    return await call_next(request)
+
 
 # --- Schemas ---
 class LoginRequest(BaseModel):

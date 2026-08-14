@@ -43,11 +43,19 @@ def _safe_print(*args, **kwargs) -> None:
 
 
 def _pil_to_data_url(img: Image.Image) -> str:
-    """Converte PIL Image RGB para data URL PNG (OpenAI vision)."""
+    """Converte PIL Image RGB para data URL JPEG (bem menor que PNG na OpenAI)."""
+    w, h = img.size
+    max_side = 1536
+    longest = max(w, h) or 1
+    if longest > max_side:
+        scale = max_side / longest
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+    if img.mode != "RGB":
+        img = img.convert("RGB")
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, format="JPEG", quality=85, optimize=True)
     b64 = base64.standard_b64encode(buf.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{b64}"
+    return f"data:image/jpeg;base64,{b64}"
 
 
 def load_dicom_image(dicom_path: str) -> Optional[Image.Image]:
@@ -63,7 +71,7 @@ def load_dicom_image(dicom_path: str) -> Optional[Image.Image]:
         try:
             data = apply_voi_lut(arr, dcm)
         except Exception:
-            data = np.asarray(arr, dtype=np.float64)
+            data = np.asarray(arr, dtype=np.float32)
 
         data = data - data.min()
         data = data / (data.max() or 1)
@@ -93,7 +101,7 @@ def _load_image_from_bytes(data: bytes, filename_hint: str = "imagem") -> Option
                 try:
                     data_arr = apply_voi_lut(arr, dcm)
                 except Exception:
-                    data_arr = np.asarray(arr, dtype=np.float64)
+                    data_arr = np.asarray(arr, dtype=np.float32)
                 data_arr = data_arr - data_arr.min()
                 data_arr = data_arr / (data_arr.max() or 1)
                 data_arr = (data_arr * 255).astype("uint8")
@@ -180,7 +188,7 @@ class VetAIAnalyzer:
         for img in images:
             content.append({
                 "type": "image_url",
-                "image_url": {"url": _pil_to_data_url(img), "detail": "high"},
+                "image_url": {"url": _pil_to_data_url(img), "detail": "auto"},
             })
         return content
 

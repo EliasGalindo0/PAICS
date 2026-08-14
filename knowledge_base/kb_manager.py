@@ -6,7 +6,6 @@ import os
 from typing import List, Dict, Optional
 from database.connection import get_db
 from database.models import KnowledgeBase
-from vector_db.vector_store import VectorStore
 
 
 class KnowledgeBaseManager:
@@ -17,7 +16,14 @@ class KnowledgeBaseManager:
         os.makedirs(upload_dir, exist_ok=True)
         self.db = get_db()
         self.kb_model = KnowledgeBase(self.db.knowledge_base)
-        self.vector_store = VectorStore()
+        self._vector_store = None
+
+    @property
+    def vector_store(self):
+        if self._vector_store is None:
+            from vector_db.vector_store import get_vector_store
+            self._vector_store = get_vector_store()
+        return self._vector_store
 
     def add_pdf(self, file_path: str, titulo: str, tags: List[str] = None) -> str:
         """

@@ -126,6 +126,8 @@ def init_db():
     db.requisicoes.create_index("created_at")
     db.requisicoes.create_index("clinica_id")
     db.requisicoes.create_index("veterinario_id")
+    db.requisicoes.create_index([("status", 1), ("created_at", -1)])
+    db.requisicoes.create_index([("user_id", 1), ("created_at", -1)])
 
     # Índices para clínicas e veterinários
     db.clinicas.create_index("ativa")

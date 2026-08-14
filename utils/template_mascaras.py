@@ -114,6 +114,9 @@ def get_template_path_for_regiao(regiao_estudo: str) -> Optional[str]:
     return None
 
 
+_template_text_cache: dict = {}
+
+
 def get_template_content(regiao_estudo: str) -> Optional[str]:
     """
     Extrai o texto do template PDF da região de estudo.
@@ -125,6 +128,8 @@ def get_template_content(regiao_estudo: str) -> Optional[str]:
     path = get_template_path_for_regiao(regiao_estudo)
     if not path:
         return None
+    if path in _template_text_cache:
+        return _template_text_cache[path]
 
     try:
         import fitz  # PyMuPDF
@@ -135,7 +140,9 @@ def get_template_content(regiao_estudo: str) -> Optional[str]:
             if t and t.strip():
                 text_parts.append(t.strip())
         doc.close()
-        return "\n\n".join(text_parts) if text_parts else None
+        result = "\n\n".join(text_parts) if text_parts else None
+        _template_text_cache[path] = result
+        return result
     except Exception:
         return None
 

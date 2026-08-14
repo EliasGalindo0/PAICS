@@ -13,8 +13,9 @@ if [ -z "$SKIP_SEED" ] || [ "$SKIP_SEED" = "0" ] || [ "$SKIP_SEED" = "false" ]; 
 fi
 
 # Iniciar FastAPI em background (porta 8000)
+# 1 worker: o container já roda FastAPI + Next.js; mais workers duplicam RAM (Chroma/PIL).
 echo ">>> Iniciando API FastAPI na porta 8000..."
-uvicorn api.main:app --host 0.0.0.0 --port 8000 &
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 5 &
 API_PID=$!
 
 # Aguardar API ficar pronta
@@ -23,4 +24,5 @@ sleep 3
 # Iniciar Next.js na porta exposta (Railway usa PORT)
 echo ">>> Iniciando frontend Next.js na porta ${PORT:-3000}..."
 cd /app/web
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}"
 exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p "${PORT:-3000}"

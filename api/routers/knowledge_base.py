@@ -6,10 +6,18 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 from api.dependencies import require_admin
-from ai.learning_system import LearningSystem
-from knowledge_base.kb_manager import KnowledgeBaseManager
 
 router = APIRouter(prefix="/api", tags=["knowledge_base"])
+
+
+def _kb_manager():
+    from knowledge_base.kb_manager import KnowledgeBaseManager
+    return KnowledgeBaseManager()
+
+
+def _learning_system():
+    from ai.learning_system import LearningSystem
+    return LearningSystem()
 
 
 class PromptCreate(BaseModel):
@@ -27,7 +35,7 @@ class OrientacaoCreate(BaseModel):
 @router.get("/knowledge-base")
 def listar_kb(tipo: Optional[str] = None, user: dict = Depends(require_admin)):
     """Lista itens da knowledge base."""
-    kb_manager = KnowledgeBaseManager()
+    kb_manager = _kb_manager()
     items = kb_manager.get_all(tipo=tipo)
     # Serializar ObjectId e datas
     return [
@@ -48,7 +56,7 @@ def buscar_kb(q: str, n: int = 5, user: dict = Depends(require_admin)):
     """Busca na knowledge base por similaridade."""
     if not q.strip():
         return []
-    kb_manager = KnowledgeBaseManager()
+    kb_manager = _kb_manager()
     results = kb_manager.search(q.strip(), n_results=n)
     return [
         {
@@ -70,7 +78,7 @@ def buscar_kb(q: str, n: int = 5, user: dict = Depends(require_admin)):
 def stats_aprendizado(user: dict = Depends(require_admin)):
     """Estatísticas do sistema de aprendizado contínuo."""
     try:
-        ls = LearningSystem()
+        ls = _learning_system()
         return ls.get_statistics()
     except Exception as e:
         return {
@@ -89,7 +97,7 @@ def stats_aprendizado(user: dict = Depends(require_admin)):
 @router.get("/knowledge-base/{kb_id}")
 def obter_kb(kb_id: str, user: dict = Depends(require_admin)):
     """Obtém um item da knowledge base."""
-    kb_manager = KnowledgeBaseManager()
+    kb_manager = _kb_manager()
     item = kb_manager.get_by_id(kb_id)
     if not item:
         raise HTTPException(404, "Item não encontrado")
@@ -123,7 +131,7 @@ async def adicionar_pdf(
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content)
             tmp_path = tmp.name
-        kb_manager = KnowledgeBaseManager()
+        kb_manager = _kb_manager()
         kb_id = kb_manager.add_pdf(tmp_path, titulo.strip(), tags_list)
         return {"success": True, "id": kb_id, "mensagem": "PDF adicionado com sucesso"}
     except Exception as e:
@@ -140,7 +148,7 @@ def adicionar_prompt(body: PromptCreate, user: dict = Depends(require_admin)):
         raise HTTPException(400, "Título é obrigatório")
     if not body.conteudo.strip():
         raise HTTPException(400, "Conteúdo é obrigatório")
-    kb_manager = KnowledgeBaseManager()
+    kb_manager = _kb_manager()
     kb_id = kb_manager.add_prompt(body.titulo.strip(), body.conteudo.strip(), body.tags or [])
     return {"success": True, "id": kb_id, "mensagem": "Prompt adicionado com sucesso"}
 
@@ -152,7 +160,7 @@ def adicionar_orientacao(body: OrientacaoCreate, user: dict = Depends(require_ad
         raise HTTPException(400, "Título é obrigatório")
     if not body.conteudo.strip():
         raise HTTPException(400, "Conteúdo é obrigatório")
-    kb_manager = KnowledgeBaseManager()
+    kb_manager = _kb_manager()
     kb_id = kb_manager.add_orientacao(body.titulo.strip(), body.conteudo.strip(), body.tags or [])
     return {"success": True, "id": kb_id, "mensagem": "Orientação adicionada com sucesso"}
 
@@ -160,7 +168,7 @@ def adicionar_orientacao(body: OrientacaoCreate, user: dict = Depends(require_ad
 @router.delete("/knowledge-base/{kb_id}")
 def excluir_kb(kb_id: str, user: dict = Depends(require_admin)):
     """Exclui um item da knowledge base."""
-    kb_manager = KnowledgeBaseManager()
+    kb_manager = _kb_manager()
     if not kb_manager.delete(kb_id):
         raise HTTPException(404, "Item não encontrado")
     return {"success": True, "mensagem": "Item excluído"}

@@ -6,9 +6,7 @@ from typing import List, Optional, Dict, Tuple
 from PIL import Image
 from database.connection import get_db
 from database.models import Laudo, Requisicao, LearningHistory, CorrecaoLaudo
-from vector_db.vector_store import VectorStore
-from ai.analyzer import VetAIAnalyzer
-from ai.local_model import get_local_model, LocalModelInterface
+from ai.local_model import LocalModelInterface
 
 
 class LearningSystem:
@@ -20,14 +18,35 @@ class LearningSystem:
         self.requisicao_model = Requisicao(self.db.requisicoes)
         self.learning_model = LearningHistory(self.db.learning_history)
         self.correcao_model = CorrecaoLaudo(self.db.correcoes_laudo)
-        self.vector_store = VectorStore()
-        self.external_analyzer = VetAIAnalyzer()
-        self.local_model: Optional[LocalModelInterface] = get_local_model()
-
-        # Configurações
+        self._vector_store = None
+        self._external_analyzer = None
+        self._local_model: Optional[LocalModelInterface] = None
+        self._local_model_loaded = False
         self.similarity_threshold = float(os.getenv("SIMILARITY_THRESHOLD", "0.75"))
         self.min_rating_for_local = int(os.getenv("MIN_RATING_FOR_LOCAL", "3"))
         self.use_external_fallback = os.getenv("USE_EXTERNAL_FALLBACK", "true").lower() == "true"
+
+    @property
+    def vector_store(self):
+        if self._vector_store is None:
+            from vector_db.vector_store import get_vector_store
+            self._vector_store = get_vector_store()
+        return self._vector_store
+
+    @property
+    def external_analyzer(self):
+        if self._external_analyzer is None:
+            from ai.analyzer import VetAIAnalyzer
+            self._external_analyzer = VetAIAnalyzer()
+        return self._external_analyzer
+
+    @property
+    def local_model(self) -> Optional[LocalModelInterface]:
+        if not self._local_model_loaded:
+            from ai.local_model import get_local_model
+            self._local_model = get_local_model()
+            self._local_model_loaded = True
+        return self._local_model
 
     def generate_laudo(
         self,

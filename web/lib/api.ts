@@ -100,6 +100,34 @@ export async function clearTokens(): Promise<void> {
   localStorage.removeItem("paics_refresh_token");
 }
 
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefreshTokens(refreshToken: string): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!refreshRes.ok) return false;
+      const data = await safeJson<{
+        access_token: string;
+        refresh_token: string;
+      }>(refreshRes);
+      if (data?.access_token && data?.refresh_token) {
+        await setTokens(data.access_token, data.refresh_token);
+        return true;
+      }
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 async function fetchWithAuth(
   url: string,
   options: RequestInit = {}
@@ -116,16 +144,12 @@ async function fetchWithAuth(
   let res = await fetch(`${API_BASE}${url}`, { ...options, headers });
 
   if (res.status === 401 && tokens) {
-    const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: tokens.refresh }),
-    });
-    if (refreshRes.ok) {
-      const data = await safeJson<{ access_token: string; refresh_token: string }>(refreshRes);
-      if (data?.access_token && data?.refresh_token) {
-        await setTokens(data.access_token, data.refresh_token);
-        (headers as Record<string, string>)["Authorization"] = `Bearer ${data.access_token}`;
+    const ok = await tryRefreshTokens(tokens.refresh);
+    if (ok) {
+      const next = await getTokens();
+      if (next) {
+        (headers as Record<string, string>)["Authorization"] =
+          `Bearer ${next.access}`;
         res = await fetch(`${API_BASE}${url}`, { ...options, headers });
       }
     }
@@ -219,11 +243,21 @@ export async function excluirExame(id: string): Promise<void> {
   }
 }
 
+const imageBlobCache = new Map<string, Promise<string>>();
+
 export async function loadImageAsBlobUrl(exameId: string, ref: string): Promise<string> {
-  const res = await fetchWithAuth(`/api/exames/${exameId}/imagens/${ref}`);
-  if (!res.ok) throw new Error("Erro ao carregar imagem");
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  const key = `${exameId}:${ref}`;
+  const cached = imageBlobCache.get(key);
+  if (cached) return cached;
+  const pending = (async () => {
+    const res = await fetchWithAuth(`/api/exames/${exameId}/imagens/${ref}`);
+    if (!res.ok) throw new Error("Erro ao carregar imagem");
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  })();
+  imageBlobCache.set(key, pending);
+  pending.catch(() => imageBlobCache.delete(key));
+  return pending;
 }
 
 export async function addObservacao(exameId: string, texto: string): Promise<void> {

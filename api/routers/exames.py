@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 import io
+import os
 import base64
 from database.connection import get_db
 from database.models import Requisicao, Laudo, User, Clinica, Veterinario
@@ -146,13 +147,20 @@ def listar_exames(
         except Exception:
             pass
 
+    fetch_limit = min(max(int(limit or 100), 1), 200)
+    if search:
+        fetch_limit = min(500, max(fetch_limit, 200))
+
     if user["role"] == "admin":
-        exames = req_model.find_all(status=status, start_date=start_dt, end_date=end_dt)
+        exames = req_model.find_all(
+            status=status, start_date=start_dt, end_date=end_dt, limit=fetch_limit,
+        )
     else:
         exames = req_model.find_by_user(
             user["id"], status=status,
             start_date=start_dt if start_date else None,
             end_date=end_dt if end_date else None,
+            limit=fetch_limit,
         )
         exames = [e for e in exames if e.get("status") != "rascunho"]
 
@@ -280,18 +288,50 @@ def excluir_exame(exame_id: str, user: dict = Depends(require_admin)):
     return {"success": True}
 
 
+_RASTER_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+}
+_DISPLAY_MAX_SIDE = 1600
+_IMAGE_CACHE_HEADERS = {
+    "Cache-Control": "private, max-age=86400, immutable",
+}
+
+
+def _jpeg_preview(img, max_side: int = _DISPLAY_MAX_SIDE) -> bytes:
+    """Reduz e comprime para JPEG — evita PNG gigante em cada visualização."""
+    w, h = img.size
+    longest = max(w, h)
+    if longest > max_side:
+        scale = max_side / longest
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80, optimize=True)
+    return buf.getvalue()
+
+
 @router.get("/{exame_id}/imagens/{ref}")
 def obter_imagem(exame_id: str, ref: str, user: dict = Depends(get_current_user)):
-    """Retorna imagem como PNG. Ref = ID GridFS da imagem."""
+    """Retorna imagem para exibição. JPEG/PNG originais sem reprocessar; DICOM vira JPEG."""
+    from bson import ObjectId
+
     db = get_db()
-    req_model = Requisicao(db.requisicoes)
-    req = req_model.find_by_id(exame_id)
+    try:
+        oid = ObjectId(exame_id)
+    except Exception:
+        raise HTTPException(404, "Exame não encontrado")
+    req = db.requisicoes.find_one({"_id": oid}, {"imagens": 1, "user_id": 1})
     if not req:
         raise HTTPException(404, "Exame não encontrado")
     if user["role"] != "admin" and req.get("user_id") != user["id"]:
         raise HTTPException(403, "Sem permissão")
     refs = [str(r) for r in (req.get("imagens") or [])]
-    # Aceitar ref exato ou como sufixo (para IDs longos)
     img_ref = None
     for r in refs:
         if r == ref or r.endswith(ref) or ref in r:
@@ -301,30 +341,36 @@ def obter_imagem(exame_id: str, ref: str, user: dict = Depends(get_current_user)
         raise HTTPException(404, "Imagem não encontrada nesta requisição")
 
     result = get_image_bytes_and_filename(img_ref)
-    if result:
-        data, fn = result
-        try:
-            from ai.analyzer import _load_image_from_bytes
-            img = _load_image_from_bytes(data, fn)
-            if img:
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                buf.seek(0)
-                return Response(content=buf.read(), media_type="image/png")
-        except Exception:
-            pass
-        return Response(content=data, media_type="application/octet-stream")
-    raw = get_image(img_ref)
-    if not raw:
+    if not result:
         raise HTTPException(404, "Imagem não encontrada")
+    data, fn = result
+    ext = os.path.splitext(fn or "")[1].lower()
+
+    if ext in _RASTER_TYPES:
+        return Response(
+            content=data,
+            media_type=_RASTER_TYPES[ext],
+            headers=_IMAGE_CACHE_HEADERS,
+        )
+
     try:
-        from PIL import Image
-        img = Image.open(io.BytesIO(raw))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return Response(content=buf.getvalue(), media_type="image/png")
+        from ai.analyzer import _load_image_from_bytes
+        img = _load_image_from_bytes(data, fn)
+        if img:
+            jpeg = _jpeg_preview(img)
+            img.close()
+            return Response(
+                content=jpeg,
+                media_type="image/jpeg",
+                headers=_IMAGE_CACHE_HEADERS,
+            )
     except Exception:
-        return Response(content=raw, media_type="application/octet-stream")
+        pass
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers=_IMAGE_CACHE_HEADERS,
+    )
 
 
 @router.post("/{exame_id}/observacao")

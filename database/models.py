@@ -361,6 +361,7 @@ class Requisicao(BaseModel):
     def find_by_user(
         self, user_id: str, status: Optional[str] = None,
         start_date: Optional[datetime] = None, end_date: Optional[datetime] = None,
+        limit: int = 200,
     ) -> List[Dict]:
         """Busca requisições de um usuário, opcionalmente filtradas por data"""
         query = {"user_id": user_id}
@@ -383,11 +384,29 @@ class Requisicao(BaseModel):
                     query["created_at"] = date_filter
             except (TypeError, ValueError, AttributeError):
                 pass
-        docs = self.collection.find(query).sort("created_at", -1)
+        docs = (
+            self.collection.find(
+                query,
+                {
+                    "historico_clinico": 0,
+                    "observacoes": 0,
+                    "historico_edicoes": 0,
+                    "observacoes_usuario": 0,
+                },
+            )
+            .sort("created_at", -1)
+            .limit(max(1, min(int(limit), 500)))
+        )
         return [self.to_dict(doc) for doc in docs]
 
-    def find_all(self, status: Optional[str] = None, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[Dict]:
-        """Lista todas as requisições, opcionalmente filtradas por status e data"""
+    def find_all(
+        self,
+        status: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        limit: int = 200,
+    ) -> List[Dict]:
+        """Lista requisições, opcionalmente filtradas por status e data."""
         query = {}
         if status:
             query["status"] = status
@@ -410,7 +429,19 @@ class Requisicao(BaseModel):
             except (TypeError, ValueError, AttributeError):
                 pass
 
-        docs = self.collection.find(query).sort("created_at", -1)
+        docs = (
+            self.collection.find(
+                query,
+                {
+                    "historico_clinico": 0,
+                    "observacoes": 0,
+                    "historico_edicoes": 0,
+                    "observacoes_usuario": 0,
+                },
+            )
+            .sort("created_at", -1)
+            .limit(max(1, min(int(limit), 500)))
+        )
         return [self.to_dict(doc) for doc in docs]
 
     def update_status(self, req_id: str, status: str) -> bool:

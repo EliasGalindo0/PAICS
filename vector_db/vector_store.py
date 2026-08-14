@@ -84,3 +84,14 @@ class VectorStore:
                     "document": results["documents"][0][i] if results.get("documents") else "",
                 })
         return items
+
+
+_vector_store_singleton: Optional[VectorStore] = None
+
+
+def get_vector_store() -> VectorStore:
+    """Reutiliza um único cliente ChromaDB no processo (evita RAM duplicada)."""
+    global _vector_store_singleton
+    if _vector_store_singleton is None:
+        _vector_store_singleton = VectorStore()
+    return _vector_store_singleton
