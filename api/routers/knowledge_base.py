@@ -9,6 +9,9 @@ from api.dependencies import require_admin
 
 router = APIRouter(prefix="/api", tags=["knowledge_base"])
 
+_MAX_PDF_MB = 95
+_MAX_PDF_BYTES = _MAX_PDF_MB * 1024 * 1024
+
 
 def _kb_manager():
     from knowledge_base.kb_manager import KnowledgeBaseManager
@@ -127,15 +130,36 @@ async def adicionar_pdf(
     tags_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     tmp_path = None
     try:
-        content = await file.read()
+        total = 0
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(content)
             tmp_path = tmp.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_PDF_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            f"PDF maior que {_MAX_PDF_MB} MB. "
+                            "Divida o livro em partes menores ou use um PDF com texto (não só imagens)."
+                        ),
+                    )
+                tmp.write(chunk)
+        if total == 0:
+            raise HTTPException(400, "Arquivo vazio")
         kb_manager = _kb_manager()
-        kb_id = kb_manager.add_pdf(tmp_path, titulo.strip(), tags_list)
+        kb_id = kb_manager.add_pdf(
+            tmp_path, titulo.strip(), tags_list, arquivo_nome=file.filename
+        )
         return {"success": True, "id": kb_id, "mensagem": "PDF adicionado com sucesso"}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(status_code=500, detail=f"Erro ao adicionar PDF: {e}") from e
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)

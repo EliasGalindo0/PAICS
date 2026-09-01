@@ -66,10 +66,17 @@ async function responseErrorMessage(res: Response): Promise<string> {
     const text = (await res.text())?.trim();
     if (text) {
       if (text.startsWith("<!DOCTYPE") || text.startsWith("<html") || text.startsWith("<!doctype")) {
+        if (res.status === 413 || res.status === 502 || res.status === 504) {
+          return (
+            "O envio do arquivo falhou (limite de tamanho ou tempo esgotado). " +
+            "PDFs de livros devem ter no máximo 95 MB e texto selecionável (não só páginas escaneadas). " +
+            "Se o arquivo for maior, divida o livro em partes."
+          );
+        }
         return (
           "A API não respondeu em JSON (retornou página HTML). " +
-          "No Railway com Docker monolith, não defina NEXT_PUBLIC_API_URL ou use a mesma origem; " +
-          "confirme que FastAPI está na porta 8000 no mesmo container."
+          "Se estava enviando um PDF grande, o proxy pode ter recusado o arquivo. " +
+          "Tente um PDF menor (até 95 MB) com texto selecionável."
         );
       }
       return text.length > 180 ? `${text.slice(0, 180)}...` : text;
@@ -613,6 +620,12 @@ export async function listarKnowledgeBase(tipo?: string): Promise<any[]> {
 }
 
 export async function adicionarKbPdf(file: File, titulo: string, tags?: string[]): Promise<any> {
+  const maxBytes = 95 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error(
+      `Este PDF tem ${(file.size / (1024 * 1024)).toFixed(0)} MB. O limite é 95 MB — divida o livro em partes.`
+    );
+  }
   const formData = new FormData();
   formData.append("file", file);
   formData.append("titulo", titulo);
@@ -621,7 +634,10 @@ export async function adicionarKbPdf(file: File, titulo: string, tags?: string[]
     method: "POST",
     body: formData,
   });
-  return res.json();
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
+  const data = await safeJson(res);
+  if (!data) throw new Error(await responseErrorMessage(res));
+  return data;
 }
 
 export async function adicionarKbPrompt(titulo: string, conteudo: string, tags?: string[]): Promise<any> {
