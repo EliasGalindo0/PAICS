@@ -65,6 +65,30 @@ async def unhandled_exception_handler(request, exc: Exception):
         pass
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
+
+def _raise_multipart_limit() -> None:
+    """Starlette 0.40+ limita cada parte multipart a 1 MB; PDFs da KB passam disso."""
+    try:
+        from starlette.requests import Request as StarletteRequest
+
+        orig = StarletteRequest.form
+        limit = 100 * 1024 * 1024
+
+        async def form(self, *args, **kwargs):
+            kwargs.setdefault("max_part_size", limit)
+            try:
+                return await orig(self, *args, **kwargs)
+            except TypeError:
+                kwargs.pop("max_part_size", None)
+                return await orig(self, *args, **kwargs)
+
+        StarletteRequest.form = form  # type: ignore[method-assign]
+    except Exception:
+        pass
+
+
+_raise_multipart_limit()
+
 # CORS: em produção, defina CORS_ORIGINS no .env (ex.: https://paics.seudominio.com,https://vm-ip:3000)
 _cors_origins = os.getenv("CORS_ORIGINS", "").strip()
 CORS_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()] or [

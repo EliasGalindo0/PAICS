@@ -72,7 +72,7 @@ export default function AdminKnowledgeBasePage() {
           throw new Error("Selecione um PDF e informe o título");
         }
         await adicionarKbPdf(pdfFile, titulo.trim(), tags);
-        setSuccess("PDF adicionado com sucesso!");
+        setSuccess("PDF adicionado e indexado com sucesso!");
       } else if (tipoConteudo === "prompt") {
         if (!titulo.trim() || !conteudo.trim()) throw new Error("Título e conteúdo são obrigatórios");
         await adicionarKbPrompt(titulo.trim(), conteudo.trim(), tags);
@@ -176,6 +176,14 @@ export default function AdminKnowledgeBasePage() {
             <div style={{ marginBottom: 12 }}>
               <label>Arquivo PDF *</label>
               <input type="file" accept=".pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} style={styleInput} />
+              <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: "8px 0 0" }}>
+                Até 95 MB, com texto selecionável (não só páginas escaneadas). Livros grandes podem levar alguns minutos.
+              </p>
+              {pdfFile && (
+                <p style={{ fontSize: "0.85rem", margin: "6px 0 0" }}>
+                  {pdfFile.name} ({(pdfFile.size / (1024 * 1024)).toFixed(1)} MB)
+                </p>
+              )}
             </div>
           )}
           {(tipoConteudo === "prompt" || tipoConteudo === "orientacao") && (
