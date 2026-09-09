@@ -69,14 +69,14 @@ async function responseErrorMessage(res: Response): Promise<string> {
         if (res.status === 413 || res.status === 502 || res.status === 504) {
           return (
             "O envio do arquivo falhou (limite de tamanho ou tempo esgotado). " +
-            "PDFs de livros devem ter no máximo 95 MB e texto selecionável (não só páginas escaneadas). " +
+            "PDFs de livros devem ter no máximo 600 MB e texto selecionável (não só páginas escaneadas). " +
             "Se o arquivo for maior, divida o livro em partes."
           );
         }
         return (
           "A API não respondeu em JSON (retornou página HTML). " +
           "Se estava enviando um PDF grande, o proxy pode ter recusado o arquivo. " +
-          "Tente um PDF menor (até 95 MB) com texto selecionável."
+          "Tente um PDF menor (até 600 MB) com texto selecionável."
         );
       }
       return text.length > 180 ? `${text.slice(0, 180)}...` : text;
@@ -620,10 +620,10 @@ export async function listarKnowledgeBase(tipo?: string): Promise<any[]> {
 }
 
 export async function adicionarKbPdf(file: File, titulo: string, tags?: string[]): Promise<any> {
-  const maxBytes = 95 * 1024 * 1024;
+  const maxBytes = 600 * 1024 * 1024;
   if (file.size > maxBytes) {
     throw new Error(
-      `Este PDF tem ${(file.size / (1024 * 1024)).toFixed(0)} MB. O limite é 95 MB — divida o livro em partes.`
+      `Este PDF tem ${(file.size / (1024 * 1024)).toFixed(0)} MB. O limite é 600 MB — divida o livro em partes.`
     );
   }
   const formData = new FormData();

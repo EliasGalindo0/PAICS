@@ -72,7 +72,7 @@ def _raise_multipart_limit() -> None:
         from starlette.requests import Request as StarletteRequest
 
         orig = StarletteRequest.form
-        limit = 100 * 1024 * 1024
+        limit = 600 * 1024 * 1024
 
         async def form(self, *args, **kwargs):
             kwargs.setdefault("max_part_size", limit)

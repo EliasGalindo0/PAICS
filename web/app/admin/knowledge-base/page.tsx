@@ -177,7 +177,7 @@ export default function AdminKnowledgeBasePage() {
               <label>Arquivo PDF *</label>
               <input type="file" accept=".pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} style={styleInput} />
               <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: "8px 0 0" }}>
-                Até 95 MB, com texto selecionável (não só páginas escaneadas). Livros grandes podem levar alguns minutos.
+                Até 600 MB, com texto selecionável (não só páginas escaneadas). Livros grandes podem levar vários minutos.
               </p>
               {pdfFile && (
                 <p style={{ fontSize: "0.85rem", margin: "6px 0 0" }}>
