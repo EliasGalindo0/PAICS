@@ -9,7 +9,7 @@ from api.dependencies import require_admin
 
 router = APIRouter(prefix="/api", tags=["knowledge_base"])
 
-_MAX_PDF_MB = 95
+_MAX_PDF_MB = 600
 _MAX_PDF_BYTES = _MAX_PDF_MB * 1024 * 1024
 
 
