@@ -469,8 +469,12 @@ def gerar_laudo(
             similaridade_casos=metadata.get("similaridade_casos"),
         )
         return {"success": True, "laudo_id": laudo_id}
+    except HTTPException:
+        raise
     except Exception as e:
-        laudo_model.create(requisicao_id=exame_id, texto="", texto_original="", status="pendente")
+        from utils.mongo_errors import raise_if_storage_quota
+
+        raise_if_storage_quota(e)
         raise HTTPException(500, f"Erro ao gerar laudo: {str(e)}")
 
 

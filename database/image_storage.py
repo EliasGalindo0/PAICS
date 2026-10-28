@@ -33,6 +33,18 @@ def is_gridfs_ref(ref: str) -> bool:
     return _is_valid_objectid(ref)
 
 
+def delete_image(image_id: str) -> bool:
+    """Remove arquivo do GridFS. Ignora refs inválidas ou já inexistentes."""
+    if not _is_valid_objectid(image_id):
+        return False
+    try:
+        fs = _get_gridfs()
+        fs.delete(ObjectId(image_id))
+        return True
+    except Exception:
+        return False
+
+
 def save_image(data: bytes, filename: str, metadata: Optional[dict] = None) -> str:
     """
     Salva imagem no GridFS. Retorna o ID como string para guardar em requisicao.imagens.

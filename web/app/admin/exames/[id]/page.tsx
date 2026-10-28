@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   getExame,
+  isValidExameId,
   gerarLaudo,
   atualizarLaudo,
   atualizarRequisicao,
@@ -56,6 +57,11 @@ export default function AdminExameDetailPage() {
   const [salvandoRequisicao, setSalvandoRequisicao] = useState(false);
 
   const load = useCallback(() => {
+    if (!isValidExameId(id)) {
+      setLoading(false);
+      setError("Exame inválido");
+      return;
+    }
     setLoading(true);
     getExame(id)
       .then((d) => {

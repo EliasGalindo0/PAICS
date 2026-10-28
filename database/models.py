@@ -8,6 +8,13 @@ from pymongo.collection import Collection
 from utils.timezone import now
 
 
+def safe_object_id(value) -> Optional[ObjectId]:
+    """ObjectId ou None quando o valor não é um hex de 24 caracteres."""
+    if not isinstance(value, str) or not value or not ObjectId.is_valid(value):
+        return None
+    return ObjectId(value)
+
+
 class BaseModel:
     """Classe base para modelos"""
 
@@ -65,7 +72,10 @@ class User(BaseModel):
 
     def find_by_id(self, user_id: str) -> Optional[Dict]:
         """Busca usuário por ID"""
-        doc = self.collection.find_one({"_id": ObjectId(user_id)})
+        oid = safe_object_id(user_id)
+        if oid is None:
+            return None
+        doc = self.collection.find_one({"_id": oid})
         return self.to_dict(doc) if doc else None
 
     def get_all(self, role: Optional[str] = None) -> List[Dict]:
@@ -114,7 +124,10 @@ class Clinica(BaseModel):
 
     def find_by_id(self, clinica_id: str) -> Optional[Dict]:
         """Busca clínica por ID"""
-        doc = self.collection.find_one({"_id": ObjectId(clinica_id)})
+        oid = safe_object_id(clinica_id)
+        if oid is None:
+            return None
+        doc = self.collection.find_one({"_id": oid})
         return self.to_dict(doc) if doc else None
 
     def get_all(self, apenas_ativas: bool = True) -> List[Dict]:
@@ -161,7 +174,10 @@ class Veterinario(BaseModel):
 
     def find_by_id(self, vet_id: str) -> Optional[Dict]:
         """Busca veterinário por ID"""
-        doc = self.collection.find_one({"_id": ObjectId(vet_id)})
+        oid = safe_object_id(vet_id)
+        if oid is None:
+            return None
+        doc = self.collection.find_one({"_id": oid})
         return self.to_dict(doc) if doc else None
 
     def find_by_clinica(self, clinica_id: str, apenas_ativos: bool = True) -> List[Dict]:
@@ -337,7 +353,10 @@ class Requisicao(BaseModel):
 
     def find_by_id(self, req_id: str) -> Optional[Dict]:
         """Busca requisição por ID"""
-        doc = self.collection.find_one({"_id": ObjectId(req_id)})
+        oid = safe_object_id(req_id)
+        if oid is None:
+            return None
+        doc = self.collection.find_one({"_id": oid})
         return self.to_dict(doc) if doc else None
 
     def find_by_ids(self, req_ids: List[str]) -> Dict[str, Dict]:
@@ -523,12 +542,20 @@ class Requisicao(BaseModel):
         return result.modified_count > 0
 
     def delete(self, req_id: str) -> bool:
-        """Exclui uma requisição (exame). Remove também o laudo associado."""
+        """Exclui uma requisição (exame). Remove laudo e imagens no GridFS."""
         from database.connection import get_db
+        from database.image_storage import delete_image
+
+        oid = safe_object_id(req_id)
+        if oid is None:
+            return False
+        doc = self.collection.find_one({"_id": oid}, {"imagens": 1})
+        for ref in (doc or {}).get("imagens") or []:
+            delete_image(str(ref))
         db = get_db()
         laudo_model = Laudo(db.laudos)
         laudo_model.delete_by_requisicao(req_id)
-        result = self.collection.delete_one({"_id": ObjectId(req_id)})
+        result = self.collection.delete_one({"_id": oid})
         return result.deleted_count > 0
 
 
@@ -576,7 +603,10 @@ class Laudo(BaseModel):
 
     def find_by_id(self, laudo_id: str) -> Optional[Dict]:
         """Busca laudo por ID"""
-        doc = self.collection.find_one({"_id": ObjectId(laudo_id)})
+        oid = safe_object_id(laudo_id)
+        if oid is None:
+            return None
+        doc = self.collection.find_one({"_id": oid})
         return self.to_dict(doc) if doc else None
 
     def find_by_requisicao(self, requisicao_id: str) -> Optional[Dict]:
@@ -817,7 +847,10 @@ class Fatura(BaseModel):
 
     def find_by_id(self, fatura_id: str) -> Optional[Dict]:
         """Busca fatura por ID"""
-        doc = self.collection.find_one({"_id": ObjectId(fatura_id)})
+        oid = safe_object_id(fatura_id)
+        if oid is None:
+            return None
+        doc = self.collection.find_one({"_id": oid})
         return self.to_dict(doc) if doc else None
 
     def find_by_user(self, user_id: str, status: Optional[str] = None) -> List[Dict]:
@@ -920,7 +953,10 @@ class KnowledgeBase(BaseModel):
 
     def find_by_id(self, kb_id: str) -> Optional[Dict]:
         """Busca item por ID"""
-        doc = self.collection.find_one({"_id": ObjectId(kb_id)})
+        oid = safe_object_id(kb_id)
+        if oid is None:
+            return None
+        doc = self.collection.find_one({"_id": oid})
         return self.to_dict(doc) if doc else None
 
     def find_by_type(self, tipo: str) -> List[Dict]:

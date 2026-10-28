@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   getExame,
+  isValidExameId,
   downloadPdf,
   previewPdf,
   addObservacao,
@@ -28,6 +29,11 @@ export default function UserExameDetailPage() {
   const [zoomRef, setZoomRef] = useState<string | null>(null);
 
   const load = () => {
+    if (!isValidExameId(id)) {
+      setLoading(false);
+      setError("Exame inválido");
+      return;
+    }
     setLoading(true);
     getExame(id)
       .then(setData)

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from database.connection import get_db
 from database.models import Requisicao, Clinica, Veterinario
-from database.image_storage import save_image
+from database.image_storage import delete_image, save_image
 from utils.timezone import now, combine_date_local
 
 from api.dependencies import get_current_user, require_admin
@@ -103,6 +103,9 @@ async def criar_requisicao(
                 ref = save_image(data, f.filename or "imagem", metadata={"user_id": user["id"]})
                 imagens_refs.append(ref)
             except Exception as e:
+                from utils.mongo_errors import raise_if_storage_quota
+
+                raise_if_storage_quota(e)
                 raise HTTPException(500, f"Erro ao salvar imagem {f.filename}: {str(e)}")
 
     if not imagens_refs:
@@ -120,29 +123,37 @@ async def criar_requisicao(
         except Exception:
             pass
 
-    req_id = req_model.create(
-        user_id=user["id"],
-        imagens=imagens_refs,
-        paciente=_upper(paciente),
-        tutor=_upper(tutor),
-        clinica=clinica_nome,
-        tipo_exame=tipo_exame,
-        observacoes=_upper(historico_clinico or ""),
-        especie=especie or "",
-        idade=idade or "",
-        raca=_upper(raca or ""),
-        sexo=sexo,
-        medico_veterinario_solicitante=medico_vet,
-        regiao_estudo=_upper(regiao_estudo or ""),
-        suspeita_clinica=_upper(suspeita_clinica or ""),
-        plantao=plantao,
-        sedacao=sedacao or "",
-        historico_clinico=_upper(historico_clinico or ""),
-        data_exame=data_exame_dt,
-        status="pendente",
-        clinica_id=clinica_id,
-        veterinario_id=veterinario_id,
-    )
+    try:
+        req_id = req_model.create(
+            user_id=user["id"],
+            imagens=imagens_refs,
+            paciente=_upper(paciente),
+            tutor=_upper(tutor),
+            clinica=clinica_nome,
+            tipo_exame=tipo_exame,
+            observacoes=_upper(historico_clinico or ""),
+            especie=especie or "",
+            idade=idade or "",
+            raca=_upper(raca or ""),
+            sexo=sexo,
+            medico_veterinario_solicitante=medico_vet,
+            regiao_estudo=_upper(regiao_estudo or ""),
+            suspeita_clinica=_upper(suspeita_clinica or ""),
+            plantao=plantao,
+            sedacao=sedacao or "",
+            historico_clinico=_upper(historico_clinico or ""),
+            data_exame=data_exame_dt,
+            status="pendente",
+            clinica_id=clinica_id,
+            veterinario_id=veterinario_id,
+        )
+    except Exception as e:
+        from utils.mongo_errors import raise_if_storage_quota
+
+        for ref in imagens_refs:
+            delete_image(ref)
+        raise_if_storage_quota(e)
+        raise HTTPException(500, f"Erro ao criar requisição: {str(e)}")
     return {"success": True, "id": req_id}
 
 

@@ -57,10 +57,21 @@ async def unhandled_exception_handler(request, exc: Exception):
     """
     Garante que erros não tratados retornem JSON (evita o frontend quebrar ao fazer res.json()).
     """
+    if isinstance(exc, HTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     try:
         from utils.observability import log_api_error
 
         log_api_error("api.unhandled", exc, context=f"{request.method} {request.url.path}")
+    except Exception:
+        pass
+    try:
+        from utils.mongo_errors import json_status_for_unhandled
+
+        mapped = json_status_for_unhandled(exc)
+        if mapped:
+            status, detail = mapped
+            return JSONResponse(status_code=status, content={"detail": detail})
     except Exception:
         pass
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})

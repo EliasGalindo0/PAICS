@@ -70,6 +70,12 @@ def seed_admin():
         print("=" * 60)
 
     except Exception as e:
+        from utils.mongo_errors import is_storage_quota_error
+
+        if is_storage_quota_error(e):
+            print("\n❌ Seed abortado: MongoDB Atlas sem espaço (cota 512 MB).")
+            print("   Libere armazenamento no cluster ou faça upgrade. Escritas estão bloqueadas.")
+            return
         print(f"\n❌ Erro ao criar administrador dummy: {str(e)}")
         import traceback
         traceback.print_exc()
@@ -162,6 +168,11 @@ def seed_clinica_and_user():
         print("=" * 60)
 
     except Exception as e:
+        from utils.mongo_errors import is_storage_quota_error
+
+        if is_storage_quota_error(e):
+            print("\n❌ Seed abortado: MongoDB Atlas sem espaço (cota 512 MB).")
+            return
         print(f"\n❌ Erro ao criar clínica/usuário dummy: {str(e)}")
         import traceback
         traceback.print_exc()

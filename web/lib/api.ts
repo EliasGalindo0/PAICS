@@ -235,9 +235,27 @@ export async function listExames(params?: {
   return res.json();
 }
 
+const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+
+export function isValidExameId(id: string | undefined | null): id is string {
+  return !!id && id !== "undefined" && OBJECT_ID_RE.test(id);
+}
+
+function apiErrorMessage(data: { detail?: unknown } | null, fallback: string): string {
+  const detail = data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return fallback;
+}
+
 export async function getExame(id: string): Promise<any> {
+  if (!isValidExameId(id)) {
+    throw new Error("Exame inválido");
+  }
   const res = await fetchWithAuth(`/api/exames/${id}`);
-  if (!res.ok) throw new Error("Erro ao obter exame");
+  if (!res.ok) {
+    const err = await safeJson<{ detail?: unknown }>(res);
+    throw new Error(apiErrorMessage(err, "Erro ao obter exame"));
+  }
   return res.json();
 }
 
@@ -301,6 +319,9 @@ export async function gerarLaudo(exameId: string, imagensRefs?: string[]): Promi
     body: JSON.stringify(imagensRefs ? { imagens_refs: imagensRefs } : {}),
   });
   const data = await safeJson<{ success: boolean; laudo_id?: string; detail?: any }>(res);
+  if (!res.ok) {
+    throw new Error(apiErrorMessage(data, "Erro ao gerar laudo"));
+  }
   if (data) return data;
   return { success: false };
 }
@@ -380,7 +401,14 @@ export async function criarRequisicao(formData: FormData): Promise<{ success: bo
     headers: {}, // não definir Content-Type - FormData define automaticamente
     body: formData,
   });
-  return res.json();
+  const data = await safeJson<{ success?: boolean; id?: string; detail?: unknown }>(res);
+  if (!res.ok) {
+    throw new Error(apiErrorMessage(data, "Erro ao criar requisição"));
+  }
+  if (!data?.id) {
+    throw new Error("Erro ao criar requisição");
+  }
+  return { success: true, id: data.id };
 }
 
 export async function salvarRascunho(formData: FormData): Promise<{ success: boolean; id?: string }> {
